@@ -5058,6 +5058,44 @@ button.agent-gui-node__conversation-section-toggle:hover
   text-transform: capitalize;
 }
 
+.agent-gui-node__detail-header-usage-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--transparency-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.agent-gui-node__detail-header-usage-chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--border-1);
+}
+
+.agent-gui-node__detail-header-usage-chip[data-usage-level="warning"] {
+  color: var(--agent-gui-warning, var(--cove-label-orange));
+  background: color-mix(
+    in srgb,
+    var(--agent-gui-warning, var(--cove-label-orange)) 12%,
+    transparent
+  );
+}
+
+.agent-gui-node__detail-header-usage-chip[data-usage-level="critical"] {
+  color: var(--agent-gui-danger, var(--state-danger));
+  background: color-mix(
+    in srgb,
+    var(--agent-gui-danger, var(--state-danger)) 12%,
+    transparent
+  );
+}
+
 .agent-gui-node__layout [data-slot="status-dot"],
 [data-testid="workspace-agent-message-center"] [data-slot="status-dot"] {
   --agent-gui-status-dot-color: var(

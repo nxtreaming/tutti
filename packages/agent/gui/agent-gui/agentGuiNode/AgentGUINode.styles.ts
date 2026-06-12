@@ -78,6 +78,7 @@ const styles = {
   detailHeader: "agent-gui-node__detail-header",
   detailHeaderPathInfo: "agent-gui-node__detail-header-path-info",
   detailHeaderStatus: "agent-gui-node__detail-header-status",
+  detailHeaderUsageChip: "agent-gui-node__detail-header-usage-chip",
   detailHeaderTitle: "agent-gui-node__detail-header-title",
   detailHeaderTitleGroup: "agent-gui-node__detail-header-title-group",
   detail: "agent-gui-node__detail",

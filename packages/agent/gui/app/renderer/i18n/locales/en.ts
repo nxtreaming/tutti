@@ -506,6 +506,10 @@ export const en = {
         "{{percentLeft}}% left ({{usedTokens}} used / {{totalTokens}})",
       slashStatusContextUnavailable: "Context usage unavailable",
       slashStatusLimitsUnavailable: "Rate limits unavailable from this agent",
+      usageChipLabel: "Context {{percent}}%",
+      usagePopoverTitle: "Usage",
+      usageTokensLabel: "Tokens",
+      usageLimitsLabel: "Limits",
       noRunningResponse: "No running response to stop.",
       promptTipsPrefix: "Tips: ",
       promptTips: {

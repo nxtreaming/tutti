@@ -464,6 +464,10 @@ export const zhCN = {
         "{{percentLeft}}% 剩余（已用 {{usedTokens}} / {{totalTokens}}）",
       slashStatusContextUnavailable: "上下文用量不可用",
       slashStatusLimitsUnavailable: "当前 Agent 未提供额度限制",
+      usageChipLabel: "上下文 {{percent}}%",
+      usagePopoverTitle: "用量",
+      usageTokensLabel: "Token 用量",
+      usageLimitsLabel: "限额",
       noRunningResponse: "当前没有正在运行的回复。",
       promptTipsPrefix: "Tips：",
       promptTips: {

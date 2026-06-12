@@ -376,7 +376,9 @@ function hasInlineOverflow(element: HTMLElement | null): boolean {
   return element.scrollWidth > element.clientWidth + 1;
 }
 
-function formatSlashStatusTokenCount(value: number | null | undefined): string {
+export function formatSlashStatusTokenCount(
+  value: number | null | undefined
+): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "";
   }

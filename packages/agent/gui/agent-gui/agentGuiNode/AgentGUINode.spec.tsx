@@ -6229,6 +6229,7 @@ function createViewModel(
     isRespondingApproval: false,
     promptImagesSupported: true,
     compactSupported: null,
+    usage: null,
     isDeletingConversation: false,
     isDeletingProjectConversations: false,
     pendingDeleteConversation: null,

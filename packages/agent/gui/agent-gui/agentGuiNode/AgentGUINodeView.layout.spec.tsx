@@ -38,7 +38,9 @@ vi.mock("./AgentComposer", () => ({
       showStopButton: props.showStopButton
     });
     return <div data-testid="agent-composer" />;
-  }
+  },
+  formatSlashStatusTokenCount: (value: number | null | undefined) =>
+    typeof value === "number" ? value.toLocaleString("en-US") : ""
 }));
 
 vi.mock(
@@ -680,6 +682,86 @@ describe("AgentGUINodeView layout persistence", () => {
   });
 });
 
+describe("AgentGUINodeView usage chip", () => {
+  afterEach(() => {
+    conversationFlowMock.calls = [];
+    composerMock.calls = [];
+    statusDotMock.calls = [];
+  });
+
+  function renderWithUsage(usage: AgentGUINodeViewModel["usage"]) {
+    const activeConversation = createConversationSummary("session-1");
+    return renderAgentGUINodeView({
+      viewModel: {
+        ...createViewModel(),
+        conversations: [activeConversation],
+        activeConversation,
+        activeConversationId: activeConversation.id,
+        conversationDetail: createConversationDetail(),
+        usage
+      }
+    });
+  }
+
+  it("renders the usage chip with the context percent", () => {
+    renderWithUsage({
+      usedTokens: 50_000,
+      totalTokens: 200_000,
+      percentUsed: 25,
+      quotas: []
+    });
+
+    const chip = screen.getByTestId("agent-gui-usage-chip");
+    expect(chip).toHaveTextContent("usageChip:25");
+    expect(chip).toHaveAttribute("data-usage-level", "normal");
+  });
+
+  it("marks the chip with the warning level at 80 percent and above", () => {
+    renderWithUsage({
+      usedTokens: 170_000,
+      totalTokens: 200_000,
+      percentUsed: 85,
+      quotas: []
+    });
+
+    expect(screen.getByTestId("agent-gui-usage-chip")).toHaveAttribute(
+      "data-usage-level",
+      "warning"
+    );
+  });
+
+  it("marks the chip with the critical level at 95 percent and above", () => {
+    renderWithUsage({
+      usedTokens: 194_000,
+      totalTokens: 200_000,
+      percentUsed: 97,
+      quotas: []
+    });
+
+    expect(screen.getByTestId("agent-gui-usage-chip")).toHaveAttribute(
+      "data-usage-level",
+      "critical"
+    );
+  });
+
+  it("hides the chip when usage is null", () => {
+    renderWithUsage(null);
+
+    expect(screen.queryByTestId("agent-gui-usage-chip")).toBeNull();
+  });
+
+  it("hides the chip when percentUsed is null even with quotas", () => {
+    renderWithUsage({
+      usedTokens: null,
+      totalTokens: null,
+      percentUsed: null,
+      quotas: [{ quotaType: "weekly", percentRemaining: 90 }]
+    });
+
+    expect(screen.queryByTestId("agent-gui-usage-chip")).toBeNull();
+  });
+});
+
 function renderAgentGUINodeView({
   conversationRailCollapsed = false,
   conversationRailWidthPx = 240,
@@ -763,6 +845,7 @@ function createViewModel(): AgentGUINodeViewModel {
     isRespondingApproval: false,
     promptImagesSupported: true,
     compactSupported: null,
+    usage: null,
     listError: null,
     isDeletingConversation: false,
     isDeletingProjectConversations: false,
@@ -1014,6 +1097,10 @@ function createLabels(): AgentGUIViewLabels {
       `${percentLeft}:${usedTokens}:${totalTokens}`,
     slashStatusContextUnavailable: "slashStatusContextUnavailable",
     slashStatusLimitsUnavailable: "slashStatusLimitsUnavailable",
+    usageChipLabel: ({ percent }) => `usageChip:${percent}`,
+    usagePopoverTitle: "usagePopoverTitle",
+    usageTokensLabel: "usageTokensLabel",
+    usageLimitsLabel: "usageLimitsLabel",
     fileMentionPalette: "fileMentionPalette",
     fileMentionLoading: "fileMentionLoading",
     fileMentionEmpty: "fileMentionEmpty",

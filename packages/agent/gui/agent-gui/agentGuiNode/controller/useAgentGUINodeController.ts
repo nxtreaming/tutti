@@ -9,7 +9,8 @@ import {
 import { useAgentHostApi } from "../../../agentActivityHost";
 import {
   resolveAgentActivityCapability,
-  resolveAgentActivityPromptImagesSupported
+  resolveAgentActivityPromptImagesSupported,
+  resolveAgentActivityUsage
 } from "@tutti-os/agent-activity-core";
 import type {
   AgentActivityComposerOptions,
@@ -1990,6 +1991,14 @@ export function useAgentGUINodeController({
     composerOptions: providerComposerOptions,
     sessionRuntimeContext: activeSessionState?.runtimeContext
   });
+  const activeSessionRuntimeContext = activeSessionState?.runtimeContext;
+  const usage = useMemo(
+    () =>
+      resolveAgentActivityUsage({
+        sessionRuntimeContext: activeSessionRuntimeContext
+      }),
+    [activeSessionRuntimeContext]
+  );
   const stableRuntimeSyncStateBySessionIdRef = useRef<
     Record<string, WorkspaceAgentActivitySyncState | undefined>
   >({});
@@ -6524,6 +6533,7 @@ export function useAgentGUINodeController({
         isRespondingApproval,
         promptImagesSupported,
         compactSupported,
+        usage,
         listError,
         isDeletingConversation,
         isDeletingProjectConversations,
@@ -6604,6 +6614,7 @@ export function useAgentGUINodeController({
       openclawGateway,
       promptImagesSupported,
       compactSupported,
+      usage,
       isInterrupting,
       isLoadingConversations,
       isLoadingMessages,

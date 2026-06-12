@@ -72,10 +72,16 @@ import { CanvasNodeTrashLinedIcon } from "../shared/canvasNodeChromeIcons";
 import { AgentSessionChrome } from "./AgentSessionChrome";
 import {
   AgentComposer,
+  formatSlashStatusTokenCount,
   type AgentComposerPromptTip,
   type AgentComposerSlashStatusLimit,
   type AgentComposerSlashStatus
 } from "./AgentComposer";
+import type { AgentActivityUsage } from "@tutti-os/agent-activity-core";
+import {
+  USAGE_CRITICAL_PERCENT,
+  USAGE_WARN_PERCENT
+} from "./model/agentUsageThresholds";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../shared/AgentMessageMarkdown";
 import { AgentInteractivePromptSurface } from "./AgentInteractivePromptSurface";
 import { AgentConversationListSkeleton } from "./AgentConversationListSkeleton";
@@ -269,6 +275,10 @@ export interface AgentGUIViewLabels {
   }) => string;
   slashStatusContextUnavailable: string;
   slashStatusLimitsUnavailable: string;
+  usageChipLabel: (input: { percent: number }) => string;
+  usagePopoverTitle: string;
+  usageTokensLabel: string;
+  usageLimitsLabel: string;
   fileMentionPalette: string;
   fileMentionLoading: string;
   fileMentionEmpty: string;
@@ -1554,6 +1564,8 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
         activeConversationStatus={displayConversationStatus}
         activeConversationStatusLabel={activeConversationStatusLabel}
         showFailedSyncLabel={showFailedSyncLabel}
+        usage={viewModel.usage}
+        usageLimits={slashStatusLimits}
       />
       <ScrollArea
         className="min-h-0 flex-1 [&_[data-orientation=vertical][data-slot=scroll-area-scrollbar]]:opacity-100"
@@ -1714,7 +1726,15 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
 
 interface AgentGUIDetailHeaderProps {
   activeConversation: AgentGUINodeViewModel["activeConversation"];
-  labels: Pick<AgentGUIViewLabels, "fallbackAgentTitle" | "selectConversation">;
+  labels: Pick<
+    AgentGUIViewLabels,
+    | "fallbackAgentTitle"
+    | "selectConversation"
+    | "usageChipLabel"
+    | "usagePopoverTitle"
+    | "usageTokensLabel"
+    | "usageLimitsLabel"
+  >;
   uiLanguage: UiLanguage;
   statusGroupTitle: string;
   showSyncIndicator: boolean;
@@ -1725,6 +1745,8 @@ interface AgentGUIDetailHeaderProps {
     | undefined;
   activeConversationStatusLabel: string;
   showFailedSyncLabel: boolean;
+  usage: AgentActivityUsage | null;
+  usageLimits: readonly AgentComposerSlashStatusLimit[];
 }
 
 const AgentGUIDetailHeader = memo(function AgentGUIDetailHeader({
@@ -1737,7 +1759,9 @@ const AgentGUIDetailHeader = memo(function AgentGUIDetailHeader({
   syncLabel,
   activeConversationStatus,
   activeConversationStatusLabel,
-  showFailedSyncLabel
+  showFailedSyncLabel,
+  usage,
+  usageLimits
 }: AgentGUIDetailHeaderProps): React.JSX.Element | null {
   "use memo";
 
@@ -1759,6 +1783,15 @@ const AgentGUIDetailHeader = memo(function AgentGUIDetailHeader({
         className="inline-flex flex-none items-center gap-2 whitespace-nowrap"
         title={statusGroupTitle}
       >
+        {usage && usage.percentUsed !== null ? (
+          <AgentUsageChip
+            percentUsed={usage.percentUsed}
+            usedTokens={usage.usedTokens}
+            totalTokens={usage.totalTokens}
+            limits={usageLimits}
+            labels={labels}
+          />
+        ) : null}
         <StatusDot
           tone={conversationStatusTone(activeConversationStatus)}
           pulse={conversationStatusPulse(activeConversationStatus)}
@@ -1808,6 +1841,86 @@ function AgentRunPathInfo({ path }: { path: string }): React.JSX.Element {
         className="max-w-[320px] text-xs [overflow-wrap:anywhere]"
       >
         {path}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+type AgentUsageChipLevel = "normal" | "warning" | "critical";
+
+function agentUsageChipLevel(percentUsed: number): AgentUsageChipLevel {
+  if (percentUsed >= USAGE_CRITICAL_PERCENT) {
+    return "critical";
+  }
+  if (percentUsed >= USAGE_WARN_PERCENT) {
+    return "warning";
+  }
+  return "normal";
+}
+
+function AgentUsageChip({
+  percentUsed,
+  usedTokens,
+  totalTokens,
+  limits,
+  labels
+}: {
+  percentUsed: number;
+  usedTokens: number | null;
+  totalTokens: number | null;
+  limits: readonly AgentComposerSlashStatusLimit[];
+  labels: Pick<
+    AgentGUIViewLabels,
+    | "usageChipLabel"
+    | "usagePopoverTitle"
+    | "usageTokensLabel"
+    | "usageLimitsLabel"
+  >;
+}): React.JSX.Element {
+  "use memo";
+
+  const chipLabel = labels.usageChipLabel({ percent: percentUsed });
+  const showTokens = usedTokens !== null && totalTokens !== null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className={styles.detailHeaderUsageChip}
+          data-testid="agent-gui-usage-chip"
+          data-usage-level={agentUsageChipLevel(percentUsed)}
+          aria-label={chipLabel}
+        >
+          {chipLabel}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        align="end"
+        className="max-w-[320px] text-xs"
+      >
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="font-semibold">{labels.usagePopoverTitle}</span>
+          {showTokens ? (
+            <span className="whitespace-nowrap">
+              {labels.usageTokensLabel}:{" "}
+              {formatSlashStatusTokenCount(usedTokens)} /{" "}
+              {formatSlashStatusTokenCount(totalTokens)}
+            </span>
+          ) : null}
+          {limits.length > 0 ? (
+            <>
+              <span className="font-semibold">{labels.usageLimitsLabel}</span>
+              {limits.map((limit) => (
+                <span key={limit.id} className="whitespace-nowrap">
+                  {limit.label}: {limit.value}
+                  {limit.reset ? ` (${limit.reset})` : ""}
+                </span>
+              ))}
+            </>
+          ) : null}
+        </div>
       </TooltipContent>
     </Tooltip>
   );

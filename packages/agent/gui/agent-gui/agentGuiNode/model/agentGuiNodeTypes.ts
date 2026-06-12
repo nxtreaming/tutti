@@ -1,3 +1,4 @@
+import type { AgentActivityUsage } from "@tutti-os/agent-activity-core";
 import type { AgentGUINodeData } from "../../../types";
 import type {
   AgentGUIApprovalRequest,
@@ -122,6 +123,7 @@ export interface AgentGUINodeViewModel {
   isRespondingApproval: boolean;
   promptImagesSupported: boolean;
   compactSupported: boolean | null;
+  usage: AgentActivityUsage | null;
   listError: string | null;
   isDeletingConversation: boolean;
   isDeletingProjectConversations: boolean;

@@ -701,6 +701,11 @@ export const AgentGUINode = memo(function AgentGUINode({
       slashStatusLimitsUnavailable: t(
         "agentHost.agentGui.slashStatusLimitsUnavailable"
       ),
+      usageChipLabel: (input: { percent: number }) =>
+        t("agentHost.agentGui.usageChipLabel", { percent: input.percent }),
+      usagePopoverTitle: t("agentHost.agentGui.usagePopoverTitle"),
+      usageTokensLabel: t("agentHost.agentGui.usageTokensLabel"),
+      usageLimitsLabel: t("agentHost.agentGui.usageLimitsLabel"),
       noRunningResponse: t("agentHost.agentGui.noRunningResponse"),
       empty: t("agentHost.agentGui.empty", { provider: displayProviderLabel }),
       emptyProvider: displayProviderLabel,

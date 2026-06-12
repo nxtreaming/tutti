@@ -135,11 +135,11 @@ export function resolveAgentActivityUsage(
 - hover/click 彈出明細:usedTokens/totalTokens（千分位格式化,沿用 slashStatus 的格式化函數,grep `slashStatusContextText`）+ quotas 列表（percentRemaining + 重置時間,格式化邏輯參考 `slashStatusLimitsFromQuotas` :187）。彈層組件沿用該包既有 popover/tooltip 慣例（先 grep）。
 - 數據為 null → 不渲染任何節點。
 
-- [ ] **Step 1: 寫失敗的渲染測試**（vitest,渲染 AgentGUINodeView 或直接渲染 AgentGUIDetailHeader——以既有 spec 的測試對象為準）
-- [ ] **Step 2: 確認失敗**
-- [ ] **Step 3: 實現（controller → types → view → i18n → thresholds 常量）**
-- [ ] **Step 4: `cd packages/agent/gui && pnpm vitest run && pnpm typecheck` + `pnpm check:i18n`**
-- [ ] **Step 5: Commit** `feat(agent-gui): persistent context usage chip in session header`
+- [x] **Step 1: 寫失敗的渲染測試**（vitest,渲染 AgentGUINodeView 或直接渲染 AgentGUIDetailHeader——以既有 spec 的測試對象為準）
+- [x] **Step 2: 確認失敗**
+- [x] **Step 3: 實現（controller → types → view → i18n → thresholds 常量）**
+- [x] **Step 4: `cd packages/agent/gui && pnpm vitest run && pnpm typecheck` + `pnpm check:i18n`**
+- [x] **Step 5: Commit** `feat(agent-gui): persistent context usage chip in session header`
 
 ### Task C: 收尾
 
