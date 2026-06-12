@@ -93,6 +93,8 @@ function isDockVisualMutationActive(element: HTMLElement | null): boolean {
   );
 }
 
+const DOCK_MAGNIFIED_TOOLTIP_SIDE_OFFSET = 40;
+
 export function WorkbenchHostDock({
   context,
   dockEntries,
@@ -1159,7 +1161,7 @@ export function WorkbenchHostDock({
                           <TooltipTrigger asChild>{dockButton}</TooltipTrigger>
                           <TooltipContent
                             side={dockPlacement === "left" ? "right" : "top"}
-                            sideOffset={26}
+                            sideOffset={DOCK_MAGNIFIED_TOOLTIP_SIDE_OFFSET}
                           >
                             {entry.label}
                           </TooltipContent>
@@ -1270,7 +1272,7 @@ export function WorkbenchHostDock({
                         <TooltipTrigger asChild>{stackButton}</TooltipTrigger>
                         <TooltipContent
                           side={dockPlacement === "left" ? "right" : "top"}
-                          sideOffset={26}
+                          sideOffset={DOCK_MAGNIFIED_TOOLTIP_SIDE_OFFSET}
                         >
                           {i18n.t("minimizedWindows")}
                         </TooltipContent>
@@ -1337,7 +1339,7 @@ export function WorkbenchHostDock({
                       <TooltipTrigger asChild>{dockButton}</TooltipTrigger>
                       <TooltipContent
                         side={dockPlacement === "left" ? "right" : "top"}
-                        sideOffset={26}
+                        sideOffset={DOCK_MAGNIFIED_TOOLTIP_SIDE_OFFSET}
                       >
                         {node.title}
                       </TooltipContent>

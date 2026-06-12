@@ -54,12 +54,11 @@ describe("AgentMessageMarkdown", () => {
     );
     expect(markdown?.className).not.toContain("hover:[&_a]:underline");
     expect(markdown?.className).toContain("text-[var(--text-primary)]");
-    expect(markdown?.className).toContain(
-      "[&_a]:text-[var(--agent-gui-accent)]"
-    );
+    expect(markdown?.className).toContain("[&_a]:cursor-pointer");
+    expect(markdown?.className).toContain("[&_a]:text-[var(--tutti-purple)]");
     expect(markdown?.className).toContain("[&_a:hover]:underline");
     expect(markdown?.className).toContain("[&_strong]:font-semibold");
-    expect(markdown?.className).toContain("[&_code]:text-[12px]");
+    expect(markdown?.className).toContain("[&_code]:text-[11px]");
     expect(markdown?.className).toContain(
       "[&_code]:text-[var(--text-primary)]"
     );
@@ -927,7 +926,7 @@ describe("AgentMessageMarkdown", () => {
     );
 
     const expandButton = screen.getByRole("button", { name: "展开全部" });
-    expect(expandButton.className).toContain("text-[var(--agent-gui-accent)]");
+    expect(expandButton.className).toContain("text-[var(--tutti-purple)]");
     const markdown = expandButton.parentElement?.querySelector(
       '[data-workspace-agent-markdown="true"]'
     );
