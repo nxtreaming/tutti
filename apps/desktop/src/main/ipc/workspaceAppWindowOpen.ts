@@ -7,8 +7,17 @@ import { desktopIpcChannels } from "../../shared/contracts/ipc.ts";
 interface WorkspaceAppWindowOpenContents {
   id: number;
   setWindowOpenHandler?(
-    handler: (details: { url: string }) => { action: "allow" | "deny" }
+    handler: (details: WorkspaceAppWindowOpenDetails) => {
+      action: "allow" | "deny";
+    }
   ): void;
+}
+
+interface WorkspaceAppWindowOpenDetails {
+  referrer?: {
+    url?: string | null;
+  } | null;
+  url: string;
 }
 
 interface WorkspaceAppWindowOpenOwnerWindow {
@@ -50,15 +59,20 @@ export function installWorkspaceAppWindowOpenHandler({
     return;
   }
 
-  contents.setWindowOpenHandler?.(({ url }) => {
-    if (isSameOriginWorkspaceAppUrl({ appBaseUrl, url })) {
-      logger?.info?.(
-        "workspace app native same-origin window-open suppressed",
-        {
-          url,
-          webContentsId: contents.id
-        }
-      );
+  contents.setWindowOpenHandler?.((details) => {
+    const { url } = details;
+    if (
+      isInternalWorkspaceAppWindowOpenUrl({
+        appBaseUrl,
+        referrerUrl: details.referrer?.url,
+        url
+      })
+    ) {
+      logger?.info?.("workspace app native internal window-open suppressed", {
+        referrerUrl: details.referrer?.url ?? null,
+        url,
+        webContentsId: contents.id
+      });
       return { action: "deny" };
     }
     dispatchWorkspaceAppOpenUrl({ contents, logger, ownerWindow, url });
@@ -110,20 +124,41 @@ export function dispatchWorkspaceAppOpenUrl({
   return true;
 }
 
-function isSameOriginWorkspaceAppUrl({
+function isInternalWorkspaceAppWindowOpenUrl({
   appBaseUrl,
+  referrerUrl,
   url
 }: {
   appBaseUrl?: string | null;
+  referrerUrl?: string | null;
   url: string;
 }): boolean {
-  if (!appBaseUrl) {
-    return false;
+  if (isRelativeWorkspaceAppWindowOpenUrl(url)) {
+    return true;
   }
 
+  return isSameOriginUrl(url, appBaseUrl) || isSameOriginUrl(url, referrerUrl);
+}
+
+function isSameOriginUrl(
+  url: string,
+  baseUrl: string | null | undefined
+): boolean {
+  if (!baseUrl) {
+    return false;
+  }
   try {
-    return new URL(url, appBaseUrl).origin === new URL(appBaseUrl).origin;
+    return new URL(url, baseUrl).origin === new URL(baseUrl).origin;
   } catch {
     return false;
   }
+}
+
+function isRelativeWorkspaceAppWindowOpenUrl(url: string): boolean {
+  const value = url.trim();
+  if (value.length === 0 || value.startsWith("//")) {
+    return false;
+  }
+
+  return !/^[A-Za-z][A-Za-z\d+.-]*:/.test(value);
 }
