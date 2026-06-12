@@ -48,6 +48,7 @@ import {
   type WorkbenchMinimizedDockNode,
   type WorkbenchMinimizedDockSlot
 } from "./minimizedDockSlots.ts";
+import { useMinimizedDockStackPromotion } from "./minimizedDockStackPromotion.ts";
 import {
   WorkbenchHostDockPopup,
   type WorkbenchHostDockPopupAnchorRect,
@@ -86,7 +87,7 @@ function isDockVisualMutationActive(element: HTMLElement | null): boolean {
     element.hasAttribute("data-dock-pointer-active") ||
     element.hasAttribute("data-dock-hover-panel-open") ||
     element.querySelector(
-      '[data-collapsing="true"], [data-presence="entering"], [data-presence="exiting"]'
+      '[data-collapsing="true"], [data-presence="entering"], [data-presence="exiting"], [data-stack-dispatching="true"], [data-promoted-from-stack="true"]'
     ) !== null
   );
 }
@@ -303,6 +304,8 @@ export function WorkbenchHostDock({
       }),
     [context.nodes, nodeDefinitions]
   );
+  const { promotedNodeId, stackDispatching } =
+    useMinimizedDockStackPromotion(minimizedDockSlots);
   const dockItems = useMemo(
     () =>
       createWorkbenchHostDockItems({
@@ -1225,6 +1228,9 @@ export function WorkbenchHostDock({
                       data-popup-active={stackPopupActive}
                       data-presence={dockItem.presence}
                       data-section-id="minimized"
+                      data-stack-dispatching={
+                        stackDispatching ? "true" : undefined
+                      }
                     >
                       <Tooltip>
                         <TooltipTrigger asChild>{stackButton}</TooltipTrigger>
@@ -1283,6 +1289,9 @@ export function WorkbenchHostDock({
                     data-desktop-dock-slot="true"
                     data-node-state="minimized"
                     data-presence={dockItem.presence}
+                    data-promoted-from-stack={
+                      promotedNodeId === node.id ? "true" : undefined
+                    }
                     data-section-id="minimized"
                   >
                     <Tooltip>

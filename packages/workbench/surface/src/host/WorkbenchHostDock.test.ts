@@ -69,8 +69,11 @@ test("dock hover panels survive pointer travel from slot to panel", () => {
   );
   assert.match(
     source,
-    /function isDockVisualMutationActive[\s\S]*?data-presence="entering"[\s\S]*?data-presence="exiting"/
+    /function isDockVisualMutationActive[\s\S]*?data-stack-dispatching="true"[\s\S]*?data-promoted-from-stack="true"/
   );
+  assert.match(source, /useMinimizedDockStackPromotion\(minimizedDockSlots\)/);
+  assert.match(source, /data-stack-dispatching=\{/);
+  assert.match(source, /data-promoted-from-stack=\{/);
   assert.match(source, /--desktop-dock-collapse-inline-size/);
   assert.match(source, /--desktop-dock-collapse-block-size/);
   assert.match(source, /slotElement\.dataset\.collapsing = "true";/);
