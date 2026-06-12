@@ -761,7 +761,16 @@ describe("WorkspaceAgentMessageCenterPanel", () => {
     openViewOptions();
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Status" }));
 
-    expect(screen.getByRole("heading", { name: "Waiting · 1" })).toBeTruthy();
+    // Interactive waiting item is in the deck, not a status group.
+    expect(
+      screen.getByTestId("workspace-agent-message-center-attention-deck")
+    ).toHaveAttribute(
+      "data-deck-top-item-id",
+      "message-center-waiting-session"
+    );
+    expect(screen.queryByRole("heading", { name: "Waiting · 1" })).toBeNull();
+
+    // Non-interactive items still group by status.
     expect(screen.getByRole("heading", { name: "Error · 1" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Running · 1" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Completed · 1" })).toBeTruthy();
