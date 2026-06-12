@@ -762,6 +762,7 @@ function createViewModel(): AgentGUINodeViewModel {
     isInterrupting: false,
     isRespondingApproval: false,
     promptImagesSupported: true,
+    compactSupported: null,
     listError: null,
     isDeletingConversation: false,
     isDeletingProjectConversations: false,

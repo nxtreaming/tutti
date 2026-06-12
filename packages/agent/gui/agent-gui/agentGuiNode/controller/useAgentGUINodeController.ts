@@ -7,7 +7,10 @@ import {
   type AgentActivityRuntime
 } from "../../../agentActivityRuntime";
 import { useAgentHostApi } from "../../../agentActivityHost";
-import { resolveAgentActivityPromptImagesSupported } from "@tutti-os/agent-activity-core";
+import {
+  resolveAgentActivityCapability,
+  resolveAgentActivityPromptImagesSupported
+} from "@tutti-os/agent-activity-core";
 import type {
   AgentActivityComposerOptions,
   AgentActivitySnapshot
@@ -1983,6 +1986,10 @@ export function useAgentGUINodeController({
       sessionRuntimeContext: activeSessionState?.runtimeContext
     });
   const promptImagesSupported = resolvedPromptImagesSupported ?? true;
+  const compactSupported = resolveAgentActivityCapability("compact", {
+    composerOptions: providerComposerOptions,
+    sessionRuntimeContext: activeSessionState?.runtimeContext
+  });
   const stableRuntimeSyncStateBySessionIdRef = useRef<
     Record<string, WorkspaceAgentActivitySyncState | undefined>
   >({});
@@ -6516,6 +6523,7 @@ export function useAgentGUINodeController({
         isInterrupting,
         isRespondingApproval,
         promptImagesSupported,
+        compactSupported,
         listError,
         isDeletingConversation,
         isDeletingProjectConversations,
@@ -6595,6 +6603,7 @@ export function useAgentGUINodeController({
       isCreatingConversation,
       openclawGateway,
       promptImagesSupported,
+      compactSupported,
       isInterrupting,
       isLoadingConversations,
       isLoadingMessages,

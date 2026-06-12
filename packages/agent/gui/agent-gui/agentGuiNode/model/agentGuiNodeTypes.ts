@@ -121,6 +121,7 @@ export interface AgentGUINodeViewModel {
   isInterrupting: boolean;
   isRespondingApproval: boolean;
   promptImagesSupported: boolean;
+  compactSupported: boolean | null;
   listError: string | null;
   isDeletingConversation: boolean;
   isDeletingProjectConversations: boolean;

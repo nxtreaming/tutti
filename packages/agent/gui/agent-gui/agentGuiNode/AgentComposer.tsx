@@ -119,6 +119,7 @@ interface AgentComposerProps {
   draftPrompt: string;
   availableCommands: readonly AgentSessionCommand[];
   hasCompactableContext?: boolean;
+  compactSupported?: boolean | null;
   availableSkills?: readonly AgentGUIProviderSkillOption[];
   disabled: boolean;
   disabledReason?: string | null;
@@ -537,6 +538,7 @@ export function AgentComposer({
   draftPrompt,
   availableCommands,
   hasCompactableContext = true,
+  compactSupported = null,
   availableSkills = EMPTY_PROVIDER_SKILLS,
   disabled,
   disabledReason,
@@ -639,9 +641,10 @@ export function AgentComposer({
       resolveSlashCommandsForProvider({
         provider,
         commands: availableCommands,
-        hasCompactableContext
+        hasCompactableContext,
+        compactSupported
       }),
-    [availableCommands, hasCompactableContext, provider]
+    [availableCommands, compactSupported, hasCompactableContext, provider]
   );
   const filteredCommands = useMemo(
     () =>

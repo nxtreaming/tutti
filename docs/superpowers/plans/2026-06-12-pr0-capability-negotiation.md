@@ -493,7 +493,7 @@ git commit -m "feat(activity-core): capability resolution selector with static f
 - Modify: 其調用方（先 `grep -rn "resolveSlashCommandsForProvider(" packages/agent/gui apps/desktop --include="*.ts*" | grep -v test` 找到全部調用點,傳入新參數）
 - Test: `packages/agent/gui/agent-gui/agentGuiNode/model/agentSlashCommandProviderPolicy.test.ts`（新建,vitest）
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -531,12 +531,12 @@ describe("compact capability gating", () => {
 
 （`AgentSessionCommand` 字面量若有必填字段,按類型補齊。）
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `cd packages/agent/gui && pnpm vitest run agentGuiNode/model/agentSlashCommandProviderPolicy.test.ts`
 Expected: FAIL（unknown property `compactSupported` / 行為不符）
 
-- [ ] **Step 3: 實現門控**
+- [x] **Step 3: 實現門控**
 
 `resolveSlashCommandsForProvider` 簽名增加可選 `compactSupported?: boolean | null`（默認 undefined=未知=保持現狀），傳入 `filterUnavailableSlashCommands` 的 options；在該過濾器現有 `commandName === "compact"` 分支（:217 附近）改為：
 
@@ -549,7 +549,7 @@ if (commandName === "compact") {
 }
 ```
 
-- [ ] **Step 4: 調用方接線**
+- [x] **Step 4: 調用方接線**
 
 對 grep 到的每個調用點:從該處可得的會話運行時上下文與 composer options 構造:
 
@@ -562,12 +562,12 @@ compactSupported: resolveAgentActivityCapability("compact", {
 
 若調用點拿不到這兩者（純展示路徑），傳 `undefined` 保持現狀並在代碼處留一行註釋說明數據不可達。
 
-- [ ] **Step 5: 跑 gui 包測試 + typecheck**
+- [x] **Step 5: 跑 gui 包測試 + typecheck**
 
 Run: `cd packages/agent/gui && pnpm vitest run && pnpm exec tsc --noEmit -p .`（tsc 命令以該包 package.json 的 typecheck script 為準,有則用 script）
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/agent/gui/
