@@ -16,7 +16,7 @@
 
 ### Task 0: 建立分支
 
-- [ ] **Step 1: 確認基線並建分支**
+- [x] **Step 1: 確認基線並建分支**
 
 ```bash
 cd /Users/riceballpapa/Repo/nextop
@@ -28,11 +28,12 @@ Expected: `Switched to a new branch 'capability-negotiation'`
 ### Task 1: Go 能力詞表常量 + codex 對齊
 
 **Files:**
+
 - Create: `packages/agent/daemon/runtime/capabilities.go`
 - Modify: `packages/agent/daemon/runtime/codex_appserver_events.go`（`codexAppServerCapabilities()`，約 :1080 附近）
 - Test: `packages/agent/daemon/runtime/capabilities_test.go`
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 ```go
 package agentruntime
@@ -62,12 +63,12 @@ func TestCodexAppServerCapabilitiesUseSharedVocabulary(t *testing.T) {
 
 注意：`containsString` 已存在於 `codex_adapter_test.go`，測試包內直接可用。
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `cd packages/agent/daemon && go test ./runtime/ -run TestCodexAppServerCapabilitiesUseSharedVocabulary -count=1`
 Expected: FAIL（`undefined: CapabilityImageInput`）
 
-- [ ] **Step 3: 實現詞表常量並改造 codex 列表**
+- [x] **Step 3: 實現詞表常量並改造 codex 列表**
 
 `capabilities.go`：
 
@@ -108,12 +109,12 @@ func codexAppServerCapabilities() []string {
 }
 ```
 
-- [ ] **Step 4: 跑測試確認通過**
+- [x] **Step 4: 跑測試確認通過**
 
 Run: `go test ./runtime/ -run "TestCodexAppServerCapabilities" -count=1`
 Expected: PASS（含既有 SessionState 相關測試——若 `TestCodexAppServerAdapterSessionStateIncludesModelsAccountAndRateLimits` 斷言 capabilities 內容,同步其期望值）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/agent/daemon/runtime/capabilities.go packages/agent/daemon/runtime/codex_appserver_events.go packages/agent/daemon/runtime/capabilities_test.go
@@ -123,6 +124,7 @@ git commit -m "feat(agent): shared capability vocabulary, align codex list"
 ### Task 2: StandardACPAdapter 上報 capabilities
 
 **Files:**
+
 - Modify: `packages/agent/daemon/runtime/capabilities.go`（追加派生函數）
 - Modify: `packages/agent/daemon/runtime/standard_acp_adapter.go`（`SessionState` 內 usage 上報處附近，約 :1282）
 - Test: `packages/agent/daemon/runtime/capabilities_test.go`
@@ -250,6 +252,7 @@ git commit -m "feat(agent): standard ACP adapters report runtime capabilities"
 ### Task 3: nextopd 靜態預設 capabilities
 
 **Files:**
+
 - Modify: `services/nextopd/service/agent/composer_options.go`（`GetComposerOptions` runtimeContext 構造處 :101-107、`composerPromptCapabilities` :128 下方追加）
 - Test: `services/nextopd/service/agent/composer_options_test.go`（若不存在則新建；先 `ls services/nextopd/service/agent/*_test.go` 確認）
 
@@ -333,6 +336,7 @@ git commit -m "feat(nextopd): static capability defaults in composer options"
 ### Task 4: activity-core `resolveAgentActivityCapability`
 
 **Files:**
+
 - Create: `packages/agent/activity-core/src/capabilities.ts`
 - Modify: `packages/agent/activity-core/src/selectors.ts`（複用其 `recordValue` 輔助；若不可導出則在新文件重新實現局部版本）
 - Modify: `packages/agent/activity-core/src/index.ts`（或該包的導出入口，先 grep `resolveAgentActivityPromptImagesSupported` 的導出位置照做）
@@ -387,17 +391,24 @@ test("imageInput falls back to legacy promptCapabilities", () => {
   );
   assert.equal(
     resolveAgentActivityCapability("imageInput", {
-      composerOptions: { runtimeContext: { promptCapabilities: { image: false } } }
+      composerOptions: {
+        runtimeContext: { promptCapabilities: { image: false } }
+      }
     }),
     false
   );
 });
 
 test("vocabulary matches the Go side", () => {
-  assert.deepEqual(
-    [...AGENT_CAPABILITY_KEYS].sort(),
-    ["compact", "imageInput", "interrupt", "planMode", "rateLimits", "skills", "tokenUsage"]
-  );
+  assert.deepEqual([...AGENT_CAPABILITY_KEYS].sort(), [
+    "compact",
+    "imageInput",
+    "interrupt",
+    "planMode",
+    "rateLimits",
+    "skills",
+    "tokenUsage"
+  ]);
 });
 ```
 
@@ -477,6 +488,7 @@ git commit -m "feat(activity-core): capability resolution selector with static f
 ### Task 5: compact 能力門控接入 slash 命令策略
 
 **Files:**
+
 - Modify: `packages/agent/gui/agent-gui/agentGuiNode/model/agentSlashCommandProviderPolicy.ts`（`resolveSlashCommandsForProvider` :59-79、`filterUnavailableSlashCommands`）
 - Modify: 其調用方（先 `grep -rn "resolveSlashCommandsForProvider(" packages/agent/gui apps/desktop --include="*.ts*" | grep -v test` 找到全部調用點,傳入新參數）
 - Test: `packages/agent/gui/agent-gui/agentGuiNode/model/agentSlashCommandProviderPolicy.test.ts`（新建,vitest）
@@ -545,7 +557,7 @@ if (commandName === "compact") {
 compactSupported: resolveAgentActivityCapability("compact", {
   sessionRuntimeContext,
   composerOptions
-})
+});
 ```
 
 若調用點拿不到這兩者（純展示路徑），傳 `undefined` 保持現狀並在代碼處留一行註釋說明數據不可達。

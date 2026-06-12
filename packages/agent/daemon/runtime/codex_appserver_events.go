@@ -1076,16 +1076,17 @@ func codexAppServerCommands() []AgentSessionCommand {
 
 func codexAppServerCapabilities() []string {
 	return []string{
-		"imageInput",
-		"interrupt",
+		CapabilityImageInput,
+		CapabilitySkills,
+		CapabilityInterrupt,
+		CapabilityCompact,
+		CapabilityRateLimits,
+		CapabilityTokenUsage,
 		"steer",
 		"review",
-		"compact",
 		"rollback",
 		"fork",
 		"perTurnModelOverride",
-		"rateLimits",
-		"tokenUsage",
 	}
 }
 
