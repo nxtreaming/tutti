@@ -164,15 +164,6 @@ function clearDockSlotMagnification(
   shell?.style.removeProperty("transform");
 }
 
-function clearMagnificationLayoutPin(
-  dockRoot: HTMLElement | null | undefined
-): void {
-  const itemsElement = dockRoot?.querySelector<HTMLElement>(
-    ".desktop-dock__items"
-  );
-  itemsElement?.style.removeProperty("--desktop-dock-magnify-start-padding");
-}
-
 export function useDockMagnification({
   dockPlacement,
   dockRootRef,
@@ -204,7 +195,6 @@ export function useDockMagnification({
         dockRootRef.current?.setAttribute("data-dock-pointer-active", "true");
       } else {
         dockRootRef.current?.removeAttribute("data-dock-pointer-active");
-        clearMagnificationLayoutPin(dockRootRef.current);
       }
     },
     [dockRootRef]
@@ -234,43 +224,6 @@ export function useDockMagnification({
     slotOrderRef.current = order;
     restCentersRef.current = centers;
   }, [dockPlacement, slotRefs]);
-
-  const pinMagnificationLayout = useCallback(() => {
-    const dockRoot = dockRootRef.current;
-    const itemsElement = dockRoot?.querySelector<HTMLElement>(
-      ".desktop-dock__items"
-    );
-    if (
-      !dockRoot ||
-      !itemsElement ||
-      dockRoot.hasAttribute("data-scroll-overflow")
-    ) {
-      return;
-    }
-
-    const isVertical = dockPlacement === "left";
-    const firstChild = itemsElement.firstElementChild;
-    if (!(firstChild instanceof HTMLElement)) {
-      return;
-    }
-
-    const containerRect = itemsElement.getBoundingClientRect();
-    const firstRect = firstChild.getBoundingClientRect();
-    const anchorOffset = isVertical
-      ? firstRect.top - containerRect.top + itemsElement.scrollTop
-      : firstRect.left - containerRect.left + itemsElement.scrollLeft;
-
-    itemsElement.style.setProperty(
-      "--desktop-dock-magnify-start-padding",
-      `${Math.max(0, anchorOffset)}px`
-    );
-  }, [dockPlacement, dockRootRef]);
-
-  const beginMagnificationSession = useCallback(() => {
-    pinMagnificationLayout();
-    setMagnifyActive(true);
-    captureRestCenters();
-  }, [captureRestCenters, pinMagnificationLayout, setMagnifyActive]);
 
   const runAnimationFrame = useCallback(
     (frameTime: number) => {
@@ -418,11 +371,12 @@ export function useDockMagnification({
       pendingPointerAxisRef.current =
         dockPlacement === "left" ? clientY : clientX;
       if (restCentersRef.current === null) {
-        beginMagnificationSession();
+        captureRestCenters();
+        setMagnifyActive(true);
       }
       scheduleAnimation();
     },
-    [beginMagnificationSession, dockPlacement, scheduleAnimation]
+    [captureRestCenters, dockPlacement, scheduleAnimation, setMagnifyActive]
   );
 
   const handlePointerLeave = useCallback(() => {
@@ -465,9 +419,8 @@ export function useDockMagnification({
     slotOrderRef.current = [];
     pointerAxisRef.current = null;
     pendingPointerAxisRef.current = null;
-    clearMagnificationLayoutPin(dockRootRef.current);
     setMagnifyActive(false);
-  }, [dockRootRef, setMagnifyActive, slotRefs, stopAnimation]);
+  }, [setMagnifyActive, slotRefs, stopAnimation]);
 
   useEffect(
     () => () => {

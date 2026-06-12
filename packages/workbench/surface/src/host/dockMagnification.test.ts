@@ -65,13 +65,7 @@ test("dock magnification caches slot shell lookups during animation", () => {
   );
 });
 
-test("dock magnification pins layout before reading live slot centers", () => {
-  assert.match(source, /pinMagnificationLayout/);
-  assert.match(source, /beginMagnificationSession/);
-  assert.match(
-    source,
-    /pinMagnificationLayout\(\);\s*setMagnifyActive\(true\);\s*captureRestCenters\(\);/
-  );
+test("dock magnification refreshes slot centers while pointer is active", () => {
   assert.match(
     source,
     /if \(pointerAxis !== null\) \{[\s\S]*?captureRestCenters\(\);/
