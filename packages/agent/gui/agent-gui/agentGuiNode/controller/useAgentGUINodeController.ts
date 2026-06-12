@@ -1921,7 +1921,14 @@ export function useAgentGUINodeController({
   const activePendingPromptRef = useRef<{
     sessionId: string;
     requestId: string;
+    kind: string | null;
   } | null>(null);
+  // Bridges submitInteractivePrompt (defined earlier) to
+  // updateComposerSettings (defined later); assigned right after the
+  // callback's definition.
+  const updateComposerSettingsRef = useRef<
+    (nextSettings: Partial<AgentSessionComposerSettings>) => void
+  >(() => {});
   const [isRespondingApproval, setIsRespondingApproval] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [isDeletingProjectConversations, setIsDeletingProjectConversations] =
@@ -4803,6 +4810,7 @@ export function useAgentGUINodeController({
       }
       setIsRespondingApproval(true);
       setDetailError(null);
+      const submittedPrompt = activePendingPromptRef.current;
       void Promise.resolve()
         .then(() => {
           if (!isCurrentConversation(agentSessionId)) {
@@ -4820,6 +4828,15 @@ export function useAgentGUINodeController({
         .then((result) => {
           if (!result || !isCurrentConversation(agentSessionId)) {
             return;
+          }
+          if (
+            submittedPrompt?.requestId === normalizedRequestId &&
+            submittedPrompt.kind === "exit-plan" &&
+            input.action === "allow"
+          ) {
+            // Plan approved: leave plan mode so the next turn executes
+            // instead of replanning.
+            updateComposerSettingsRef.current({ planMode: false });
           }
           void refreshMessagesFromSnapshot(agentSessionId);
           void loadSessionState(agentSessionId);
@@ -5262,6 +5279,7 @@ export function useAgentGUINodeController({
       sessionViewRef
     ]
   );
+  updateComposerSettingsRef.current = updateComposerSettings;
 
   useEffect(() => {
     if (!activeConversationId) {
@@ -6215,10 +6233,15 @@ export function useAgentGUINodeController({
       activeConversationId !== null && activeRawPromptRequestId !== null
         ? {
             sessionId: activeConversationId,
-            requestId: activeRawPromptRequestId
+            requestId: activeRawPromptRequestId,
+            kind: rawPendingInteractivePrompt?.kind ?? null
           }
         : null;
-  }, [activeConversationId, activeRawPromptRequestId]);
+  }, [
+    activeConversationId,
+    activeRawPromptRequestId,
+    rawPendingInteractivePrompt
+  ]);
 
   useEffect(() => {
     if (activeConversationId === null || suppressedPromptRequestId === null) {

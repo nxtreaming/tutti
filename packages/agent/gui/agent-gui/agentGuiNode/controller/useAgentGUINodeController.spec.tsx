@@ -8312,6 +8312,127 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
+  function installExitPlanPromptHostApi(input: {
+    submitInteractive: ReturnType<typeof vi.fn>;
+    updateSettings: ReturnType<typeof vi.fn>;
+  }): void {
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      getState: vi.fn(async () =>
+        agentSessionState("session-1", {
+          provider: "claude-code",
+          settings: {
+            planMode: true,
+            permissionModeId: "default"
+          },
+          pendingInteractive: {
+            kind: "question",
+            requestId: "request-plan",
+            toolName: "ExitPlanMode",
+            status: "waiting",
+            input: {
+              callId: "call-plan"
+            }
+          }
+        })
+      ),
+      submitInteractive: input.submitInteractive,
+      updateSettings: input.updateSettings
+    });
+  }
+
+  it("clears plan mode after approving an exit-plan prompt", async () => {
+    const submitInteractive = vi.fn(async () => ({
+      agentSessionId: "session-1",
+      requestId: "request-plan",
+      accepted: true,
+      events: []
+    }));
+    const updateSettings = vi.fn(async ({ settings }) => ({ settings }));
+    installExitPlanPromptHostApi({ submitInteractive, updateSettings });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "claude-code"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.pendingInteractivePrompt?.kind).toBe(
+        "exit-plan"
+      );
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "request-plan",
+        action: "allow",
+        optionId: "acceptEdits"
+      });
+    });
+
+    await waitFor(() => {
+      expect(submitInteractive).toHaveBeenCalled();
+    });
+    // Plan approved: the composer setting is cleared so the next turn
+    // executes instead of replanning.
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ planMode: false })
+        })
+      );
+    });
+  });
+
+  it("keeps plan mode after rejecting an exit-plan prompt", async () => {
+    const submitInteractive = vi.fn(async () => ({
+      agentSessionId: "session-1",
+      requestId: "request-plan",
+      accepted: true,
+      events: []
+    }));
+    const updateSettings = vi.fn(async ({ settings }) => ({ settings }));
+    installExitPlanPromptHostApi({ submitInteractive, updateSettings });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "claude-code"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.pendingInteractivePrompt?.kind).toBe(
+        "exit-plan"
+      );
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "request-plan",
+        action: "deny",
+        payload: { denyMessage: "keep planning" }
+      });
+    });
+
+    await waitFor(() => {
+      expect(submitInteractive).toHaveBeenCalled();
+    });
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
   it("reports caught approval submission errors to runtime diagnostics", async () => {
     const stackOverflow = new RangeError("Maximum call stack size exceeded");
     stackOverflow.stack =
