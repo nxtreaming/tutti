@@ -1049,11 +1049,14 @@ func TestCodexAppServerAdapterRequestUserInput(t *testing.T) {
 		t.Fatalf("pending interactive = %#v, want ask-user", state.PendingInteractive)
 	}
 
+	// Mirror the GUI contract: `answers` is a flat display list and the
+	// per-question map lives under answersByQuestionId.
 	if _, err := adapter.SubmitInteractive(context.Background(), session, SubmitInteractiveInput{
 		RequestID: "question-1",
-		Action:    "submitted",
+		Action:    "submit",
 		Payload: map[string]any{
-			"answers": map[string]any{"q1": "postgres"},
+			"answers":             []any{"postgres"},
+			"answersByQuestionId": map[string]any{"q1": "postgres"},
 		},
 	}); err != nil {
 		t.Fatalf("SubmitInteractive: %v", err)

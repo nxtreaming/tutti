@@ -801,8 +801,15 @@ func appServerApprovalResult(method string, params map[string]any, selection pen
 
 func appServerUserInputAnswers(params map[string]any, selection pendingACPResponse) map[string]any {
 	answers := map[string]any{}
-	if payloadAnswers := payloadObject(selection.payload["answers"]); len(payloadAnswers) > 0 {
-		for questionID, value := range payloadAnswers {
+	// The GUI sends per-question answers keyed by question id under
+	// answersByQuestionId (its `answers` field is a flat display list, not a
+	// map). Accept a bare `answers` map too for callers that inline it.
+	keyed := payloadObject(selection.payload["answersByQuestionId"])
+	if len(keyed) == 0 {
+		keyed = payloadObject(selection.payload["answers"])
+	}
+	if len(keyed) > 0 {
+		for questionID, value := range keyed {
 			answers[questionID] = map[string]any{"answers": appServerAnswerValues(value)}
 		}
 		return answers
