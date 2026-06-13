@@ -363,21 +363,32 @@ function askUserPromptFromMessage(
     return null;
   }
   const payload = recordValue(message.payload);
-  const questions = arrayValue(payload.questions).flatMap((value, index) => {
+  // The structured questions live on the tool-call input (payload.input.questions
+  // or payload.tool_state.input.questions) — the same source the in-conversation
+  // projection reads — so the deck card renders the identical question + options.
+  // payload.questions is a legacy fallback for shapes that inline them.
+  const toolState = recordValue(payload.tool_state);
+  const input =
+    Object.keys(recordValue(payload.input)).length > 0
+      ? recordValue(payload.input)
+      : recordValue(toolState.input);
+  const rawQuestions =
+    arrayValue(input.questions).length > 0
+      ? arrayValue(input.questions)
+      : arrayValue(payload.questions);
+  const questions = rawQuestions.flatMap((value, index) => {
     const question = recordValue(value);
-    const id = stringValue(question.id) ?? `question-${index + 1}`;
+    const header = stringValue(question.header);
     const label =
-      stringValue(question.question) ??
-      stringValue(question.header) ??
-      stringValue(question.label);
-    if (!label) {
+      stringValue(question.question) ?? header ?? stringValue(question.label);
+    if (!label && !header) {
       return [];
     }
     return [
       {
-        id,
-        header: stringValue(question.header) ?? label,
-        question: label,
+        id: stringValue(question.id) ?? `question-${index + 1}`,
+        header: header ?? label ?? `Question ${index + 1}`,
+        question: label ?? header ?? `Question ${index + 1}`,
         options: arrayValue(question.options).flatMap((optionValue) => {
           const option = recordValue(optionValue);
           const optionLabel = stringValue(option.label);
@@ -401,6 +412,7 @@ function askUserPromptFromMessage(
   return {
     kind: "ask-user",
     requestId:
+      stringValue(input.requestId) ??
       stringValue(payload.requestId) ??
       stringValue(payload.interactiveRequestId) ??
       message.messageId,

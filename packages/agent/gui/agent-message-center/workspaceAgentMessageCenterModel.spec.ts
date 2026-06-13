@@ -330,6 +330,66 @@ describe("buildWorkspaceAgentMessageCenterModel", () => {
     });
   });
 
+  it("derives the full ask-user question with options from the tool input", () => {
+    const model = buildWorkspaceAgentMessageCenterModel(
+      snapshot({
+        messages: [
+          message({
+            agentSessionId: "session-1",
+            messageId: "ask-1",
+            role: "assistant",
+            kind: "tool_call",
+            status: "waiting",
+            payload: {
+              toolName: "AskUserQuestion",
+              input: {
+                requestId: "ask-req-1",
+                questions: [
+                  {
+                    id: "plan-kind",
+                    header: "Plan topic",
+                    question: "Which kind of plan do you want?",
+                    options: [
+                      {
+                        label: "Engineering health check",
+                        description: "Plan a low-risk repo audit."
+                      },
+                      {
+                        label: "Feature implementation plan",
+                        description: "Needs a feature name."
+                      }
+                    ],
+                    multiSelect: false
+                  }
+                ]
+              }
+            },
+            occurredAtUnixMs: 30
+          })
+        ],
+        sessions: [session({ agentSessionId: "session-1", status: "waiting" })]
+      })
+    );
+
+    // The deck card must render the same question + options the conversation
+    // shows, not a degraded fallback. Questions come from the tool input
+    // (payload.input.questions), mirroring the in-conversation projection.
+    expect(model.items[0]?.pendingPrompt).toMatchObject({
+      kind: "ask-user",
+      requestId: "ask-req-1",
+      questions: [
+        {
+          header: "Plan topic",
+          question: "Which kind of plan do you want?",
+          options: [
+            { label: "Engineering health check" },
+            { label: "Feature implementation plan" }
+          ]
+        }
+      ]
+    });
+  });
+
   it("uses caller-provided labels for needs-attention fallback prompts", () => {
     const model = buildWorkspaceAgentMessageCenterModel(
       snapshot({
