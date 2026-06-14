@@ -1,10 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/banner.jpg" alt="Tutti —— 人与 Agent 同频协作的地方" width="720" />
-
-<img src="docs/assets/tutti-logo.png" alt="Tutti logo" width="120" />
-
-# Tutti
+<img src="docs/assets/banner.jpg" alt="Tutti" width="720" />
 
 **人与 Agent「同频」协作的地方。**
 
