@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import {
   WorkspaceUserProjectSelect,
   type WorkspaceUserProjectSelectChangeAction,
@@ -693,20 +693,9 @@ export function AgentModelReasoningDropdown({
   const menuDisabled =
     triggerDisabled ||
     (!showModelSection && !showReasoningSection && !showSpeedSection);
-  // Radix opens submenus on hover/keyboard only; control them so a click on the
-  // row opens them too (the discoverable interaction users expect here).
-  const [openReasoningSub, setOpenReasoningSub] = useState(false);
-  const [openSpeedSub, setOpenSpeedSub] = useState(false);
 
   return (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (!open) {
-          setOpenReasoningSub(false);
-          setOpenSpeedSub(false);
-        }
-      }}
-    >
+    <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={menuDisabled}>
         <button
           type="button"
@@ -769,17 +758,10 @@ export function AgentModelReasoningDropdown({
           <DropdownMenuSeparator />
         ) : null}
         {showReasoningSection ? (
-          <DropdownMenuSub
-            open={openReasoningSub}
-            onOpenChange={setOpenReasoningSub}
-          >
+          <DropdownMenuSub>
             <DropdownMenuSubTrigger
               className={styles.composerMenuItem}
               data-agent-reasoning-submenu-trigger="true"
-              onClick={(event) => {
-                event.preventDefault();
-                setOpenReasoningSub(true);
-              }}
             >
               <span className="min-w-0 flex-1 truncate">
                 {labels.reasoningLabel}
@@ -806,14 +788,10 @@ export function AgentModelReasoningDropdown({
           </DropdownMenuSub>
         ) : null}
         {showSpeedSection ? (
-          <DropdownMenuSub open={openSpeedSub} onOpenChange={setOpenSpeedSub}>
+          <DropdownMenuSub>
             <DropdownMenuSubTrigger
               className={styles.composerMenuItem}
               data-agent-speed-submenu-trigger="true"
-              onClick={(event) => {
-                event.preventDefault();
-                setOpenSpeedSub(true);
-              }}
             >
               <span className="min-w-0 flex-1 truncate">
                 {labels.speedLabel}
