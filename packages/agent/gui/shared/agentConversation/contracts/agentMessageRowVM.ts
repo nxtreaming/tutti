@@ -8,7 +8,7 @@ export interface AgentMessageContentVM {
   body: string;
   copyText?: string | null;
   statusKind?: ToolCallStatusKind | null;
-  contentKind?: "text" | "image-grid";
+  contentKind?: "text" | "image-grid" | "plan";
   images?: AgentMessageImageVM[];
   occurredAtUnixMs: number | null;
   visibleError?: {

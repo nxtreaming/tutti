@@ -958,6 +958,139 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
+  it("submits the literal /compact prompt through submitCompact", async () => {
+    const exec = vi.fn(async ({ agentSessionId }: { agentSessionId: string }) =>
+      agentSession(agentSessionId, {
+        status: "working",
+        updatedAtUnixMs: Date.now()
+      })
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      exec,
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+
+    act(() => {
+      result.current.actions.submitCompact();
+    });
+
+    await waitFor(() => {
+      expect(exec).toHaveBeenCalledWith({
+        workspaceId: "room-1",
+        agentSessionId: "session-1",
+        content: [{ type: "text", text: "/compact" }]
+      });
+    });
+  });
+
+  it("fires usage threshold reminders once per tier and resets on falloff", async () => {
+    const usageRuntimeContext = (usedTokens: number) => ({
+      usage: {
+        contextWindow: { usedTokens, totalTokens: 100_000 }
+      }
+    });
+    let activityListener:
+      | ((event: AgentHostAgentActivityStreamEvent) => void)
+      | undefined;
+    const getState = vi.fn(async () =>
+      agentSessionState("session-1", {
+        runtimeContext: {
+          cwd: "/workspace",
+          ...usageRuntimeContext(10_000)
+        }
+      })
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn((_payload, listener) => {
+        activityListener = listener;
+        return vi.fn();
+      }),
+      getState
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(activityListener).toBeDefined();
+      expect(result.current.viewModel.usage?.percentUsed).toBe(10);
+    });
+    expect(result.current.viewModel.usageAlert).toBeNull();
+
+    const patchUsage = (usedTokens: number, occurredAtUnixMs: number) => {
+      act(() => {
+        activityListener?.({
+          eventType: "state_patch",
+          data: {
+            agentSessionId: "session-1",
+            runtimeContext: usageRuntimeContext(usedTokens),
+            occurredAtUnixMs
+          }
+        });
+      });
+    };
+
+    patchUsage(85_000, 20);
+    await waitFor(() => {
+      expect(result.current.viewModel.usage?.percentUsed).toBe(85);
+      expect(result.current.viewModel.usageAlert).toBe("warn");
+    });
+
+    act(() => {
+      result.current.actions.dismissUsageAlert();
+    });
+    expect(result.current.viewModel.usageAlert).toBeNull();
+
+    patchUsage(86_000, 30);
+    await waitFor(() => {
+      expect(result.current.viewModel.usage?.percentUsed).toBe(86);
+    });
+    expect(result.current.viewModel.usageAlert).toBeNull();
+
+    patchUsage(96_000, 40);
+    await waitFor(() => {
+      expect(result.current.viewModel.usageAlert).toBe("critical");
+    });
+
+    patchUsage(40_000, 50);
+    await waitFor(() => {
+      expect(result.current.viewModel.usage?.percentUsed).toBe(40);
+    });
+    expect(result.current.viewModel.usageAlert).toBeNull();
+
+    patchUsage(85_000, 60);
+    await waitFor(() => {
+      expect(result.current.viewModel.usageAlert).toBe("warn");
+    });
+  });
+
   it("selects an externally requested active conversation on an already-open panel", async () => {
     installAgentHostApi({
       list: vi.fn(async () => ({
@@ -2394,7 +2527,16 @@ describe("useAgentGUINodeController", () => {
       result.current.actions.updateComposerSettings({ planMode: false });
     });
 
-    expect(updateSettings).not.toHaveBeenCalled();
+    // Pass-through contract: the GUI no longer swallows planMode updates —
+    // the explicit false is sent and the daemon clamps per provider support.
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(1);
+    });
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({ planMode: false })
+      })
+    );
   });
 
   it("uses a newer completed ExitPlanMode tool event as the effective plan mode", async () => {
@@ -4935,6 +5077,102 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
+  describe.each(["codex", "claude-code"] as const)(
+    "compact busy recovery (%s)",
+    (provider) => {
+      it("clears busy UI when cancel returns a raw core created status", async () => {
+        let sessionStatus: "waiting" | "created" = "waiting";
+        const cancel = vi.fn(async () => {
+          sessionStatus = "created";
+          return {
+            agentSessionId: "session-1",
+            canceled: false,
+            reason: "no_active_turn",
+            sessionStatus: "created"
+          };
+        });
+        const getState = vi.fn(async () =>
+          sessionStatus === "waiting"
+            ? agentSessionState("session-1", {
+                status: "waiting",
+                pendingInteractive: {
+                  kind: "approval",
+                  requestId: "request-1",
+                  toolName: "Run command",
+                  status: "waiting",
+                  input: {
+                    callId: "call-1",
+                    options: [
+                      {
+                        id: "allow_once",
+                        label: "Allow once",
+                        kind: "allow_once"
+                      }
+                    ]
+                  }
+                }
+              })
+            : agentSessionState("session-1", { status: "created" })
+        );
+        const reportDiagnostic = vi.fn();
+        // Use a session with no turnPhase so result.session.currentPhase is null
+        // after cancel. Only projectCoreSessionStatus("created") → "ready" can
+        // then make cancelResultSessionStatusIsNonBusy return true; without the
+        // projection "created" is unknown to the normalizer → returns null →
+        // returnedSessionNonBusy: false, causing the assertion below to fail.
+        installAgentHostApi({
+          list: vi.fn(async () => ({
+            presences: [],
+            sessions: [
+              workspaceAgentSession("session-1", { turnPhase: undefined })
+            ]
+          })),
+          listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+          subscribeEvents: vi.fn(() => vi.fn()),
+          cancel,
+          getState
+        });
+        (
+          window as unknown as { agentActivityRuntime: AgentActivityRuntime }
+        ).agentActivityRuntime.reportDiagnostic = reportDiagnostic;
+
+        const { result } = renderHook(() =>
+          useAgentGUINodeController({
+            workspaceId: "room-1",
+            currentUserId: "user-1",
+            workspacePath: "/workspace",
+            avoidGroupingEdits: false,
+            data: agentGuiData("session-1", provider),
+            onDataChange: vi.fn()
+          })
+        );
+
+        await waitFor(() => {
+          expect(result.current.viewModel.pendingApproval?.requestId).toBe(
+            "request-1"
+          );
+        });
+
+        act(() => {
+          result.current.actions.interruptCurrentTurn("No running response");
+        });
+
+        await waitFor(() => {
+          expect(result.current.viewModel.canQueueWhileBusy).toBe(false);
+        });
+        const diagnosticPayload = reportDiagnostic.mock.calls.find(
+          ([payload]) => payload?.event === "agent.gui.cancel.noop"
+        )?.[0];
+        expect(diagnosticPayload?.details).toEqual(
+          expect.objectContaining({
+            returnedSessionNonBusy: true,
+            returnedSessionStatus: "created"
+          })
+        );
+      });
+    }
+  );
+
   it("promotes provider-session-not-found from getState into the live recovery state", async () => {
     const getState = vi.fn(async () => {
       throw {
@@ -5504,7 +5742,9 @@ describe("useAgentGUINodeController", () => {
       ).toMatchObject({
         model: "gpt-5",
         reasoningEffort: "high",
-        planMode: false,
+        // Stored planMode passes through unclamped — the daemon clamps it for
+        // providers without the capability.
+        planMode: true,
         permissionModeId: "auto"
       });
     });
@@ -5631,7 +5871,8 @@ describe("useAgentGUINodeController", () => {
       ).toMatchObject({
         model: "gpt-5",
         reasoningEffort: "high",
-        planMode: false,
+        // planMode passes through unclamped — the daemon clamps per provider.
+        planMode: true,
         permissionModeId: "full-access"
       });
     });
@@ -5650,7 +5891,8 @@ describe("useAgentGUINodeController", () => {
           settings: {
             model: "gpt-5",
             reasoningEffort: "high",
-            planMode: false,
+            // Sent as-is; tuttid clamps planMode for codex at session create.
+            planMode: true,
             permissionModeId: "full-access"
           }
         })
@@ -5733,7 +5975,8 @@ describe("useAgentGUINodeController", () => {
           settings: {
             model: settings.model ?? "gpt-5",
             reasoningEffort: settings.reasoningEffort ?? "medium",
-            planMode: settings.planMode ?? false,
+            // Emulates the daemon clamping planMode for codex.
+            planMode: false,
             permissionModeId: settings.permissionModeId ?? "auto"
           }
         }))
@@ -5825,7 +6068,9 @@ describe("useAgentGUINodeController", () => {
       ).toMatchObject({
         model: "gpt-5.1",
         reasoningEffort: "high",
-        planMode: false,
+        // Optimistic patch carries planMode through; the daemon clamps it for
+        // codex and the server echo below resets it to false.
+        planMode: true,
         permissionModeId: "auto"
       });
     });
@@ -5842,7 +6087,8 @@ describe("useAgentGUINodeController", () => {
         agentSessionId: "session-1",
         settings: {
           model: "gpt-5.1",
-          reasoningEffort: "high"
+          reasoningEffort: "high",
+          planMode: true
         }
       });
     });
@@ -5871,6 +6117,7 @@ describe("useAgentGUINodeController", () => {
     ).toMatchObject({
       model: "gpt-5.1",
       reasoningEffort: "high",
+      // The server echo (daemon clamp) resyncs the draft back to false.
       planMode: false,
       permissionModeId: "auto"
     });
@@ -5894,7 +6141,9 @@ describe("useAgentGUINodeController", () => {
       composerOverrides: {
         model: "gpt-5.1",
         reasoningEffort: "high",
-        planMode: false,
+        // Node defaults persist the requested value unclamped — the daemon
+        // clamps it whenever the stored value is used.
+        planMode: true,
         permissionModeId: "auto"
       }
     });
@@ -6836,7 +7085,8 @@ describe("useAgentGUINodeController", () => {
       result.current.viewModel.composerSettings.draftSettings
     ).toMatchObject({
       model: "gpt-5",
-      planMode: false,
+      // planMode passes through unclamped — the daemon clamps per provider.
+      planMode: true,
       permissionModeId: "full-access"
     });
     expect(onDataChange).toHaveBeenCalled();
@@ -7642,7 +7892,7 @@ describe("useAgentGUINodeController", () => {
   });
 
   it.each([
-    ["claude-code", false],
+    ["claude-code", true],
     ["codex", false],
     ["gemini", false]
   ] as const)(
@@ -7651,7 +7901,20 @@ describe("useAgentGUINodeController", () => {
       installAgentHostApi({
         list: vi.fn(async () => ({ presences: [], sessions: [] })),
         listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
-        subscribeEvents: vi.fn(() => vi.fn())
+        subscribeEvents: vi.fn(() => vi.fn()),
+        getComposerOptions: vi.fn(async () => ({
+          provider,
+          modelConfig: {
+            configurable: true,
+            options: [{ id: "gpt-5", label: "GPT-5", value: "gpt-5" }]
+          },
+          reasoningConfig: {
+            configurable: true,
+            options: [{ id: "high", label: "High", value: "high" }]
+          },
+          runtimeContext:
+            provider === "claude-code" ? { capabilities: ["planMode"] } : {}
+        }))
       });
 
       const { result, unmount } = renderHook(() =>
@@ -7779,9 +8042,9 @@ describe("useAgentGUINodeController", () => {
             backendPromptImagesSupported === null
               ? {}
               : {
-                  promptCapabilities: {
-                    image: backendPromptImagesSupported
-                  }
+                  capabilities: backendPromptImagesSupported
+                    ? ["imageInput"]
+                    : []
                 }
         }))
       });
@@ -8102,12 +8365,14 @@ describe("useAgentGUINodeController", () => {
       expect(
         result.current.viewModel.composerSettings.supportsReasoningEffort
       ).toBe(false);
+      // Stored overrides are no longer clamped GUI-side — the daemon owns
+      // provider-level clamping; the composer simply hides the controls.
       expect(
         result.current.viewModel.composerSettings.draftSettings.model
-      ).toBeNull();
+      ).toBe("gpt-5");
       expect(
         result.current.viewModel.composerSettings.draftSettings.reasoningEffort
-      ).toBeNull();
+      ).toBe("high");
       expect(listModels).not.toHaveBeenCalled();
       unmount();
     }
@@ -8183,6 +8448,439 @@ describe("useAgentGUINodeController", () => {
         optionId: "allow_once"
       });
     });
+  });
+
+  function installExitPlanPromptHostApi(input: {
+    submitInteractive: ReturnType<typeof vi.fn>;
+    updateSettings: ReturnType<typeof vi.fn>;
+  }): void {
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      getState: vi.fn(async () =>
+        agentSessionState("session-1", {
+          provider: "claude-code",
+          settings: {
+            planMode: true,
+            permissionModeId: "default"
+          },
+          pendingInteractive: {
+            kind: "question",
+            requestId: "request-plan",
+            toolName: "ExitPlanMode",
+            status: "waiting",
+            input: {
+              callId: "call-plan"
+            }
+          }
+        })
+      ),
+      submitInteractive: input.submitInteractive,
+      updateSettings: input.updateSettings
+    });
+  }
+
+  it("clears plan mode after approving an exit-plan prompt", async () => {
+    const submitInteractive = vi.fn(async () => ({
+      agentSessionId: "session-1",
+      requestId: "request-plan",
+      accepted: true,
+      events: []
+    }));
+    const updateSettings = vi.fn(async ({ settings }) => ({ settings }));
+    installExitPlanPromptHostApi({ submitInteractive, updateSettings });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "claude-code"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.pendingInteractivePrompt?.kind).toBe(
+        "exit-plan"
+      );
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "request-plan",
+        action: "allow",
+        optionId: "acceptEdits"
+      });
+    });
+
+    await waitFor(() => {
+      expect(submitInteractive).toHaveBeenCalled();
+    });
+    // Plan approved: the composer setting is cleared so the next turn
+    // executes instead of replanning.
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ planMode: false })
+        })
+      );
+    });
+  });
+
+  it("submits plan feedback as a prompt while staying in plan mode", async () => {
+    const exec = vi.fn(async () => ({ events: [] }));
+    const updateSettings = vi.fn(async ({ settings }) => ({ settings }));
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      getState: vi.fn(async () =>
+        agentSessionState("session-1", {
+          provider: "codex",
+          settings: { planMode: true, permissionModeId: "auto" }
+        })
+      ),
+      exec,
+      updateSettings
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "codex"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "turn-plan",
+        action: "feedback",
+        payload: { text: "focus on failing tests" }
+      });
+    });
+
+    await waitFor(() => {
+      expect(exec).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: [{ type: "text", text: "focus on failing tests" }]
+        })
+      );
+    });
+    // Feedback never flips plan mode off.
+    expect(updateSettings).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({ planMode: false })
+      })
+    );
+  });
+
+  it("ignores empty plan feedback without submitting a prompt", async () => {
+    const exec = vi.fn(async () => ({ events: [] }));
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      getState: vi.fn(async () =>
+        agentSessionState("session-1", {
+          provider: "codex",
+          settings: { planMode: true, permissionModeId: "auto" }
+        })
+      ),
+      exec
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "codex"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "turn-plan",
+        action: "feedback",
+        payload: { text: "   " }
+      });
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("offers plan implementation when the latest codex turn produced a plan item", async () => {
+    const planTimelineItem = {
+      id: 1,
+      workspaceId: "room-1",
+      agentSessionId: "session-1",
+      turnId: "turn-plan",
+      eventId: "plan-msg-1",
+      actorType: "agent",
+      actorId: "codex",
+      itemType: "message",
+      role: "assistant",
+      content: "# Plan\n1. inspect",
+      payload: { messageKind: "plan" },
+      occurredAtUnixMs: 10,
+      createdAtUnixMs: 10
+    } as unknown as Parameters<typeof timelineItemToMessage>[0];
+
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({
+        timelineItems: [planTimelineItem]
+      })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      getComposerOptions: vi.fn(async () => ({
+        provider: "codex",
+        modelConfig: { configurable: true, options: [] },
+        reasoningConfig: { configurable: true, options: [] },
+        runtimeContext: { capabilities: ["planMode"] }
+      })),
+      getState: vi.fn(async () =>
+        agentSessionState("session-1", {
+          provider: "codex",
+          status: "ready",
+          settings: { planMode: true, permissionModeId: "auto" },
+          runtimeContext: { capabilities: ["planMode"] }
+        })
+      )
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "codex"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.pendingInteractivePrompt).toEqual(
+        expect.objectContaining({
+          kind: "plan-implementation",
+          requestId: "turn-plan"
+        })
+      );
+    });
+
+    // Skip suppresses the offer for that plan turn.
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "turn-plan",
+        action: "skip"
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.viewModel.pendingInteractivePrompt).toBeNull();
+    });
+  });
+
+  it("implements a codex plan by leaving plan mode then submitting the literal prompt", async () => {
+    const exec = vi.fn(async () => ({ events: [] }));
+    const updateSettings = vi.fn(async ({ settings }) => ({ settings }));
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      getState: vi.fn(async () =>
+        agentSessionState("session-1", {
+          provider: "codex",
+          settings: {
+            planMode: true,
+            permissionModeId: "auto"
+          }
+        })
+      ),
+      exec,
+      updateSettings
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "codex"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "turn-plan",
+        action: "implement"
+      });
+    });
+
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ planMode: false })
+        })
+      );
+    });
+    await waitFor(() => {
+      expect(exec).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: [{ type: "text", text: "Implement the plan." }]
+        })
+      );
+    });
+  });
+
+  it("does not submit plan implementation when leaving plan mode fails", async () => {
+    const planTimelineItem = {
+      id: 1,
+      workspaceId: "room-1",
+      agentSessionId: "session-1",
+      turnId: "turn-plan",
+      eventId: "plan-msg-1",
+      actorType: "agent",
+      actorId: "codex",
+      itemType: "message",
+      role: "assistant",
+      content: "# Plan\n1. inspect",
+      payload: { messageKind: "plan" },
+      occurredAtUnixMs: 10,
+      createdAtUnixMs: 10
+    } as unknown as Parameters<typeof timelineItemToMessage>[0];
+    const exec = vi.fn(async () => ({ events: [] }));
+    const updateSettings = vi.fn(async () => {
+      throw new Error("daemon disconnected");
+    });
+    installAgentHostApi({
+      list: vi.fn(async () => snapshotWithSession("session-1")),
+      listSessionTimeline: vi.fn(async () => ({
+        timelineItems: [planTimelineItem]
+      })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      getState: vi.fn(async () =>
+        agentSessionState("session-1", {
+          provider: "codex",
+          status: "ready",
+          settings: {
+            planMode: true,
+            permissionModeId: "auto"
+          },
+          runtimeContext: { capabilities: ["planMode"] }
+        })
+      ),
+      exec,
+      updateSettings
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "codex"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.pendingInteractivePrompt).toEqual(
+        expect.objectContaining({
+          kind: "plan-implementation",
+          requestId: "turn-plan"
+        })
+      );
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "turn-plan",
+        action: "implement"
+      });
+    });
+
+    await waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ planMode: false })
+        })
+      );
+    });
+    await Promise.resolve();
+
+    expect(exec).not.toHaveBeenCalled();
+    expect(result.current.viewModel.pendingInteractivePrompt).toEqual(
+      expect.objectContaining({
+        kind: "plan-implementation",
+        requestId: "turn-plan"
+      })
+    );
+  });
+
+  it("keeps plan mode after rejecting an exit-plan prompt", async () => {
+    const submitInteractive = vi.fn(async () => ({
+      agentSessionId: "session-1",
+      requestId: "request-plan",
+      accepted: true,
+      events: []
+    }));
+    const updateSettings = vi.fn(async ({ settings }) => ({ settings }));
+    installExitPlanPromptHostApi({ submitInteractive, updateSettings });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1", "claude-code"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.pendingInteractivePrompt?.kind).toBe(
+        "exit-plan"
+      );
+    });
+
+    act(() => {
+      result.current.actions.submitInteractivePrompt({
+        requestId: "request-plan",
+        action: "deny",
+        payload: { denyMessage: "keep planning" }
+      });
+    });
+
+    await waitFor(() => {
+      expect(submitInteractive).toHaveBeenCalled();
+    });
+    expect(updateSettings).not.toHaveBeenCalled();
   });
 
   it("reports caught approval submission errors to runtime diagnostics", async () => {
@@ -10591,22 +11289,36 @@ function composerOptionsFromRuntimeResult(
   const configOptions = Array.isArray(runtimeContext.configOptions)
     ? runtimeContext.configOptions
     : [];
+  const models = Array.isArray(result.models)
+    ? settingOptionsFromRuntimeOptions(result.models)
+    : settingOptionsFromRuntimeConfig(
+        recordValue(result.modelConfig),
+        configOptions,
+        ["model"]
+      );
+  const reasoningEfforts = Array.isArray(result.reasoningEfforts)
+    ? settingOptionsFromRuntimeOptions(result.reasoningEfforts)
+    : settingOptionsFromRuntimeConfig(
+        recordValue(result.reasoningConfig),
+        configOptions,
+        ["reasoning_effort", "model_reasoning_effort", "effort"]
+      );
+  const modelConfig = recordValue(result.modelConfig) ?? {};
+  const reasoningConfig = recordValue(result.reasoningConfig) ?? {};
+  // Mirrors the production adapter mapping: configurable comes from the wire,
+  // with a fixture convenience fallback to "has any options".
+  const modelConfigurable =
+    modelConfig.configurable === true ||
+    (modelConfig.configurable === undefined && models.length > 0);
+  const reasoningConfigurable =
+    reasoningConfig.configurable === true ||
+    (reasoningConfig.configurable === undefined && reasoningEfforts.length > 0);
   return {
     provider: normalizeConfigOptionValue(result.provider) ?? provider,
-    models: Array.isArray(result.models)
-      ? settingOptionsFromRuntimeOptions(result.models)
-      : settingOptionsFromRuntimeConfig(
-          recordValue(result.modelConfig),
-          configOptions,
-          ["model"]
-        ),
-    reasoningEfforts: Array.isArray(result.reasoningEfforts)
-      ? settingOptionsFromRuntimeOptions(result.reasoningEfforts)
-      : settingOptionsFromRuntimeConfig(
-          recordValue(result.reasoningConfig),
-          configOptions,
-          ["reasoning_effort", "model_reasoning_effort", "effort"]
-        ),
+    models,
+    reasoningEfforts,
+    modelConfigurable,
+    reasoningConfigurable,
     permissionConfig: permissionConfigFromRuntimeResult(
       result.permissionConfig
     ),

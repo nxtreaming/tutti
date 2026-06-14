@@ -10,6 +10,10 @@ export {
   isPromptRequestIdTitle
 } from "../shared/agentConversation/promptToolDetails";
 export { approvalOptionDisplayLabel } from "../shared/agentConversation/approvalOptionPresentation";
+export {
+  PLAN_IMPLEMENTATION_ACTION_IMPLEMENT,
+  PLAN_IMPLEMENTATION_PROMPT
+} from "../shared/agentConversation/planImplementation";
 export type { PromptToolDetail } from "../shared/agentConversation/promptToolDetails";
 export type { WorkspaceAgentMessageCenterPanelProps } from "./WorkspaceAgentMessageCenterPanel";
 export type { WorkspaceAgentMessageCenterCardProps } from "./WorkspaceAgentMessageCenterCard";

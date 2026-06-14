@@ -389,8 +389,13 @@ function canMergeAdjacentAssistantMessageRows(
 function isSpecialAssistantMessage(message: {
   visibleError?: unknown;
   systemNotice?: unknown;
+  contentKind?: string;
 }): boolean {
-  return Boolean(message.visibleError || message.systemNotice);
+  return Boolean(
+    message.visibleError ||
+    message.systemNotice ||
+    message.contentKind === "plan"
+  );
 }
 
 function shouldShowTurnSummaryForTurn(

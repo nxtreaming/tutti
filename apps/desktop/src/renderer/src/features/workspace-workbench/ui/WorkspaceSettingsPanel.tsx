@@ -52,6 +52,7 @@ import {
   type DesktopThemeSource
 } from "../../../../../shared/theme/index.ts";
 import { useWorkspaceSettingsService } from "./useWorkspaceSettingsService";
+import { WorkspaceAgentSkillsSettings } from "./WorkspaceAgentSkillsSettings";
 import { useWorkspaceWorkbenchHostService } from "./useWorkspaceWorkbenchHostService";
 import { CustomWallpaperImageError } from "../services/customWallpaper";
 import {
@@ -159,6 +160,10 @@ export function WorkspaceSettingsPanel({
               label: t("workspace.settings.nav.apps")
             },
             {
+              id: "agent" as const,
+              label: t("workspace.settings.nav.agent")
+            },
+            {
               id: "developer" as const,
               label: t("workspace.settings.nav.developer")
             }
@@ -254,6 +259,8 @@ export function WorkspaceSettingsPanel({
                   );
                 }}
               />
+            ) : settingsState.activeSection === "agent" ? (
+              <WorkspaceAgentSkillsSettings workspaceId={workspace.id} />
             ) : (
               <WorkspaceDeveloperSettingsSection
                 analyticsDebugAvailable={

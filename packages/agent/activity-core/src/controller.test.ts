@@ -731,6 +731,41 @@ test("controller force reload bypasses stale in-flight composer option loads", a
   );
 });
 
+test("loadComposerOptions refetches when cwd changes and caches per cwd", async () => {
+  const adapterCalls: Array<{
+    provider: string;
+    cwd: string | null | undefined;
+  }> = [];
+  const controller = createAgentActivityController({
+    adapter: fakeAdapter({
+      loadComposerOptions: async (input) => {
+        adapterCalls.push({ provider: input.provider, cwd: input.cwd });
+        return createComposerOptions({ provider: input.provider });
+      }
+    }),
+    workspaceId: "workspace-1"
+  });
+
+  const first = await controller.loadComposerOptions({
+    provider: "codex",
+    cwd: "/repo/a"
+  });
+  const cachedSame = await controller.loadComposerOptions({
+    provider: "codex",
+    cwd: "/repo/a"
+  });
+  assert.equal(adapterCalls.length, 1); // same cwd → cache hit
+  const afterSwitch = await controller.loadComposerOptions({
+    provider: "codex",
+    cwd: "/repo/b"
+  });
+  assert.equal(adapterCalls.length, 2); // cwd changed → refetch
+  assert.equal(adapterCalls[1]?.cwd, "/repo/b");
+  void first;
+  void cachedSame;
+  void afterSwitch;
+});
+
 function fakeAdapter(
   overrides: {
     listSessions?: AgentActivityAdapter["listSessions"];

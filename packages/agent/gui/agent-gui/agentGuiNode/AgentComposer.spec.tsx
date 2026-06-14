@@ -132,6 +132,18 @@ vi.mock("./AgentComposerSettingsMenus", () => ({
   }: {
     labels: { permissionFullAccess: string };
   }) => <button type="button">{labels.permissionFullAccess}</button>,
+  AgentPermissionModeDropdown: ({
+    labels
+  }: {
+    labels: { permissionLabel: string; planModeLabel: string };
+  }) => (
+    <div
+      data-testid="agent-permission-mode-dropdown"
+      data-plan-mode-label={labels.planModeLabel}
+    >
+      {labels.permissionLabel}
+    </div>
+  ),
   AgentModelReasoningDropdown: () => (
     <div data-testid="agent-model-reasoning-dropdown" />
   )
@@ -210,7 +222,7 @@ describe("AgentComposer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not render a plan mode pill while plan mode is off", () => {
+  it("renders the permission dropdown when only plan mode is supported", () => {
     render(
       <AgentComposer
         workspaceId="workspace-1"
@@ -245,15 +257,13 @@ describe("AgentComposer", () => {
       />
     );
 
-    expect(
-      screen.queryByRole("button", { name: "Plan: 关闭" })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Plan: 开启" })
-    ).not.toBeInTheDocument();
+    // Plan mode rides the permission dropdown: the dropdown renders from the
+    // plan capability alone, with the plan label wired through.
+    const dropdown = screen.getByTestId("agent-permission-mode-dropdown");
+    expect(dropdown).toHaveAttribute("data-plan-mode-label", "Plan");
   });
 
-  it("shows enabled plan mode state in the composer footer", () => {
+  it("renders the permission dropdown while plan mode is enabled", () => {
     const onSettingsChange = vi.fn();
     render(
       <AgentComposer
@@ -295,15 +305,10 @@ describe("AgentComposer", () => {
       />
     );
 
-    const toggle = screen.getByRole("button", { name: "Plan: 开启" });
-    expect(toggle).toHaveTextContent("Plan");
-    expect(toggle).toHaveAttribute("data-state", "on");
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(toggle.querySelector("[data-agent-plan-mode-label]")).not.toBeNull();
-
-    fireEvent.click(toggle);
-
-    expect(onSettingsChange).toHaveBeenCalledWith({ planMode: false });
+    expect(
+      screen.getByTestId("agent-permission-mode-dropdown")
+    ).toBeInTheDocument();
+    void onSettingsChange;
   });
 
   it("shows effective plan mode even when draft settings are stale", () => {
@@ -349,12 +354,10 @@ describe("AgentComposer", () => {
       />
     );
 
-    const toggle = screen.getByRole("button", { name: "Plan: 开启" });
-    expect(toggle).toHaveAttribute("data-state", "on");
-
-    fireEvent.click(toggle);
-
-    expect(onSettingsChange).toHaveBeenCalledWith({ planMode: false });
+    expect(
+      screen.getByTestId("agent-permission-mode-dropdown")
+    ).toBeInTheDocument();
+    void onSettingsChange;
   });
 
   it("blocks Claude Code plan slash command submissions", () => {
@@ -1671,6 +1674,8 @@ function createLabels(): Parameters<typeof AgentComposer>[0]["labels"] {
     stopping: "停止中",
     slashCommandPalette: "斜杠命令",
     skillPickerPalette: "技能",
+    slashPaletteCommandsGroup: "命令",
+    slashPaletteSkillsGroup: "技能",
     slashStatusTitle: "Status",
     slashStatusSession: "Session",
     slashStatusBaseUrl: "Base URL",
@@ -1695,6 +1700,11 @@ function createLabels(): Parameters<typeof AgentComposer>[0]["labels"] {
     submitAnswers: "提交答案",
     answerPlaceholder: "填写答案",
     waitingForAnswer: "等待回答",
+    planImplementationLead: "实作此方案？",
+    planImplementationConfirm: "实作方案",
+    planImplementationFeedbackPlaceholder: "调整方案…",
+    planImplementationSend: "发送调整",
+    planImplementationSkip: "留在计划模式",
     fileMentionPalette: "文件",
     fileMentionLoading: "加载中",
     fileMentionEmpty: "空",

@@ -77,6 +77,10 @@ export function createAgentActivityController({
     Promise<AgentActivityComposerOptions>
   >();
   const composerOptionsLoadVersions = new Map<string, number>();
+  const composerOptionsCwdByProvider = new Map<string, string>();
+  const activeComposerOptionsLoadCwds = new Map<string, string>();
+  const normalizeComposerCwd = (cwd: string | null | undefined): string =>
+    (cwd ?? "").trim();
   const autoRetainedStreamReleases = new Map<string, () => void>();
   const retainedStreams = new Map<string, RetainedSessionStream>();
   let snapshot: AgentActivitySnapshot =
@@ -136,14 +140,22 @@ export function createAgentActivityController({
       if (!provider) {
         throw new Error("Agent composer options provider is required.");
       }
+      const requestedCwd = normalizeComposerCwd(input.cwd);
       if (!input.force) {
         const cached = snapshot.composerOptionsByProvider?.[provider];
-        if (cached) {
+        if (
+          cached &&
+          composerOptionsCwdByProvider.get(provider) === requestedCwd
+        ) {
           return cloneAgentActivityComposerOptions(cached);
         }
       }
       const existingLoad = activeComposerOptionsLoads.get(provider);
-      if (existingLoad && !input.force) {
+      if (
+        existingLoad &&
+        !input.force &&
+        activeComposerOptionsLoadCwds.get(provider) === requestedCwd
+      ) {
         return existingLoad.then(cloneAgentActivityComposerOptions);
       }
       const loadVersion = (composerOptionsLoadVersions.get(provider) ?? 0) + 1;
@@ -165,6 +177,7 @@ export function createAgentActivityController({
           if (composerOptionsLoadVersions.get(provider) !== loadVersion) {
             return cloneAgentActivityComposerOptions(normalizedOptions);
           }
+          composerOptionsCwdByProvider.set(provider, requestedCwd);
           updateSnapshot((current) => {
             const currentOptions =
               current.composerOptionsByProvider?.[provider];
@@ -187,9 +200,11 @@ export function createAgentActivityController({
         .finally(() => {
           if (activeComposerOptionsLoads.get(provider) === load) {
             activeComposerOptionsLoads.delete(provider);
+            activeComposerOptionsLoadCwds.delete(provider);
           }
         });
       activeComposerOptionsLoads.set(provider, load);
+      activeComposerOptionsLoadCwds.set(provider, requestedCwd);
       return load.then(cloneAgentActivityComposerOptions);
     },
     async listSessionMessages({
@@ -466,6 +481,8 @@ function cloneAgentActivityComposerOptions(
     reasoningEfforts: options.reasoningEfforts.map((option) => ({
       ...option
     })),
+    modelConfigurable: options.modelConfigurable ?? false,
+    reasoningConfigurable: options.reasoningConfigurable ?? false,
     permissionConfig: options.permissionConfig
       ? {
           configurable: options.permissionConfig.configurable,

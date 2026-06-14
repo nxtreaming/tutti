@@ -10,6 +10,7 @@ import {
 import { AlertTriangle, ChevronRight, Info } from "lucide-react";
 import { CheckIcon, CopyIcon } from "@tutti-os/ui-system/icons";
 import { Button } from "../../../app/renderer/components/ui/button";
+import { AgentPlanCard } from "./AgentPlanCard";
 import { translate } from "../../../i18n/index";
 import { useOptionalAgentHostApi } from "../../../agentActivityHost";
 import { getOptionalAgentActivityRuntime } from "../../../agentActivityRuntime";
@@ -150,6 +151,14 @@ export function AgentMessageBlock({
             />
           ) : message.systemNotice ? (
             <AgentSystemNoticeMessage message={message} />
+          ) : message.contentKind === "plan" ? (
+            <AgentPlanCardMessage
+              message={message}
+              workspaceRoot={workspaceRoot}
+              basePath={basePath}
+              onLinkAction={onLinkAction}
+              workspaceAppIcons={workspaceAppIcons}
+            />
           ) : (
             <AgentMessageMarkdown
               content={message.body}
@@ -407,6 +416,41 @@ function AgentSystemNoticeMessage({
         </div>
       </div>
     </section>
+  );
+}
+
+// Codex plan-mode proposals render as a framed card (mirrors the codex TUI
+// treating the plan item as a distinct artifact rather than chat text).
+function AgentPlanCardMessage({
+  message,
+  workspaceRoot,
+  basePath,
+  onLinkAction,
+  workspaceAppIcons
+}: {
+  message: AgentMessageContentVM;
+  workspaceRoot: string | null;
+  basePath: string;
+  onLinkAction?: (action: WorkspaceLinkAction) => void;
+  workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
+}): JSX.Element {
+  "use memo";
+  return (
+    <AgentPlanCard copyText={message.body}>
+      <AgentMessageMarkdown
+        content={message.body}
+        className={styles.assistantMarkdown}
+        onLinkAction={onLinkAction}
+        workspaceLinkContext={{
+          workspaceRoot,
+          basePath,
+          source: "agent-markdown"
+        }}
+        workspaceAppIcons={workspaceAppIcons}
+        deferLongContentRender
+        enableImageZoom
+      />
+    </AgentPlanCard>
   );
 }
 

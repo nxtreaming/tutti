@@ -184,8 +184,8 @@ func TestControllerStartExecCancelPublishesAndReports(t *testing.T) {
 	if started.Session.AgentSessionID == "" {
 		t.Fatal("Start returned an empty agent session id")
 	}
-	if started.Session.ProviderSessionID != "codex-acp-session-1" {
-		t.Fatalf("provider session id = %q, want ACP session id", started.Session.ProviderSessionID)
+	if started.Session.ProviderSessionID != "codex-thread-1" {
+		t.Fatalf("provider session id = %q, want app-server thread id", started.Session.ProviderSessionID)
 	}
 
 	events, unsubscribe, ok := controller.Subscribe("room-1", started.Session.AgentSessionID)

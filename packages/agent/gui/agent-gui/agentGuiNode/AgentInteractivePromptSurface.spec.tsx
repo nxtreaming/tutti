@@ -30,7 +30,12 @@ const labels = {
   nextQuestion: "Next",
   submitAnswers: "Submit answers",
   answerPlaceholder: "Add details for the agent...",
-  waitingForAnswer: "Waiting for your answer..."
+  waitingForAnswer: "Waiting for your answer...",
+  planImplementationLead: "Implement this plan?",
+  planImplementationConfirm: "Implement plan",
+  planImplementationFeedbackPlaceholder: "Adjust the plan instead...",
+  planImplementationSend: "Send adjustments",
+  planImplementationSkip: "Stay in Plan Mode"
 };
 
 describe("AgentInteractivePromptSurface", () => {
@@ -1021,5 +1026,127 @@ describe("AgentInteractivePromptSurface", () => {
       }
     });
     expect(screen.queryByText("Questions for you")).toBeNull();
+  });
+
+  it("dispatches implement / skip / feedback for a plan-implementation prompt", () => {
+    const onSubmit = vi.fn();
+    render(
+      <AgentInteractivePromptSurface
+        prompt={{
+          kind: "plan-implementation",
+          requestId: "plan-turn-1",
+          title: "Session 1"
+        }}
+        isSubmitting={false}
+        onSubmit={onSubmit}
+        labels={labels}
+      />
+    );
+
+    expect(screen.getByText(labels.planImplementationLead)).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("agent-plan-implementation-implement"));
+    expect(onSubmit).toHaveBeenCalledWith({
+      requestId: "plan-turn-1",
+      action: "implement"
+    });
+
+    // Empty continue button skips (stays in plan mode).
+    fireEvent.click(screen.getByTestId("agent-plan-implementation-continue"));
+    expect(onSubmit).toHaveBeenCalledWith({
+      requestId: "plan-turn-1",
+      action: "skip",
+      payload: undefined
+    });
+
+    // Typing then continuing sends the adjustment back as feedback.
+    fireEvent.change(screen.getByTestId("agent-plan-implementation-feedback"), {
+      target: { value: "focus on tests first" }
+    });
+    fireEvent.click(screen.getByTestId("agent-plan-implementation-continue"));
+    expect(onSubmit).toHaveBeenCalledWith({
+      requestId: "plan-turn-1",
+      action: "feedback",
+      payload: { text: "focus on tests first" }
+    });
+  });
+
+  it("submits a single-select ask-user answer in one click when compact", () => {
+    const onSubmit = vi.fn();
+    render(
+      <AgentInteractivePromptSurface
+        prompt={{
+          kind: "ask-user",
+          requestId: "ask-req-1",
+          title: "Plan topic",
+          questions: [
+            {
+              id: "plan-kind",
+              header: "Plan topic",
+              question: "Which kind of plan?",
+              options: [
+                { label: "Health check", description: "Audit the repo" },
+                { label: "Feature plan", description: "Needs a name" }
+              ],
+              multiSelect: false,
+              answer: null
+            }
+          ]
+        }}
+        variant="compact"
+        isSubmitting={false}
+        onSubmit={onSubmit}
+        labels={labels}
+      />
+    );
+
+    // One click submits the chosen option directly — no separate submit step,
+    // no free-text box (that rich flow lives in the conversation).
+    fireEvent.click(screen.getByRole("button", { name: /Health check/ }));
+    expect(onSubmit).toHaveBeenCalledWith({
+      requestId: "ask-req-1",
+      action: "submit",
+      payload: {
+        answers: ["Health check"],
+        answersByQuestionId: { "plan-kind": "Health check" }
+      }
+    });
+    expect(
+      screen.queryByPlaceholderText(labels.answerPlaceholder)
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: labels.submitAnswers })
+    ).toBeNull();
+  });
+
+  it("offers only the implement decision for a compact plan-implementation prompt", () => {
+    const onSubmit = vi.fn();
+    render(
+      <AgentInteractivePromptSurface
+        prompt={{
+          kind: "plan-implementation",
+          requestId: "plan-turn-1",
+          title: "Session 1"
+        }}
+        variant="compact"
+        isSubmitting={false}
+        onSubmit={onSubmit}
+        labels={labels}
+      />
+    );
+
+    // Compact (message-center deck): only the primary "implement" action is
+    // shown; refining / staying in plan is deferred to the conversation.
+    fireEvent.click(screen.getByTestId("agent-plan-implementation-implement"));
+    expect(onSubmit).toHaveBeenCalledWith({
+      requestId: "plan-turn-1",
+      action: "implement"
+    });
+    expect(
+      screen.queryByTestId("agent-plan-implementation-feedback")
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("agent-plan-implementation-continue")
+    ).toBeNull();
   });
 });

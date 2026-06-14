@@ -199,13 +199,18 @@ function IssueManagerLatestRunMessageCenterCard({
       const promptKey = `${item.agentSessionId}:${submitInput.requestId}`;
       setSubmittingPromptKey(promptKey);
       try {
-        await workspaceAgentActivityService.submitInteractive({
-          action: submitInput.action ?? null,
+        // Route through submitPlanDecision (same as the message-center deck):
+        // a synthesized Codex "plan-implementation" prompt needs planMode-off +
+        // literal send, not a submitInteractive call. promptKind is carried by
+        // the item's pending prompt; other kinds fall through to submitInteractive.
+        await workspaceAgentActivityService.submitPlanDecision({
+          workspaceId,
           agentSessionId: item.agentSessionId,
-          optionId: submitInput.optionId ?? null,
-          payload: submitInput.payload ?? null,
+          promptKind: item.pendingPrompt?.kind ?? "",
           requestId: submitInput.requestId,
-          workspaceId
+          ...(submitInput.action ? { action: submitInput.action } : {}),
+          ...(submitInput.optionId ? { optionId: submitInput.optionId } : {}),
+          ...(submitInput.payload ? { payload: submitInput.payload } : {})
         });
       } finally {
         setSubmittingPromptKey((current) =>
@@ -213,7 +218,12 @@ function IssueManagerLatestRunMessageCenterCard({
         );
       }
     },
-    [item.agentSessionId, workspaceAgentActivityService, workspaceId]
+    [
+      item.agentSessionId,
+      item.pendingPrompt?.kind,
+      workspaceAgentActivityService,
+      workspaceId
+    ]
   );
 
   return (

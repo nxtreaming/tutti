@@ -7,8 +7,13 @@ import {
   type AgentActivitySnapshot
 } from "@tutti-os/agent-activity-core";
 import type { AgentConversationPromptVM } from "../shared/agentConversation/contracts/agentConversationVM";
+import { normalizeAskUserQuestions } from "../shared/agentConversation/askUserQuestions";
 import type { WorkspaceAgentActivityStatus } from "../shared/workspaceAgentActivityListViewModel";
 import { resolveWorkspaceAgentSessionSortTimeUnixMs } from "../shared/workspaceAgentSessionSortTime";
+import {
+  latestPlanTurnId,
+  planImplementationPromptFromPlanTurn
+} from "../shared/agentConversation/planImplementation";
 
 export interface WorkspaceAgentMessageCenterModel {
   waitingCount: number;
@@ -38,7 +43,14 @@ export interface WorkspaceAgentMessageCenterItem {
   pendingPrompt: AgentConversationPromptVM | null;
   needsAttentionKind: AgentActivityNeedsAttentionItem["kind"] | null;
   needsAttentionSummary: string | null;
+  latestTurnOutcome?: WorkspaceAgentMessageCenterTurnOutcome | null;
   sortTimeUnixMs: number;
+}
+
+export interface WorkspaceAgentMessageCenterTurnOutcome {
+  notificationKey: string;
+  status: "completed" | "failed";
+  turnId: string | null;
 }
 
 export interface BuildWorkspaceAgentMessageCenterOptions {
@@ -84,15 +96,16 @@ export function buildWorkspaceAgentMessageCenterModel(
       const messages = resolveSessionMessages(snapshot, session);
       const needsAttention =
         needsAttentionBySessionId.get(session.agentSessionId) ?? null;
+      const status = displayStatuses.get(session.agentSessionId) ?? "idle";
+      const lastAgentMessage = latestAgentMessage(messages);
+      const title = resolveSessionTitle(session, messages);
       const pendingPrompt =
         pendingPromptFromMessages(messages) ??
+        codexPlanImplementationPrompt(session, status, messages) ??
         fallbackPromptFromNeedsAttention(
           needsAttention,
           options.promptFallbackLabels
         );
-      const status = displayStatuses.get(session.agentSessionId) ?? "idle";
-      const lastAgentMessage = latestAgentMessage(messages);
-      const title = resolveSessionTitle(session, messages);
       const sortTimeUnixMs = resolveWorkspaceAgentSessionSortTimeUnixMs(
         session,
         {
@@ -118,6 +131,7 @@ export function buildWorkspaceAgentMessageCenterModel(
         pendingPrompt,
         needsAttentionKind: needsAttention?.kind ?? null,
         needsAttentionSummary: needsAttention?.summary ?? null,
+        latestTurnOutcome: latestTurnOutcome(session.agentSessionId, messages),
         sortTimeUnixMs
       } satisfies WorkspaceAgentMessageCenterItem;
     });
@@ -158,6 +172,18 @@ export function isWaitingMessageCenterItem(
   item: WorkspaceAgentMessageCenterItem
 ): boolean {
   return item.pendingPrompt !== null || item.needsAttentionKind !== null;
+}
+
+export function isInteractiveMessageCenterItem(
+  item: WorkspaceAgentMessageCenterItem
+): boolean {
+  return item.pendingPrompt !== null;
+}
+
+export function selectMessageCenterAttentionDeckItems(
+  items: readonly WorkspaceAgentMessageCenterItem[]
+): WorkspaceAgentMessageCenterItem[] {
+  return items.filter(isInteractiveMessageCenterItem);
 }
 
 export function isCompletedMessageCenterItem(
@@ -323,44 +349,27 @@ function askUserPromptFromMessage(
     return null;
   }
   const payload = recordValue(message.payload);
-  const questions = arrayValue(payload.questions).flatMap((value, index) => {
-    const question = recordValue(value);
-    const id = stringValue(question.id) ?? `question-${index + 1}`;
-    const label =
-      stringValue(question.question) ??
-      stringValue(question.header) ??
-      stringValue(question.label);
-    if (!label) {
-      return [];
-    }
-    return [
-      {
-        id,
-        header: stringValue(question.header) ?? label,
-        question: label,
-        options: arrayValue(question.options).flatMap((optionValue) => {
-          const option = recordValue(optionValue);
-          const optionLabel = stringValue(option.label);
-          return optionLabel
-            ? [
-                {
-                  label: optionLabel,
-                  description: stringValue(option.description) ?? ""
-                }
-              ]
-            : [];
-        }),
-        multiSelect: Boolean(question.multiSelect),
-        answer: null
-      }
-    ];
-  });
+  // The structured questions live on the tool-call input (payload.input.questions
+  // or payload.tool_state.input.questions) — the same source the in-conversation
+  // projection reads — so the deck card renders the identical question + options.
+  // payload.questions is a legacy fallback for shapes that inline them.
+  const toolState = recordValue(payload.tool_state);
+  const input =
+    Object.keys(recordValue(payload.input)).length > 0
+      ? recordValue(payload.input)
+      : recordValue(toolState.input);
+  const rawQuestions =
+    arrayValue(input.questions).length > 0
+      ? input.questions
+      : payload.questions;
+  const questions = normalizeAskUserQuestions(rawQuestions);
   if (questions.length === 0) {
     return null;
   }
   return {
     kind: "ask-user",
     requestId:
+      stringValue(input.requestId) ??
       stringValue(payload.requestId) ??
       stringValue(payload.interactiveRequestId) ??
       message.messageId,
@@ -389,6 +398,37 @@ function exitPlanPromptFromMessage(
   };
 }
 
+function codexPlanImplementationPrompt(
+  session: AgentActivitySession,
+  status: WorkspaceAgentActivityStatus,
+  messages: readonly AgentActivityMessage[]
+): AgentConversationPromptVM | null {
+  if (session.provider.trim().toLowerCase() !== "codex") {
+    return null;
+  }
+  // Only offer once the session has settled to completed/idle — not while it
+  // is still working/waiting, and not after failed/canceled (no point asking
+  // to implement a plan from a turn that didn't finish cleanly). Mirrors the
+  // codex TUI gate but evaluated against the latest turn rather than a
+  // transient per-turn flag.
+  if (status !== "completed" && status !== "idle") {
+    return null;
+  }
+  const planTurnId = latestPlanTurnId(messages);
+  if (!planTurnId) {
+    return null;
+  }
+  // Title from the plan message itself (matching latestPlanTurnId's plan-item
+  // detection), not whichever message in the turn happens to come first.
+  const planMessage = messages.find(
+    (item) =>
+      item.turnId?.trim() === planTurnId &&
+      recordValue(item.payload).messageKind === "plan"
+  );
+  const title = planMessage ? messageSummary(planMessage) : "";
+  return planImplementationPromptFromPlanTurn(planTurnId, title);
+}
+
 function latestAgentMessage(
   messages: readonly AgentActivityMessage[]
 ): { summary: string; occurredAtUnixMs: number } | null {
@@ -409,6 +449,68 @@ function latestAgentMessage(
     },
     null
   );
+}
+
+function latestTurnOutcome(
+  agentSessionId: string,
+  messages: readonly AgentActivityMessage[]
+): WorkspaceAgentMessageCenterTurnOutcome | null {
+  const latest = messages
+    .flatMap((message) => {
+      const status = outcomeStatusFromMessage(message);
+      if (!status) {
+        return [];
+      }
+      const turnId = message.turnId?.trim() || null;
+      const messageId = message.messageId.trim();
+      const notificationSubject = turnId
+        ? `turn:${turnId}`
+        : `message:${messageId}`;
+      return [
+        {
+          notificationKey: `${agentSessionId}:${notificationSubject}:${status}`,
+          status,
+          turnId,
+          sortMessage: message
+        }
+      ];
+    })
+    .sort((left, right) =>
+      compareMessagesByRecentTime(left.sortMessage, right.sortMessage)
+    )[0];
+
+  if (!latest) {
+    return null;
+  }
+  return {
+    notificationKey: latest.notificationKey,
+    status: latest.status,
+    turnId: latest.turnId
+  };
+}
+
+function outcomeStatusFromMessage(
+  message: AgentActivityMessage
+): WorkspaceAgentMessageCenterTurnOutcome["status"] | null {
+  if (!isAgentMessageRole(message.role)) {
+    return null;
+  }
+  const payload = recordValue(message.payload);
+  const status = (message.status ?? stringValue(payload.status) ?? "")
+    .trim()
+    .toLowerCase();
+  switch (status) {
+    case "completed":
+    case "done":
+    case "success":
+    case "succeeded":
+      return "completed";
+    case "error":
+    case "failed":
+      return "failed";
+    default:
+      return null;
+  }
 }
 
 function fallbackPromptFromNeedsAttention(

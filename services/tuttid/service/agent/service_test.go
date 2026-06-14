@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -101,7 +102,7 @@ func TestServiceCreatePassesPlanModeToRuntime(t *testing.T) {
 		AgentSessionID: "11111111-1111-4111-8111-111111111111",
 		InitialContent: TextPromptContent("hello"),
 		PlanMode:       &planMode,
-		Provider:       "codex",
+		Provider:       "claude-code",
 	})
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
@@ -114,6 +115,31 @@ func TestServiceCreatePassesPlanModeToRuntime(t *testing.T) {
 	}
 	if session.Settings == nil || !session.Settings.PlanMode {
 		t.Fatalf("session settings = %#v, want plan mode true", session.Settings)
+	}
+}
+
+func TestServiceCreateClampsPlanModeForProvidersWithoutCapability(t *testing.T) {
+	runtime := newFakeRuntime()
+	service := NewService(runtime)
+	planMode := true
+
+	session, err := service.Create(context.Background(), "ws-1", CreateSessionInput{
+		AgentSessionID: "22222222-2222-4222-8222-222222222222",
+		InitialContent: TextPromptContent("hello"),
+		PlanMode:       &planMode,
+		Provider:       "gemini",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if len(runtime.startCalls) != 1 {
+		t.Fatalf("start calls = %d, want 1", len(runtime.startCalls))
+	}
+	if runtime.startCalls[0].PlanMode {
+		t.Fatal("runtime start plan mode = true, want clamped to false for gemini")
+	}
+	if session.Settings == nil || session.Settings.PlanMode {
+		t.Fatalf("session settings = %#v, want plan mode clamped to false", session.Settings)
 	}
 }
 
@@ -444,9 +470,9 @@ func TestServiceGetsComposerOptionsWithoutStartingRuntime(t *testing.T) {
 	if options.PermissionConfig.Modes[1].Label != "Approve for me" {
 		t.Fatalf("permission label = %#v, want Approve for me", options.PermissionConfig.Modes[1])
 	}
-	promptCapabilities, ok := options.RuntimeContext["promptCapabilities"].(map[string]any)
-	if !ok || promptCapabilities["image"] != true {
-		t.Fatalf("promptCapabilities = %#v, want image support", options.RuntimeContext["promptCapabilities"])
+	capabilities, ok := options.RuntimeContext["capabilities"].([]string)
+	if !ok || !slices.Contains(capabilities, "imageInput") {
+		t.Fatalf("capabilities = %#v, want imageInput", options.RuntimeContext["capabilities"])
 	}
 }
 
@@ -477,9 +503,9 @@ func TestServiceGetsComposerOptionsLocalizesDisplayLabels(t *testing.T) {
 	if dontAsk.Label != "不再询问" || dontAsk.Description == "" {
 		t.Fatalf("dontAsk = %#v, want localized label and description", dontAsk)
 	}
-	promptCapabilities, ok := options.RuntimeContext["promptCapabilities"].(map[string]any)
-	if !ok || promptCapabilities["image"] != true {
-		t.Fatalf("promptCapabilities = %#v, want image support", options.RuntimeContext["promptCapabilities"])
+	capabilities, ok := options.RuntimeContext["capabilities"].([]string)
+	if !ok || !slices.Contains(capabilities, "imageInput") {
+		t.Fatalf("capabilities = %#v, want imageInput", options.RuntimeContext["capabilities"])
 	}
 }
 
@@ -673,9 +699,9 @@ func TestServiceGetsComposerOptionsLeavesUnresolvedProviderModelUnset(t *testing
 	if options.EffectiveSettings.ReasoningEffort != "" {
 		t.Fatalf("effectiveSettings.reasoningEffort = %q, want empty", options.EffectiveSettings.ReasoningEffort)
 	}
-	promptCapabilities, ok := options.RuntimeContext["promptCapabilities"].(map[string]any)
-	if !ok || promptCapabilities["image"] != false {
-		t.Fatalf("promptCapabilities = %#v, want image unsupported", options.RuntimeContext["promptCapabilities"])
+	if capabilities, ok := options.RuntimeContext["capabilities"].([]string); ok &&
+		slices.Contains(capabilities, "imageInput") {
+		t.Fatalf("capabilities = %#v, want no imageInput", options.RuntimeContext["capabilities"])
 	}
 }
 

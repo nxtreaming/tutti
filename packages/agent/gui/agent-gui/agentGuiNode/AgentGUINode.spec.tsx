@@ -25,6 +25,8 @@ import { writeWorkspaceFileDropData } from "../terminalNode/workspaceFileDrop";
 const mockCreateConversation = vi.fn();
 const mockSelectConversation = vi.fn();
 const mockSubmitPrompt = vi.fn();
+const mockSubmitCompact = vi.fn();
+const mockDismissUsageAlert = vi.fn();
 const mockShowPromptImagesUnsupported = vi.fn();
 const mockSubmitApprovalOption = vi.fn();
 const mockSubmitInteractivePrompt = vi.fn();
@@ -585,6 +587,8 @@ vi.mock("./controller/useAgentGUINodeController", () => ({
       createConversation: mockCreateConversation,
       selectConversation: mockSelectConversation,
       submitPrompt: mockSubmitPrompt,
+      submitCompact: mockSubmitCompact,
+      dismissUsageAlert: mockDismissUsageAlert,
       showPromptImagesUnsupported: mockShowPromptImagesUnsupported,
       submitApprovalOption: mockSubmitApprovalOption,
       submitInteractivePrompt: mockSubmitInteractivePrompt,
@@ -616,6 +620,8 @@ describe("AgentGUINode", () => {
     mockCreateConversation.mockClear();
     mockSelectConversation.mockClear();
     mockSubmitPrompt.mockClear();
+    mockSubmitCompact.mockClear();
+    mockDismissUsageAlert.mockClear();
     mockShowPromptImagesUnsupported.mockClear();
     mockSubmitApprovalOption.mockClear();
     mockSubmitInteractivePrompt.mockClear();
@@ -2277,6 +2283,227 @@ describe("AgentGUINode", () => {
     });
   }, 15000);
 
+  it("offers plan mode in the permission dropdown when supported", async () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      composerSettings: {
+        sessionSettings: {
+          model: "claude-4",
+          reasoningEffort: "high",
+          planMode: false,
+          permissionModeId: "default"
+        },
+        draftSettings: {
+          model: "claude-4",
+          reasoningEffort: "high",
+          planMode: false,
+          permissionModeId: "default"
+        },
+        effectivePlanMode: false,
+        supportsModel: true,
+        supportsReasoningEffort: true,
+        supportsPermissionMode: true,
+        supportsPlanMode: true,
+        isSettingsLoading: false,
+        modelUnavailable: false,
+        reasoningUnavailable: false,
+        permissionModeUnavailable: false,
+        planUnavailable: false,
+        selectedPermissionModeValue: "default",
+        availableModels: [{ value: "claude-4", label: "Claude 4" }],
+        availableReasoningEfforts: [{ value: "high", label: "High" }],
+        availablePermissionModes: [
+          { value: "default", label: "agentHost.agentGui.permissionModeAsk" }
+        ]
+      }
+    });
+    renderAgentGUINode();
+
+    fireEvent.keyDown(
+      screen.getByRole("combobox", {
+        name: "agentHost.agentGui.permissionLabel"
+      }),
+      { key: "Enter" }
+    );
+    fireEvent.pointerDown(
+      await screen.findByRole("option", {
+        name: "agentHost.agentGui.planModeLabel"
+      }),
+      { button: 0, ctrlKey: false, pointerId: 5, pointerType: "mouse" }
+    );
+
+    expect(mockUpdateComposerSettings).toHaveBeenCalledWith({
+      planMode: true
+    });
+  });
+
+  it("cycles composer modes with shift+tab including plan mode", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      composerSettings: {
+        sessionSettings: null,
+        draftSettings: {
+          model: "claude-4",
+          reasoningEffort: "high",
+          planMode: false,
+          permissionModeId: "acceptEdits"
+        },
+        effectivePlanMode: false,
+        supportsModel: true,
+        supportsReasoningEffort: true,
+        supportsPermissionMode: true,
+        supportsPlanMode: true,
+        isSettingsLoading: false,
+        modelUnavailable: false,
+        reasoningUnavailable: false,
+        permissionModeUnavailable: false,
+        planUnavailable: false,
+        selectedPermissionModeValue: "acceptEdits",
+        availableModels: [{ value: "claude-4", label: "Claude 4" }],
+        availableReasoningEfforts: [{ value: "high", label: "High" }],
+        availablePermissionModes: [
+          { value: "default", label: "agentHost.agentGui.permissionModeAsk" },
+          { value: "acceptEdits", label: "Accept edits" }
+        ]
+      }
+    });
+    renderAgentGUINode();
+
+    // acceptEdits is the last permission mode, so shift+tab enters plan mode.
+    fireEvent.keyDown(getComposerEditor(), { key: "Tab", shiftKey: true });
+
+    expect(mockUpdateComposerSettings).toHaveBeenCalledWith({
+      planMode: true
+    });
+  });
+
+  it("cycles out of plan mode with shift+tab back to the first permission mode", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      composerSettings: {
+        sessionSettings: null,
+        draftSettings: {
+          model: "claude-4",
+          reasoningEffort: "high",
+          planMode: true,
+          permissionModeId: "acceptEdits"
+        },
+        effectivePlanMode: true,
+        supportsModel: true,
+        supportsReasoningEffort: true,
+        supportsPermissionMode: true,
+        supportsPlanMode: true,
+        isSettingsLoading: false,
+        modelUnavailable: false,
+        reasoningUnavailable: false,
+        permissionModeUnavailable: false,
+        planUnavailable: false,
+        selectedPermissionModeValue: "acceptEdits",
+        availableModels: [{ value: "claude-4", label: "Claude 4" }],
+        availableReasoningEfforts: [{ value: "high", label: "High" }],
+        availablePermissionModes: [
+          { value: "default", label: "agentHost.agentGui.permissionModeAsk" },
+          { value: "acceptEdits", label: "Accept edits" }
+        ]
+      }
+    });
+    renderAgentGUINode();
+
+    fireEvent.keyDown(getComposerEditor(), { key: "Tab", shiftKey: true });
+
+    expect(mockUpdateComposerSettings).toHaveBeenCalledWith({
+      permissionModeId: "default",
+      planMode: false
+    });
+  });
+
+  it("renders the codex plan decision in the composer slot and wires its actions", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      pendingInteractivePrompt: {
+        kind: "plan-implementation",
+        requestId: "plan-turn-1",
+        title: "Session 1"
+      }
+    });
+    renderAgentGUINode();
+
+    // The decision card replaces the composer: it lives in the bottom dock and
+    // the composer's editor is hidden while the decision is pending.
+    expect(
+      screen.getByTestId("agent-gui-bottom-dock-active-prompt")
+    ).toBeInTheDocument();
+    expect(queryComposerEditor()).toBeNull();
+
+    // Action routing goes through the unified interactive-prompt submit path.
+    // (implement / skip / feedback dispatch is covered in the surface spec.)
+    fireEvent.click(screen.getByTestId("agent-plan-implementation-implement"));
+    expect(mockSubmitInteractivePrompt).toHaveBeenCalledWith({
+      requestId: "plan-turn-1",
+      action: "implement"
+    });
+  });
+
+  it("keeps the composer when no plan decision is pending", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      pendingInteractivePrompt: null
+    });
+    renderAgentGUINode();
+
+    expect(
+      screen.queryByTestId("agent-plan-implementation-implement")
+    ).toBeNull();
+    expect(getComposerEditor()).toBeInTheDocument();
+  });
+
+  it("omits the plan mode option when the provider lacks the capability", async () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      composerSettings: {
+        sessionSettings: null,
+        draftSettings: {
+          model: "gpt-5",
+          reasoningEffort: "high",
+          planMode: false,
+          permissionModeId: "auto"
+        },
+        effectivePlanMode: false,
+        supportsModel: true,
+        supportsReasoningEffort: true,
+        supportsPermissionMode: true,
+        supportsPlanMode: false,
+        isSettingsLoading: false,
+        modelUnavailable: false,
+        reasoningUnavailable: false,
+        permissionModeUnavailable: false,
+        planUnavailable: false,
+        selectedPermissionModeValue: "auto",
+        availableModels: [{ value: "gpt-5", label: "GPT-5" }],
+        availableReasoningEfforts: [{ value: "high", label: "High" }],
+        availablePermissionModes: [
+          { value: "auto", label: "agentHost.agentGui.permissionModeAuto" }
+        ]
+      }
+    });
+    renderAgentGUINode();
+
+    fireEvent.keyDown(
+      screen.getByRole("combobox", {
+        name: "agentHost.agentGui.permissionLabel"
+      }),
+      { key: "Enter" }
+    );
+    await screen.findByRole("option", {
+      name: "agentHost.agentGui.permissionModeAuto"
+    });
+    expect(
+      screen.queryByRole("option", {
+        name: "agentHost.agentGui.planModeLabel"
+      })
+    ).toBeNull();
+  });
+
   it("shows fallback composer defaults for legacy sessions without stored settings", () => {
     mockViewModel = createViewModel({
       data: {
@@ -3470,6 +3697,47 @@ describe("AgentGUINode", () => {
     expect(mockSubmitPrompt).toHaveBeenCalledWith(
       promptBlocks("$architecture-review")
     );
+  });
+
+  it("groups slash palette entries into command and skill sections", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      draftPrompt: "/",
+      availableCommands: [{ name: "init", description: "initialize project" }],
+      availableSkills: [
+        {
+          name: "architecture-review",
+          trigger: "$architecture-review",
+          sourceKind: "project",
+          description: "Review architecture changes"
+        }
+      ]
+    });
+    renderAgentGUINode();
+
+    expect(
+      screen.getByText("agentHost.agentGui.slashPaletteCommandsGroup")
+    ).toBeTruthy();
+    expect(
+      screen.getByText("agentHost.agentGui.slashPaletteSkillsGroup")
+    ).toBeTruthy();
+  });
+
+  it("hides slash palette group headers when only one section is present", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      draftPrompt: "/",
+      availableCommands: [{ name: "init", description: "initialize project" }],
+      availableSkills: []
+    });
+    renderAgentGUINode();
+
+    expect(
+      screen.queryByText("agentHost.agentGui.slashPaletteCommandsGroup")
+    ).toBeNull();
+    expect(
+      screen.queryByText("agentHost.agentGui.slashPaletteSkillsGroup")
+    ).toBeNull();
   });
 
   it("opens Codex skill picker after prompt text and displays useful descriptions", () => {
@@ -6337,6 +6605,9 @@ function createViewModel(
     isInterrupting: false,
     isRespondingApproval: false,
     promptImagesSupported: true,
+    compactSupported: null,
+    usage: null,
+    usageAlert: null,
     isDeletingConversation: false,
     isDeletingProjectConversations: false,
     pendingDeleteConversation: null,

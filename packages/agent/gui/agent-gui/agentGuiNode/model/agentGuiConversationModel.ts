@@ -162,7 +162,8 @@ export type AgentGUIInteractivePrompt =
       title: string;
       questions: AgentGUIInteractiveQuestion[];
     }
-  | Extract<AgentConversationPromptVM, { kind: "exit-plan" }>;
+  | Extract<AgentConversationPromptVM, { kind: "exit-plan" }>
+  | Extract<AgentConversationPromptVM, { kind: "plan-implementation" }>;
 
 export interface BuildAgentGUIConversationsInput {
   isNoProjectPath?: AgentGUIConversationNoProjectPathResolver;
