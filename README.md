@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/banner.jpg" alt="Tutti — where people and agents build in tune" width="720" />
-
-# Tutti
+<img src="docs/assets/banner.jpg" alt="Tutti" width="720" />
 
 **Where people and agents build in tune.**
 

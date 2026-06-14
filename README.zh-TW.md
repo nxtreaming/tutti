@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/banner.jpg" alt="Tutti —— 人與 Agent 同頻協作的地方" width="720" />
-
-# Tutti
+<img src="docs/assets/banner.jpg" alt="Tutti" width="720" />
 
 **人與 Agent「同步協作」的工作空間。**
 
