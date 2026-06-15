@@ -123,6 +123,7 @@ export class WorkspaceFileManagerService implements IWorkspaceFileManagerService
   ): Promise<string | null> {
     return this.dependencies.hostFilesApi.resolveEntryIcon(workspaceID, {
       kind: entry.kind,
+      mtimeMs: entry.mtimeMs,
       name: entry.name,
       path: entry.path
     });

@@ -451,7 +451,11 @@ function WorkspaceFileManagerPanelsContainer({
     () => sortWorkspaceFileEntriesForArrangeMode(state.entries, arrangeMode),
     [arrangeMode, state.entries]
   );
-  const iconUrlByCacheKey = useWorkspaceFileEntryIconUrls({
+  const {
+    iconUrlByCacheKey,
+    reportEntryIconViewportEnter,
+    reportEntryIconViewportLeave
+  } = useWorkspaceFileEntryIconUrls({
     entries: arrangedEntries,
     resolveEntryIconUrl
   });
@@ -471,6 +475,8 @@ function WorkspaceFileManagerPanelsContainer({
       layoutMode={layoutMode}
       pendingDirectoryPath={view.pendingDirectoryPath}
       previewState={view.previewState}
+      onEntryIconViewportEnter={reportEntryIconViewportEnter}
+      onEntryIconViewportLeave={reportEntryIconViewportLeave}
       selectedEntry={view.selectedEntry}
       selectedPath={view.selectedPath}
       showDropOverlay={view.showDropOverlay}

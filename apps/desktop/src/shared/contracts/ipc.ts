@@ -164,6 +164,7 @@ export interface DesktopWorkspaceFileOpenWithOtherPayload extends DesktopWorkspa
 
 export interface DesktopWorkspaceFileEntryIconPayload extends DesktopWorkspaceFilePathPayload {
   entryKind: string;
+  entryMtimeMs: number | null;
   entryName: string;
 }
 

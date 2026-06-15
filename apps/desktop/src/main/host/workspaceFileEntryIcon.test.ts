@@ -1,101 +1,272 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import test from "node:test";
-import { resolveWorkspaceFileEntryIconDataUrl } from "./workspaceFileEntryIcon.ts";
+import {
+  resolveWorkspaceFileEntryIconUrl,
+  type WorkspaceFileEntryIconInput
+} from "./workspaceFileEntryIcon.ts";
+import type {
+  WorkspaceFileIconCacheKey,
+  WorkspaceFileIconCacheStore
+} from "./workspaceFileIconCacheStore.ts";
 
-test("resolveWorkspaceFileEntryIconDataUrl falls back to native icons for non-image files", async (t) => {
-  if (process.platform !== "darwin" && process.platform !== "win32") {
-    t.skip("native file icons are only supported on macOS and Windows");
-    return;
-  }
-
-  const workspaceRoot = await mkdtemp(
-    path.join(tmpdir(), "tutti-entry-icon-file-")
-  );
-  const targetPath = path.join(workspaceRoot, "example.txt");
-  await writeFile(targetPath, "hello", "utf8");
-
-  const iconDataUrl = await resolveWorkspaceFileEntryIconDataUrl(targetPath, {
-    kind: "file",
-    name: "example.txt",
-    path: "/workspace/example.txt"
-  });
-
-  if (!iconDataUrl) {
-    t.skip("native file icon unavailable in this test environment");
-    return;
-  }
-
-  assert.match(iconDataUrl, /^data:image\/png;base64,/);
-});
-
-test("resolveWorkspaceFileEntryIconDataUrl returns png data url for image files on macOS", async (t) => {
-  if (process.platform !== "darwin") {
-    t.skip("macOS only");
-    return;
-  }
-
-  const workspaceRoot = await mkdtemp(path.join(tmpdir(), "tutti-entry-icon-"));
-  const targetPath = path.join(workspaceRoot, "photo.png");
-  const pngBytes = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-    "base64"
-  );
-  await writeFile(targetPath, pngBytes);
-
-  const iconDataUrl = await resolveWorkspaceFileEntryIconDataUrl(targetPath, {
-    kind: "file",
-    name: "photo.png",
-    path: "/workspace/photo.png"
-  });
-
-  if (!iconDataUrl) {
-    t.skip("nativeImage thumbnail unavailable in this test environment");
-    return;
-  }
-
-  assert.match(iconDataUrl, /^data:image\/png;base64,/);
-});
-
-test("resolveWorkspaceFileEntryIconDataUrl returns null for regular directories", async () => {
-  const workspaceRoot = await mkdtemp(
-    path.join(tmpdir(), "tutti-entry-icon-dir-")
-  );
-  const targetPath = path.join(workspaceRoot, "folder");
-  await mkdir(targetPath);
+test("resolveWorkspaceFileEntryIconUrl returns null for unsupported regular files", async () => {
+  const cacheStore = createCacheStoreStub();
 
   assert.equal(
-    await resolveWorkspaceFileEntryIconDataUrl(targetPath, {
-      kind: "directory",
-      name: "folder",
-      path: "/workspace/folder"
-    }),
+    await resolveWorkspaceFileEntryIconUrl(
+      "/workspace/photo.png",
+      createInput({
+        kind: "file",
+        name: "photo.png",
+        path: "/workspace/photo.png"
+      }),
+      cacheStore
+    ),
     null
+  );
+  assert.equal(
+    await resolveWorkspaceFileEntryIconUrl(
+      "/workspace/clip.mp4",
+      createInput({
+        kind: "file",
+        name: "clip.mp4",
+        path: "/workspace/clip.mp4"
+      }),
+      cacheStore
+    ),
+    null
+  );
+  assert.equal(
+    await resolveWorkspaceFileEntryIconUrl(
+      "/workspace/Fake.app",
+      createInput({
+        kind: "file",
+        name: "Fake.app",
+        path: "/workspace/Fake.app"
+      }),
+      cacheStore
+    ),
+    null
+  );
+  assert.equal(cacheStore.reads.length, 0);
+  assert.equal(cacheStore.writes.length, 0);
+});
+
+test("resolveWorkspaceFileEntryIconUrl returns null for regular directories", async () => {
+  const cacheStore = createCacheStoreStub();
+
+  assert.equal(
+    await resolveWorkspaceFileEntryIconUrl(
+      "/workspace/folder",
+      createInput({
+        kind: "directory",
+        name: "folder",
+        path: "/workspace/folder"
+      }),
+      cacheStore
+    ),
+    null
+  );
+  assert.equal(cacheStore.writes.length, 0);
+});
+
+test("resolveWorkspaceFileEntryIconUrl writes application icon bytes to cache", async () => {
+  const cacheStore = createCacheStoreStub();
+  const iconBytes = Buffer.from([1, 2, 3, 4]);
+
+  const iconUrl = await resolveWorkspaceFileEntryIconUrl(
+    "/Applications/Safari.app",
+    createInput({
+      kind: "unknown",
+      mtimeMs: 42,
+      name: "Safari.app",
+      path: "/workspace/Safari.app"
+    }),
+    cacheStore,
+    {
+      readNativeFileIconPngBytes: async () => iconBytes
+    }
+  );
+
+  assert.equal(iconUrl, "tutti-file-icon://icon/test-id");
+  assert.equal(cacheStore.reads.length, 1);
+  assert.equal(cacheStore.writes.length, 1);
+  assert.deepEqual(Buffer.from(cacheStore.writes[0]!.bytes), iconBytes);
+  assert.deepEqual(cacheStore.writes[0]!.key, {
+    assetKind: "application-icon",
+    mtimeMs: 42,
+    path: "/workspace/Safari.app",
+    workspaceID: "workspace-a"
+  });
+});
+
+test("resolveWorkspaceFileEntryIconUrl converts fallback application data urls to cache bytes", async () => {
+  const cacheStore = createCacheStoreStub();
+
+  const iconUrl = await resolveWorkspaceFileEntryIconUrl(
+    "/Applications/Demo.app",
+    createInput({
+      kind: "unknown",
+      name: "Demo.app",
+      path: "/workspace/Demo.app"
+    }),
+    cacheStore,
+    {
+      readApplicationIconDataUrl: async () => "data:image/png;base64,AQIDBA==",
+      readNativeFileIconPngBytes: async () => null
+    }
+  );
+
+  assert.equal(iconUrl, "tutti-file-icon://icon/test-id");
+  assert.deepEqual(
+    Buffer.from(cacheStore.writes[0]!.bytes),
+    Buffer.from([1, 2, 3, 4])
   );
 });
 
-test("resolveWorkspaceFileEntryIconDataUrl returns app icon for .app bundles on macOS", async (t) => {
-  if (process.platform !== "darwin") {
-    t.skip("macOS only");
-    return;
-  }
+test("resolveWorkspaceFileEntryIconUrl writes default application icon bytes for selected file types", async () => {
+  const cacheStore = createCacheStoreStub();
 
-  const safariPath = "/Applications/Safari.app";
-  try {
-    const { accessSync, constants } = await import("node:fs");
-    accessSync(safariPath, constants.F_OK);
-  } catch {
-    t.skip("Safari.app not installed");
-    return;
-  }
+  const iconUrl = await resolveWorkspaceFileEntryIconUrl(
+    "/workspace/brief.pdf",
+    createInput({
+      kind: "file",
+      name: "brief.pdf",
+      path: "/workspace/brief.pdf"
+    }),
+    cacheStore,
+    {
+      readApplicationIconDataUrl: async () => "data:image/png;base64,AQIDBA==",
+      resolveDefaultApplicationForFile: async () => ({
+        applicationPath: "/Applications/Preview.app",
+        name: "Preview"
+      })
+    }
+  );
 
-  const iconDataUrl = await resolveWorkspaceFileEntryIconDataUrl(safariPath, {
-    kind: "unknown",
-    name: "Safari.app",
-    path: "/workspace/Safari.app"
+  assert.equal(iconUrl, "tutti-file-icon://icon/test-id");
+  assert.equal(cacheStore.reads.length, 1);
+  assert.equal(cacheStore.writes.length, 1);
+  assert.deepEqual(
+    Buffer.from(cacheStore.writes[0]!.bytes),
+    Buffer.from([1, 2, 3, 4])
+  );
+  assert.deepEqual(cacheStore.writes[0]!.key, {
+    applicationPath: "/Applications/Preview.app",
+    assetKind: "file-type-default-application-icon",
+    fileExtension: "pdf",
+    platform: "darwin"
   });
-
-  assert.match(iconDataUrl ?? "", /^data:image\/png;base64,/);
 });
+
+test("resolveWorkspaceFileEntryIconUrl returns cached application icon urls before generating", async () => {
+  const cacheStore = createCacheStoreStub({
+    cachedUrl: "tutti-file-icon://icon/cached-id"
+  });
+  let nativeIconReads = 0;
+  let fallbackIconReads = 0;
+
+  const iconUrl = await resolveWorkspaceFileEntryIconUrl(
+    "/Applications/Cached.app",
+    createInput({
+      kind: "unknown",
+      name: "Cached.app",
+      path: "/workspace/Cached.app"
+    }),
+    cacheStore,
+    {
+      readApplicationIconDataUrl: async () => {
+        fallbackIconReads += 1;
+        return "data:image/png;base64,AQIDBA==";
+      },
+      readNativeFileIconPngBytes: async () => {
+        nativeIconReads += 1;
+        return Buffer.from([1, 2, 3, 4]);
+      }
+    }
+  );
+
+  assert.equal(iconUrl, "tutti-file-icon://icon/cached-id");
+  assert.equal(nativeIconReads, 0);
+  assert.equal(fallbackIconReads, 0);
+  assert.equal(cacheStore.reads.length, 1);
+  assert.equal(cacheStore.writes.length, 0);
+});
+
+test("resolveWorkspaceFileEntryIconUrl returns cached default application icon urls before reading icon data", async () => {
+  const cacheStore = createCacheStoreStub({
+    cachedUrl: "tutti-file-icon://icon/cached-pdf"
+  });
+  let iconDataReads = 0;
+
+  const iconUrl = await resolveWorkspaceFileEntryIconUrl(
+    "/workspace/brief.pdf",
+    createInput({
+      kind: "file",
+      name: "brief.pdf",
+      path: "/workspace/brief.pdf"
+    }),
+    cacheStore,
+    {
+      readApplicationIconDataUrl: async () => {
+        iconDataReads += 1;
+        return "data:image/png;base64,AQIDBA==";
+      },
+      resolveDefaultApplicationForFile: async () => ({
+        applicationPath: "/Applications/Preview.app",
+        name: "Preview"
+      })
+    }
+  );
+
+  assert.equal(iconUrl, "tutti-file-icon://icon/cached-pdf");
+  assert.equal(iconDataReads, 0);
+  assert.equal(cacheStore.reads.length, 1);
+  assert.equal(cacheStore.writes.length, 0);
+});
+
+function createInput(
+  overrides: Partial<WorkspaceFileEntryIconInput> = {}
+): WorkspaceFileEntryIconInput {
+  return {
+    kind: "file",
+    mtimeMs: 1_700_000_000_000,
+    name: "example.txt",
+    path: "/workspace/example.txt",
+    workspaceID: "workspace-a",
+    ...overrides
+  };
+}
+
+function createCacheStoreStub(
+  options: { cachedUrl?: string | null } = {}
+): WorkspaceFileIconCacheStore & {
+  reads: WorkspaceFileIconCacheKey[];
+  writes: {
+    bytes: Uint8Array;
+    key: WorkspaceFileIconCacheKey;
+    mimeType: "image/png";
+  }[];
+} {
+  const writes: {
+    bytes: Uint8Array;
+    key: WorkspaceFileIconCacheKey;
+    mimeType: "image/png";
+  }[] = [];
+  const reads: WorkspaceFileIconCacheKey[] = [];
+  return {
+    reads,
+    writes,
+    async readUrl(key) {
+      reads.push(key);
+      return options.cachedUrl ?? null;
+    },
+    async resolveProtocolUrl() {
+      return null;
+    },
+    async write(input) {
+      writes.push(input);
+      return "tutti-file-icon://icon/test-id";
+    }
+  };
+}

@@ -136,6 +136,7 @@ export function createHostDesktopApi(): DesktopHostApi {
         workspaceID: string,
         entry: {
           kind: string;
+          mtimeMs: number | null;
           name: string;
           path: string;
         }
@@ -144,6 +145,7 @@ export function createHostDesktopApi(): DesktopHostApi {
           desktopIpcChannels.host.files.resolveEntryIcon,
           {
             entryKind: entry.kind,
+            entryMtimeMs: entry.mtimeMs,
             entryName: entry.name,
             path: entry.path,
             workspaceID

@@ -147,6 +147,7 @@ export interface DesktopHostFilesApi {
     workspaceID: string,
     entry: {
       kind: string;
+      mtimeMs: number | null;
       name: string;
       path: string;
     }

@@ -10,6 +10,7 @@ import type {
   DesktopCreateUserDocumentsProjectDirectoryResult,
   DesktopLocalFileTextResult,
   DesktopTerminalLinkPathPayload,
+  DesktopWorkspaceFileEntryIconPayload,
   DesktopWorkspaceFileOpenWithOtherPayload,
   DesktopWorkspaceFilePathPayload
 } from "../../shared/contracts/ipc";
@@ -19,7 +20,8 @@ import {
   openFileWithDefaultBrowser,
   openFileWithOtherApplication
 } from "./openWithApplications.ts";
-import { resolveWorkspaceFileEntryIconDataUrl } from "./workspaceFileEntryIcon.ts";
+import { resolveWorkspaceFileEntryIconUrl } from "./workspaceFileEntryIcon.ts";
+import type { WorkspaceFileIconCacheStore } from "./workspaceFileIconCacheStore.ts";
 import {
   resolveTerminalLinkAbsolutePath,
   resolveWorkspaceLogicalFilePath,
@@ -53,10 +55,7 @@ export interface WorkspaceFileHostAccess {
     payload: DesktopWorkspaceFilePathPayload
   ): Promise<Uint8Array>;
   resolveEntryIcon(
-    payload: DesktopWorkspaceFilePathPayload & {
-      entryKind: string;
-      entryName: string;
-    }
+    payload: DesktopWorkspaceFileEntryIconPayload
   ): Promise<string | null>;
 }
 
@@ -69,6 +68,7 @@ export interface WorkspaceFileHostAccessDependencies {
   readFile?: typeof readFile;
   showItemInFolder?: (path: string) => void;
   stat?: typeof stat;
+  workspaceFileIconCache?: WorkspaceFileIconCacheStore;
 }
 
 export function createWorkspaceFileHostAccess(
@@ -199,12 +199,21 @@ export function createWorkspaceFileHostAccess(
     },
 
     async resolveEntryIcon(payload) {
+      if (!deps.workspaceFileIconCache) {
+        return null;
+      }
       const targetPath = resolveTargetPath(payload);
-      return resolveWorkspaceFileEntryIconDataUrl(targetPath, {
-        kind: payload.entryKind,
-        name: payload.entryName,
-        path: payload.path
-      });
+      return resolveWorkspaceFileEntryIconUrl(
+        targetPath,
+        {
+          kind: payload.entryKind,
+          mtimeMs: payload.entryMtimeMs,
+          name: payload.entryName,
+          path: payload.path,
+          workspaceID: payload.workspaceID
+        },
+        deps.workspaceFileIconCache
+      );
     }
   };
 }
