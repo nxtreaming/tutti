@@ -246,7 +246,7 @@ func composerConfigOptions(provider string, settings ComposerSettings, modelOpti
 		options = append(options, map[string]any{
 			"currentValue": nullableString(settings.Speed),
 			"id":           speedConfigOptionID(provider),
-			"options":      speedTierOptions(provider, settings.Speed),
+			"options":      speedTierOptions(provider),
 		})
 	}
 	return options
@@ -570,7 +570,7 @@ func normalizeSpeedForProvider(provider string, value string) string {
 	return speedTierStandard
 }
 
-func speedTierOptions(provider string, selected string) []map[string]string {
+func speedTierOptions(provider string) []map[string]string {
 	values := speedTierValuesForProvider(provider)
 	options := make([]map[string]string, 0, len(values))
 	for _, value := range values {

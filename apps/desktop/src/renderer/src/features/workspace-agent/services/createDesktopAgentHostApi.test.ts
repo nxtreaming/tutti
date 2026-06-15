@@ -96,6 +96,7 @@ interface DesktopAgentHostApiUnderTest {
         permissionModeId?: string | null;
         planMode?: boolean | null;
         reasoningEffort?: string | null;
+        speed?: string | null;
       };
       title?: string;
       visible?: boolean;
@@ -173,6 +174,7 @@ interface DesktopAgentHostApiUnderTest {
         model?: string | null;
         permissionModeId?: string | null;
         reasoningEffort?: string | null;
+        speed?: string | null;
       };
     }): Promise<{
       agentSessionId: string;
