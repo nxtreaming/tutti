@@ -367,6 +367,7 @@ describe("AgentComposer", () => {
           draftSettings: {
             model: null,
             reasoningEffort: null,
+            speed: null,
             planMode: true,
             permissionModeId: "preset"
           },
@@ -415,6 +416,7 @@ describe("AgentComposer", () => {
           draftSettings: {
             model: null,
             reasoningEffort: null,
+            speed: null,
             planMode: false,
             permissionModeId: "preset"
           },
@@ -1706,11 +1708,15 @@ function createComposerSettings(
     draftSettings: {
       model: null,
       reasoningEffort: null,
+      speed: null,
       planMode: false,
       permissionModeId: "preset"
     },
     supportsModel: true,
     supportsReasoningEffort: true,
+    supportsSpeed: true,
+    speedUnavailable: false,
+    availableSpeeds: [],
     supportsPlanMode: false,
     isSettingsLoading: false,
     modelUnavailable: false,
@@ -1737,6 +1743,10 @@ function createLabels(): Parameters<typeof AgentComposer>[0]["labels"] {
     reasoningOptionMedium: "中",
     reasoningOptionHigh: "高",
     reasoningOptionXHigh: "超高",
+    speedLabel: "Speed",
+    speedSelectionLabel: "Speed",
+    speedOptionStandard: "Standard",
+    speedOptionFast: "Fast",
     permissionLabel: "运行权限",
     permissionModeReadOnly: "请求批准",
     permissionModeAuto: "代我批准",

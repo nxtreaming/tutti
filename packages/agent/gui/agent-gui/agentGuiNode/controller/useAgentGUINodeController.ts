@@ -30,6 +30,7 @@ import type {
   AgentSessionPermissionConfig,
   AgentSessionPermissionModeOption,
   AgentSessionReasoningEffort,
+  AgentSessionSpeed,
   AgentSessionState
 } from "../../../shared/agentSessionTypes";
 import { AGENT_PROVIDER_LABEL } from "../../../contexts/settings/domain/agentSettings";
@@ -1098,6 +1099,12 @@ function reasoningConfigOptionIdForProvider(
   return provider === "codex" ? "reasoning_effort" : "effort";
 }
 
+function speedConfigOptionIdForProvider(
+  provider: AgentGUINodeData["provider"]
+): string {
+  return provider === "codex" ? "service_tier" : "fast";
+}
+
 function composerSettingOptionsFromActivity(
   options: readonly AgentActivityComposerOptions["models"][number][]
 ): AgentGUIComposerSettingOption[] {
@@ -1126,6 +1133,19 @@ function reasoningSelectionFromComposerOptions(
   }
   return {
     options: composerSettingOptionsFromActivity(options.reasoningEfforts),
+    currentValue
+  };
+}
+
+function speedSelectionFromComposerOptions(
+  options: AgentActivityComposerOptions | null,
+  currentValue: AgentSessionSpeed | null
+): ACPConfigOptionSelection | null {
+  if (!options) {
+    return null;
+  }
+  return {
+    options: composerSettingOptionsFromActivity(options.speeds ?? []),
     currentValue
   };
 }
@@ -1207,17 +1227,30 @@ function resolveEffectiveComposerSettings(input: {
       (normalizeOptionalText(
         input.settings.reasoningEffort
       ) as AgentSessionReasoningEffort | null) ?? null,
+    speed:
+      (normalizeOptionalText(
+        input.settings.speed
+      ) as AgentSessionSpeed | null) ?? null,
     planMode: Boolean(input.settings.planMode),
     permissionModeId: normalizePermissionModeId(input.settings.permissionModeId)
   };
 }
 
+type RuntimeConfigSetting =
+  | "model"
+  | "reasoningEffort"
+  | "speed"
+  | "permissionModeId";
+
 function runtimeConfigKeyForSetting(
   provider: AgentGUINodeData["provider"],
-  setting: "model" | "reasoningEffort" | "permissionModeId"
+  setting: RuntimeConfigSetting
 ): string {
   if (setting === "reasoningEffort") {
     return reasoningConfigOptionIdForProvider(provider);
+  }
+  if (setting === "speed") {
+    return speedConfigOptionIdForProvider(provider);
   }
   if (setting === "permissionModeId") {
     return "mode";
@@ -1228,13 +1261,21 @@ function runtimeConfigKeyForSetting(
 function shouldUpdateRuntimeConfigOption(
   provider: AgentGUINodeData["provider"],
   id: string | null,
-  setting: "model" | "reasoningEffort" | "permissionModeId"
+  setting: RuntimeConfigSetting
 ): boolean {
   if (setting === "model") {
     return id === "model";
   }
   if (setting === "permissionModeId") {
     return id === "mode";
+  }
+  if (setting === "speed") {
+    return (
+      id === speedConfigOptionIdForProvider(provider) ||
+      id === "service_tier" ||
+      id === "speed" ||
+      id === "fast"
+    );
   }
   return (
     id === reasoningConfigOptionIdForProvider(provider) ||
@@ -1255,7 +1296,7 @@ function mergeRuntimeContextComposerSettings(
   const nextRuntimeContext: Record<string, unknown> = { ...runtimeContext };
   const runtimeConfigPatch: Record<string, unknown> = {};
   const optionPatches: Array<{
-    setting: "model" | "reasoningEffort" | "permissionModeId";
+    setting: RuntimeConfigSetting;
     value: string | null;
   }> = [];
 
@@ -1270,6 +1311,11 @@ function mergeRuntimeContextComposerSettings(
       runtimeConfigKeyForSetting(provider, "reasoningEffort")
     ] = value;
     optionPatches.push({ setting: "reasoningEffort", value });
+  }
+  if (settings.speed !== undefined) {
+    const value = normalizeOptionalText(settings.speed);
+    runtimeConfigPatch[runtimeConfigKeyForSetting(provider, "speed")] = value;
+    optionPatches.push({ setting: "speed", value });
   }
   if (settings.permissionModeId !== undefined) {
     const value = normalizeOptionalText(settings.permissionModeId);
@@ -1329,6 +1375,7 @@ function sameComposerSettings(
   return (
     (left?.model ?? null) === (right?.model ?? null) &&
     (left?.reasoningEffort ?? null) === (right?.reasoningEffort ?? null) &&
+    (left?.speed ?? null) === (right?.speed ?? null) &&
     Boolean(left?.planMode) === Boolean(right?.planMode) &&
     (left?.permissionModeId ?? null) === (right?.permissionModeId ?? null)
   );
@@ -1449,6 +1496,7 @@ function buildNodeDefaultComposerSettings(
   data: AgentGUINodeData,
   options?: {
     defaultReasoningEffort?: AgentSessionReasoningEffort | null;
+    defaultSpeed?: AgentSessionSpeed | null;
   }
 ): AgentSessionComposerSettings {
   // Generic cleanup only — provider-level clamping is owned by the daemon
@@ -1461,6 +1509,12 @@ function buildNodeDefaultComposerSettings(
         composerOverrides.reasoningEffort
       ) as AgentSessionReasoningEffort | null) ??
       options?.defaultReasoningEffort ??
+      null,
+    speed:
+      (normalizeOptionalText(
+        composerOverrides.speed
+      ) as AgentSessionSpeed | null) ??
+      options?.defaultSpeed ??
       null,
     planMode: Boolean(composerOverrides.planMode),
     permissionModeId: normalizePermissionModeId(
@@ -1483,6 +1537,7 @@ function composerSupportForProvider(provider: AgentGUINodeData["provider"]): {
   model: boolean;
   permission: boolean;
   reasoning: boolean;
+  speed: boolean;
   plan: boolean;
 } {
   if (
@@ -1494,6 +1549,7 @@ function composerSupportForProvider(provider: AgentGUINodeData["provider"]): {
       model: true,
       permission: provider === "claude-code" || provider === "codex",
       reasoning: true,
+      speed: provider === "claude-code" || provider === "codex",
       plan: false
     };
   }
@@ -1501,6 +1557,7 @@ function composerSupportForProvider(provider: AgentGUINodeData["provider"]): {
     model: false,
     permission: provider === "nexight",
     reasoning: false,
+    speed: false,
     plan: false
   };
 }
@@ -1527,6 +1584,7 @@ function nodeDataFromComposerSettings(
   const composerOverrides = {
     model: normalizeOptionalText(settings.model),
     reasoningEffort: normalizeOptionalText(settings.reasoningEffort),
+    speed: normalizeOptionalText(settings.speed),
     planMode: Boolean(settings.planMode),
     permissionModeId: normalizePermissionModeId(settings.permissionModeId)
   };
@@ -1699,6 +1757,11 @@ function mergeSessionControlStatePatch(
       nextSettings.reasoningEffort = normalizeOptionalText(
         patch.settings.reasoningEffort
       ) as AgentSessionReasoningEffort | null;
+    }
+    if (patch.settings.speed !== undefined) {
+      nextSettings.speed = normalizeOptionalText(
+        patch.settings.speed
+      ) as AgentSessionSpeed | null;
     }
     if (patch.settings.planMode !== undefined) {
       nextSettings.planMode = Boolean(patch.settings.planMode);
@@ -5777,6 +5840,7 @@ export function useAgentGUINodeController({
         model: sessionSettings?.model ?? currentDefaults.model,
         reasoningEffort:
           sessionSettings?.reasoningEffort ?? currentDefaults.reasoningEffort,
+        speed: sessionSettings?.speed ?? currentDefaults.speed,
         planMode: sessionSettings?.planMode ?? currentDefaults.planMode,
         permissionModeId:
           sessionSettings?.permissionModeId ?? currentDefaults.permissionModeId
@@ -5791,6 +5855,10 @@ export function useAgentGUINodeController({
           supportedNextSettings.reasoningEffort !== undefined
             ? supportedNextSettings.reasoningEffort
             : baseDefaultsFromSession.reasoningEffort,
+        speed:
+          supportedNextSettings.speed !== undefined
+            ? supportedNextSettings.speed
+            : baseDefaultsFromSession.speed,
         planMode:
           supportedNextSettings.planMode ?? baseDefaultsFromSession.planMode,
         permissionModeId:
@@ -5826,6 +5894,11 @@ export function useAgentGUINodeController({
           ? (supportedNextSettings.reasoningEffort ?? null)
           : undefined;
       const currentReasoningEffort = sessionSettings?.reasoningEffort ?? null;
+      const nextSpeed =
+        supportedNextSettings.speed !== undefined
+          ? (supportedNextSettings.speed ?? null)
+          : undefined;
+      const currentSpeed = sessionSettings?.speed ?? null;
       const nextPlanMode = supportedNextSettings.planMode;
       const currentPlanMode = resolveEffectivePlanModeFromStates({
         sessionPlanModeState: planModeStateFromSessionState(activeSessionState),
@@ -5843,6 +5916,9 @@ export function useAgentGUINodeController({
         nextReasoningEffort !== currentReasoningEffort
       ) {
         sessionSettingsPatch.reasoningEffort = nextReasoningEffort;
+      }
+      if (nextSpeed !== undefined && nextSpeed !== currentSpeed) {
+        sessionSettingsPatch.speed = nextSpeed;
       }
       if (nextPlanMode !== undefined && nextPlanMode !== currentPlanMode) {
         sessionSettingsPatch.planMode = nextPlanMode;
@@ -7121,6 +7197,9 @@ export function useAgentGUINodeController({
   const draftReasoningEffort = normalizeOptionalText(
     draftSettings.reasoningEffort
   ) as AgentSessionReasoningEffort | null;
+  const draftSpeed = normalizeOptionalText(
+    draftSettings.speed
+  ) as AgentSessionSpeed | null;
   // The offer is derived from the same timeline data that renders the plan
   // card (the latest turn produced a plan item), gated on codex + plan mode
   // and a settled (non-working) conversation. No status-edge/runtimeContext
@@ -7266,6 +7345,11 @@ export function useAgentGUINodeController({
       modelSelectionFromComposerOptions(providerComposerOptions, draftModel),
     [draftModel, providerComposerOptions]
   );
+  const activeSessionSpeedSelection = useMemo(
+    () =>
+      speedSelectionFromComposerOptions(providerComposerOptions, draftSpeed),
+    [draftSpeed, providerComposerOptions]
+  );
   const effectivePlanMode = useMemo(
     () =>
       resolveEffectivePlanModeFromStates({
@@ -7291,6 +7375,7 @@ export function useAgentGUINodeController({
     const selectedModelValue = draftModel;
     const selectedReasoningEffortValue =
       draftReasoningEffort as AgentSessionReasoningEffort | null;
+    const selectedSpeedValue = draftSpeed as AgentSessionSpeed | null;
     const selectedPermissionModeValue =
       normalizePermissionModeId(draftSettings.permissionModeId) ??
       normalizePermissionModeId(permissionConfig?.defaultValue);
@@ -7300,6 +7385,7 @@ export function useAgentGUINodeController({
       draftSettings: {
         model: draftModel,
         reasoningEffort: draftReasoningEffort,
+        speed: draftSpeed,
         planMode: Boolean(draftSettings.planMode),
         permissionModeId: normalizePermissionModeId(
           draftSettings.permissionModeId
@@ -7308,6 +7394,7 @@ export function useAgentGUINodeController({
       effectivePlanMode: composerSupport.plan ? effectivePlanMode : false,
       supportsModel: composerSupport.model,
       supportsReasoningEffort: composerSupport.reasoning,
+      supportsSpeed: composerSupport.speed,
       supportsPermissionMode,
       supportsPlanMode: composerSupport.plan,
       isSettingsLoading,
@@ -7321,6 +7408,11 @@ export function useAgentGUINodeController({
         sessionSettings === null &&
         composerSupport.reasoning &&
         draftReasoningEffort === null,
+      speedUnavailable:
+        activeConversationId !== null &&
+        sessionSettings === null &&
+        composerSupport.speed &&
+        draftSpeed === null,
       permissionModeUnavailable:
         activeConversationId !== null &&
         sessionSettings === null &&
@@ -7333,6 +7425,7 @@ export function useAgentGUINodeController({
         !effectivePlanMode,
       selectedModelValue,
       selectedReasoningEffortValue,
+      selectedSpeedValue,
       selectedPermissionModeValue,
       permissionConfig,
       selectedProjectPath:
@@ -7352,6 +7445,12 @@ export function useAgentGUINodeController({
         activeSessionReasoningSelection !== null
           ? activeSessionReasoningSelection.options
           : [],
+      availableSpeeds:
+        composerSupport.speed &&
+        hasOptionsSource &&
+        activeSessionSpeedSelection !== null
+          ? activeSessionSpeedSelection.options
+          : [],
       availablePermissionModes: supportsPermissionMode
         ? permissionModeOptions(data.provider, permissionConfig)
         : []
@@ -7361,6 +7460,7 @@ export function useAgentGUINodeController({
     activeConversation?.cwd,
     activeSessionModelSelection,
     activeSessionReasoningSelection,
+    activeSessionSpeedSelection,
     draftSettings.permissionModeId,
     draftSettings.planMode,
     effectivePlanMode,
@@ -7370,7 +7470,8 @@ export function useAgentGUINodeController({
     composerSupport,
     timelinePlanModeState,
     draftModel,
-    draftReasoningEffort
+    draftReasoningEffort,
+    draftSpeed
   ]);
 
   const stableCreateConversation =

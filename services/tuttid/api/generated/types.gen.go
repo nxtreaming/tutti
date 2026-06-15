@@ -1238,6 +1238,7 @@ type AgentProviderComposerOptionsResponse struct {
 	ReasoningConfig   AgentProviderComposerConfig  `json:"reasoningConfig"`
 	RuntimeContext    map[string]interface{}       `json:"runtimeContext"`
 	Skills            []AgentProviderSkillOption   `json:"skills"`
+	SpeedConfig       *AgentProviderComposerConfig `json:"speedConfig,omitempty"`
 }
 
 // AgentProviderProbeResponse defines model for AgentProviderProbeResponse.
@@ -1295,6 +1296,7 @@ type AgentSessionComposerSettings struct {
 	PermissionModeId *string `json:"permissionModeId,omitempty"`
 	PlanMode         *bool   `json:"planMode,omitempty"`
 	ReasoningEffort  *string `json:"reasoningEffort,omitempty"`
+	Speed            *string `json:"speed,omitempty"`
 }
 
 // ApiErrorDetails defines model for ApiErrorDetails.
@@ -1529,6 +1531,7 @@ type CreateWorkspaceAgentSessionRequest struct {
 	PlanMode         *bool                     `json:"planMode,omitempty"`
 	Provider         WorkspaceAgentProvider    `json:"provider"`
 	ReasoningEffort  *string                   `json:"reasoningEffort,omitempty"`
+	Speed            *string                   `json:"speed,omitempty"`
 	Title            *string                   `json:"title,omitempty"`
 	Visible          *bool                     `json:"visible,omitempty"`
 }

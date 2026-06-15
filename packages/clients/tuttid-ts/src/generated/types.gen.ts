@@ -563,6 +563,7 @@ export type AgentSessionComposerSettings = {
   permissionModeId?: string | null;
   planMode?: boolean | null;
   reasoningEffort?: string | null;
+  speed?: string | null;
 };
 
 export type PermissionModeSemantic =
@@ -611,6 +612,7 @@ export type AgentProviderComposerOptionsResponse = {
   modelConfig: AgentProviderComposerConfig;
   permissionConfig: PermissionConfig;
   reasoningConfig: AgentProviderComposerConfig;
+  speedConfig?: AgentProviderComposerConfig;
   effectiveSettings: AgentSessionComposerSettings;
   runtimeContext: {
     [key: string]: unknown;
@@ -808,6 +810,7 @@ export type CreateWorkspaceAgentSessionRequest = {
   permissionModeId?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  speed?: string | null;
   planMode?: boolean | null;
   visible?: boolean | null;
 };
