@@ -15,9 +15,13 @@
 
 ---
 
+加入我們的 Discord，認識團隊與其他開發者：
+
+<img src="docs/assets/join-discord.jpg" alt="加入我們的 Discord —— 掃碼認識 Tutti" width="360" />
+
 喜歡 Tutti？歡迎給我們一顆 Star、Fork 儲存庫、提交 Issue，或發起 PR。
 
-我們正在和社群一起打造 Tutti。歡迎在本 README 末尾加入我們的 Discord，分享回饋、提出問題，並一起參與接下來的建設。
+我們正在和社群一起打造 Tutti。歡迎加入我們的 Discord，分享回饋、提出問題，並一起參與接下來的建設。
 
 ## Tutti 是什麼？
 
@@ -181,10 +185,6 @@ make dev-gui
 歡迎參與貢獻——請先閱讀[貢獻指南](CONTRIBUTING.zh-TW.md)，並了解我們的[行為準則](CODE_OF_CONDUCT.md)。
 
 回報安全漏洞請參見 [SECURITY.md](SECURITY.md)。
-
-加入我們的 Discord，認識團隊與其他開發者：
-
-<img src="docs/assets/join-discord.jpg" alt="加入我們的 Discord —— 掃碼認識 Tutti" width="360" />
 
 ## 授權
 

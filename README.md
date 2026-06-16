@@ -15,9 +15,13 @@
 
 ---
 
+Join our Discord to meet the team and other builders:
+
+<img src="docs/assets/join-discord.jpg" alt="Join our Discord — scan to meet Tutti" width="360" />
+
 Like Tutti? Give us a star, fork the repo, open an issue, or send a PR.
 
-We're building Tutti with the community. Join our Discord at the end of this README to share feedback, ask questions, and help shape what comes next.
+We're building Tutti with the community. Join our Discord to share feedback, ask questions, and help shape what comes next.
 
 ## What is Tutti?
 
@@ -181,10 +185,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development guide.
 Contributions are welcome — read the [Contributing Guide](CONTRIBUTING.md) to get started, and our [Code of Conduct](CODE_OF_CONDUCT.md) for community standards.
 
 To report a security vulnerability, see [SECURITY.md](SECURITY.md).
-
-Join our Discord to meet the team and other builders:
-
-<img src="docs/assets/join-discord.jpg" alt="Join our Discord — scan to meet Tutti" width="360" />
 
 ## License
 
