@@ -17,7 +17,6 @@ export const issueManagerWorkbenchContributionFactory: DesktopWorkbenchContribut
         tuttidClient: context.tuttidClient,
         platformApi: context.platformApi,
         reporterService: context.reporterService,
-        resolveAppIconUrl: context.dockIcons.appIconUrl,
         richTextAtService: context.richTextAtService,
         runtimeApi: context.runtimeApi,
         workspaceAgentActivityService: context.workspaceAgentActivityService,

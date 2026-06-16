@@ -1,4 +1,7 @@
-export { registerRichTextAtServices } from "./services/registerRichTextAtServices";
+export {
+  registerRichTextAtServices,
+  type RichTextAtServiceRegistrationInput
+} from "./services/registerRichTextAtServices";
 export {
   IDesktopRichTextAtService,
   type DesktopRichTextAtCapability,
@@ -11,5 +14,7 @@ export {
 } from "./providers/desktopWorkspaceAppMentionProvider.ts";
 export {
   createDesktopAgentSessionMentionProvider,
-  type CreateDesktopAgentSessionMentionProviderInput
+  type CreateDesktopAgentSessionMentionProviderInput,
+  type DesktopAgentSessionStatusView
 } from "./providers/desktopAgentSessionMentionProvider.ts";
+export { createDesktopAgentSessionStatusViewResolver } from "./providers/desktopAgentSessionStatusView.ts";

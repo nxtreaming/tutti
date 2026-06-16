@@ -35,20 +35,7 @@ import {
 } from "@renderer/features/workspace-agent";
 import { runDesktopAgentGUILinkAction } from "@renderer/features/workspace-agent/services/desktopAgentGUILinkActions.ts";
 import { normalizeDesktopAgentGUIProvider } from "@renderer/features/workspace-agent/desktopAgentGUINodeState";
-import {
-  createDesktopAgentSessionMentionProvider,
-  createDesktopWorkspaceAppMentionProvider,
-  type IDesktopRichTextAtService
-} from "@renderer/features/rich-text-at";
-import { normalizeAgentActivityDisplayStatus } from "@tutti-os/agent-activity-core";
-import {
-  managedAgentRoundedIconUrl,
-  userAvatarPlaceholderUrl,
-  workspaceAgentActivityStatusLabel
-} from "@tutti-os/agent-gui/agent-message-center";
-import { AGENT_GUI_MENTION_PROVIDER_IDS } from "@tutti-os/agent-gui/agent-rich-text-at-provider";
-import { getActiveLocale } from "../../../../i18n/runtime.ts";
-import type { RichTextAtProvider } from "@tutti-os/ui-rich-text/types";
+import { type IDesktopRichTextAtService } from "@renderer/features/rich-text-at";
 import type { IWorkspaceUserProjectService } from "@renderer/features/workspace-user-project";
 import { resolveWorkspaceLinkAction } from "@contexts/workspace/presentation/renderer/actions/workspaceLinkActions.ts";
 import { requestWorkspaceBrowserLaunch } from "../workspaceBrowserLaunchCoordinator.ts";
@@ -75,7 +62,6 @@ export function createWorkspaceIssueManagerContribution(input: {
     DesktopPlatformApi,
     "homeDirectory" | "os" | "resolveDroppedPaths"
   >;
-  resolveAppIconUrl?: (appId: string) => string | null;
   richTextAtService: IDesktopRichTextAtService;
   runtimeApi: DesktopRuntimeApi;
   reporterService?: Pick<IReporterService, "trackEvents">;
@@ -202,71 +188,24 @@ export function createWorkspaceIssueManagerContribution(input: {
           workspaceAgentActivityService: input.workspaceAgentActivityService,
           workspaceId: input.workspaceId
         }),
-      resolveRichTextAtProviders: ({ surface, workspaceId }) => {
-        const baseProviders = input.richTextAtService.getProviders(
+      resolveRichTextAtProviders: ({ surface, workspaceId }) =>
+        // The neutral `DesktopRichTextAtService` already emits the enriched
+        // workspace-app (localized name/description + resolved icon) and
+        // agent-session (provider icon + avatar + participant + status) providers,
+        // so the issue-manager `@`-mention rows render identically to the agent
+        // without this package importing any agent/desktop mention resolvers.
+        input.richTextAtService.getProviders(
           createWorkspaceIssueManagerRichTextAtProviderRequestFromIdentity({
             currentUser: () => identityAdapter.currentUser(),
             surface,
             workspaceId
           })
-        );
-        // Enrich the raw workspace-app provider with the same localized
-        // name/description + resolved icon the agent composer uses, so the
-        // issue-manager `@`-mention Apps rows render identically. Wrapping here
-        // (the desktop contribution seam) keeps the issue-manager package free of
-        // any agent/desktop coupling.
-        return baseProviders.map((provider) => {
-          if (provider.id === AGENT_GUI_MENTION_PROVIDER_IDS.workspaceApp) {
-            // The wrapped provider is typed RichTextAtProvider<DesktopWorkspaceAppMentionItem>,
-            // which tsc rejects against RichTextAtProvider<unknown> (contravariant
-            // getItemKey). The cast is required by tsc even though eslint's checker
-            // believes it unnecessary.
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-            return createDesktopWorkspaceAppMentionProvider({
-              apps: input.appCenterService.store.apps,
-              baseProvider: provider,
-              locale: getActiveLocale(),
-              resolveAppIconUrl: input.resolveAppIconUrl,
-              workspaceId
-            }) as unknown as RichTextAtProvider<unknown>;
-          }
-          // Enrich the raw agent-session provider so its match meta carries the
-          // same rounded provider icon + user avatar placeholder + participant +
-          // resolved activity status the agent composer renders. Resolution stays
-          // here (the desktop seam) and is threaded via meta, so the
-          // issue-manager package stays free of agent-app asset/helper coupling.
-          if (provider.id === AGENT_GUI_MENTION_PROVIDER_IDS.agentSession) {
-            return createDesktopAgentSessionMentionProvider({
-              baseProvider: provider,
-              resolveAgentIconUrl: managedAgentRoundedIconUrl,
-              userAvatarPlaceholderUrl,
-              resolveStatusView: resolveAgentSessionStatusView
-            });
-          }
-          return provider;
-        });
-      }
+        )
     },
     typeId: defaultIssueManagerWorkbenchTypeId
   });
 
   return contribution;
-}
-
-/**
- * Resolve a raw agent-session status into the display-ready activity status view
- * the issue-manager session mention row renders, using the SAME normalization
- * ({@link normalizeAgentActivityDisplayStatus}) and localized label
- * ({@link workspaceAgentActivityStatusLabel}) the agent composer uses, so the
- * session status badge matches byte-for-byte across surfaces.
- */
-function resolveAgentSessionStatusView(status: string) {
-  const dataStatus = normalizeAgentActivityDisplayStatus(status);
-  return {
-    dataStatus,
-    label: workspaceAgentActivityStatusLabel(dataStatus),
-    pulse: dataStatus === "working" || dataStatus === "waiting"
-  };
 }
 
 function resolveIssueManagerReadyAgentProviderOptions(
