@@ -62,3 +62,21 @@ export function mentionStatusBadgeClassName(input: {
     ? issueMentionStatusBadgeClassName(input.tone)
     : activityMentionStatusBadgeClassName(input.tone);
 }
+
+/**
+ * Map an issue status string to its badge tone. Shared by every `@`-mention
+ * surface that renders an issue row (agent composer, issue-manager) so the
+ * status badge color is identical across surfaces. The label is resolved by
+ * each surface's own i18n; only the tone lives here.
+ */
+export function issueMentionStatusTone(status: string): MentionRowStatusTone {
+  switch (status.trim().toLowerCase()) {
+    case "completed":
+      return "green";
+    case "failed":
+    case "canceled":
+      return "red";
+    default:
+      return "neutral";
+  }
+}

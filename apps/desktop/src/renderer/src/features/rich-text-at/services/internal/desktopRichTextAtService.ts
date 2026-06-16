@@ -504,6 +504,7 @@ function createWorkspaceIssueAtContributor(
               label: item.title,
               meta: {
                 contentPreview: item.content?.trim() ?? "",
+                creatorDisplayName: item.creatorDisplayName?.trim() ?? "",
                 status: item.status?.trim() ?? "",
                 topicId: item.topicId,
                 workspaceId: item.workspaceId

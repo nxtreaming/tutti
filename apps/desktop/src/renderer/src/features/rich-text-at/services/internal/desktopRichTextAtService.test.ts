@@ -172,6 +172,7 @@ test("desktop rich text @ service assembles workspace issue providers by capabil
       label: "Login polish",
       meta: {
         contentPreview: "Handle flaky login captcha",
+        creatorDisplayName: "Alice",
         status: "running",
         topicId: "topic-1",
         workspaceId: "workspace-1"

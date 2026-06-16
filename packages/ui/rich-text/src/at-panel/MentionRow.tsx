@@ -1,4 +1,17 @@
-import { Badge, StatusDot, cn } from "@tutti-os/ui-system";
+import {
+  ArrowLeftIcon,
+  Badge,
+  FileCodeIcon,
+  FileTextIcon,
+  FolderIcon,
+  ImageFileIcon,
+  ProductIcon,
+  StatusDot,
+  VideoFileIcon,
+  cn,
+  type IconProps
+} from "@tutti-os/ui-system";
+import type { MentionFileVisualKind } from "./mentionFileVisualKind.ts";
 import type {
   MentionRowFileItem,
   MentionRowItem,
@@ -6,6 +19,29 @@ import type {
   MentionRowStatusTag
 } from "./mentionRowTypes.ts";
 import { mentionStatusBadgeClassName } from "./mentionStatusTone.ts";
+
+/**
+ * Default file kind-icon shapes for surfaces that do NOT ship the agent's
+ * CSS-masked glyph stylesheet. These mirror the agent's mask glyph shapes
+ * (`agentactivity.css`: folder-filled / doc-filled / code-filled / image-filled
+ * / video-filled / arrow-left-filled) using ui-system icon components, so a
+ * file row renders a real glyph without `agentactivity.css`. The agent composer
+ * passes its own `fileIcon` class and keeps rendering the masked `<span>`.
+ */
+const MENTION_FILE_VISUAL_KIND_ICON: Record<
+  MentionFileVisualKind,
+  (props: IconProps) => React.JSX.Element
+> = {
+  back: ArrowLeftIcon,
+  folder: FolderIcon,
+  document: FileTextIcon,
+  // The agent maps markdown to `product-filled.svg`; ProductIcon is the
+  // matching boundary-safe ui-system glyph.
+  markdown: ProductIcon,
+  code: FileCodeIcon,
+  image: ImageFileIcon,
+  video: VideoFileIcon
+};
 
 /**
  * Structural class-name hooks for the elements a {@link MentionRow} renders that
@@ -196,6 +232,28 @@ function MentionFileIcon({
           loading="lazy"
           draggable={false}
         />
+      </span>
+    );
+  }
+
+  // Surfaces that ship a custom file-icon stylesheet (e.g. the agent composer
+  // via `agentactivity.css`) render the empty CSS-masked `<span>` so their DOM
+  // stays byte-identical. Surfaces using the package default class have no such
+  // stylesheet, so render a real ui-system kind glyph instead of an empty box.
+  const usesDefaultFileIcon =
+    classNames.fileIcon === DEFAULT_MENTION_ROW_CLASS_NAMES.fileIcon;
+  if (usesDefaultFileIcon) {
+    const Icon = MENTION_FILE_VISUAL_KIND_ICON[item.visualKind];
+    return (
+      <span
+        className={cn(
+          classNames.fileIcon,
+          "grid h-4 w-4 shrink-0 place-items-center text-[var(--text-secondary)]"
+        )}
+        data-agent-file-visual-kind={item.visualKind}
+        aria-hidden="true"
+      >
+        <Icon size={16} />
       </span>
     );
   }

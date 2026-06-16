@@ -5,6 +5,7 @@ import {
 import {
   MentionPalette,
   flattenMentionPaletteEntries,
+  issueMentionStatusTone,
   renderMentionRow,
   type MentionPaletteEntry,
   type MentionPaletteState,
@@ -543,18 +544,6 @@ function mentionStatusTone(
     return "red";
   }
   return "neutral";
-}
-
-function issueMentionStatusTone(status: string): MentionRowStatusTone {
-  switch (status.trim().toLowerCase()) {
-    case "completed":
-      return "green";
-    case "failed":
-    case "canceled":
-      return "red";
-    default:
-      return "neutral";
-  }
 }
 
 function browseHintForFilter(filter: AgentMentionFilterId): string {

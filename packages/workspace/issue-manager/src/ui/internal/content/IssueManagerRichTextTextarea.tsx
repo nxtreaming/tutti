@@ -11,9 +11,12 @@ import {
   MentionPalette,
   buildMentionPaletteState,
   flattenMentionPaletteEntries,
+  issueMentionStatusTone,
   renderMentionRow,
+  resolveMentionFileVisualKind,
   type MentionPaletteGroup,
-  type MentionRowItem
+  type MentionRowItem,
+  type MentionRowStatusTag
 } from "@tutti-os/ui-rich-text/at-panel";
 import {
   RichTextAtEditor,
@@ -21,10 +24,15 @@ import {
 } from "@tutti-os/ui-rich-text/editor";
 import type { RichTextAtQueryMatch } from "@tutti-os/ui-rich-text/types";
 import { Button, LinkIcon, cn } from "@tutti-os/ui-system";
+import { resolveWorkspaceFileVisualKind } from "@tutti-os/workspace-file-preview/core";
+import type { MentionFileVisualKind } from "@tutti-os/ui-rich-text/at-panel";
+import { resolveIssueManagerStatusLabel } from "../../../services/controllerModel.ts";
 import type {
   IssueManagerController,
   IssueManagerRichTextSurface
 } from "../../react/index.ts";
+
+type IssueManagerCopy = IssueManagerController["copy"];
 
 const issueManagerRichTextTextareaBaseClassName =
   "min-h-20 w-full rounded-[8px] border border-transparent bg-[var(--transparency-block)] p-3 text-[13px] font-normal leading-[1.3] text-[var(--text-primary)] transition-[background-color,border-color,color] outline-none shadow-none placeholder:text-[var(--text-placeholder)] hover:bg-[var(--transparency-hover)] focus:bg-[var(--transparency-hover)] focus-visible:border-transparent focus-visible:bg-[var(--transparency-hover)] focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-[var(--transparency-block)] disabled:text-[var(--text-disabled)] disabled:opacity-100 aria-invalid:border-[var(--state-danger)] aria-invalid:bg-[var(--transparency-block)] aria-invalid:hover:bg-[var(--transparency-hover)] aria-invalid:focus:bg-[var(--transparency-hover)] aria-invalid:focus-visible:bg-[var(--transparency-hover)] aria-invalid:ring-0 aria-invalid:shadow-none";
@@ -249,10 +257,18 @@ function nonEmptyText(value: string | null | undefined): string | null {
  * The **app** branch is fully realized in Phase 2: it reads the localized
  * display name/description + resolved icon that the wrapped
  * `createDesktopWorkspaceAppMentionProvider` injects (into `match.label`,
- * `match.subtitle`, and `meta.iconUrl`). The file/issue/session branches are
- * minimal-but-valid placeholders that are completed in Phases 3-4.
+ * `match.subtitle`, and `meta.iconUrl`).
+ *
+ * The **issue** and **file** branches are realized in Phase 3: issues resolve a
+ * localized status badge (label via {@link resolveIssueManagerStatusLabel},
+ * tone via the shared {@link issueMentionStatusTone}); files derive their visual
+ * kind from the path so the shared row renders a real kind glyph. The session
+ * branch remains a minimal placeholder completed in Phase 4.
  */
-function issueMatchToRowItem(match: RichTextAtQueryMatch): MentionRowItem {
+function issueMatchToRowItem(
+  match: RichTextAtQueryMatch,
+  copy: IssueManagerCopy
+): MentionRowItem {
   const meta = issueMentionMatchMeta(match);
   const label = nonEmptyText(match.label) ?? match.key;
 
@@ -270,7 +286,8 @@ function issueMatchToRowItem(match: RichTextAtQueryMatch): MentionRowItem {
     return {
       kind: "issue",
       title: label,
-      creatorName: nonEmptyText(meta?.creatorDisplayName)
+      creatorName: nonEmptyText(meta?.creatorDisplayName),
+      statusTag: issueStatusTagFromMeta(meta?.status, copy)
     };
   }
 
@@ -286,13 +303,63 @@ function issueMatchToRowItem(match: RichTextAtQueryMatch): MentionRowItem {
     };
   }
 
-  // Files (and any other provider) — minimal valid file row for now. The path
-  // → visual-kind mapping + thumbnail are aligned in Phase 3.
+  // Files (and any other provider). The file match carries the workspace-
+  // relative `path` (as `match.subtitle`); derive the shared visual kind from
+  // it so the shared row renders a real kind glyph. Thumbnails are not surfaced
+  // for issue-manager file matches, so leave it null.
+  const filePath = nonEmptyText(match.subtitle) ?? label;
   return {
     kind: "file",
     name: label,
-    visualKind: "document"
+    visualKind: resolveMentionFileVisualKind({
+      baseVisualKind: resolveIssueManagerFileBaseVisualKind(filePath)
+    }),
+    thumbnailUrl: null
   };
+}
+
+/**
+ * Resolve an issue-manager `@`-mention issue status into the shared, display-
+ * ready badge: the localized label comes from issue-manager's own status i18n
+ * ({@link resolveIssueManagerStatusLabel}, the equivalent of the agent's
+ * `roomIssueStatusLabel`), and the tone from the shared
+ * {@link issueMentionStatusTone} the agent composer also uses.
+ */
+function issueStatusTagFromMeta(
+  status: string | null | undefined,
+  copy: IssueManagerCopy
+): MentionRowStatusTag | null {
+  const normalized = status?.trim();
+  if (!normalized) {
+    return null;
+  }
+  return {
+    label: resolveIssueManagerStatusLabel(copy, normalized),
+    tone: issueMentionStatusTone(normalized),
+    variant: "issue",
+    dataStatus: normalized.toLowerCase() || "not_started"
+  };
+}
+
+/**
+ * Map a workspace-relative file path to the shared {@link MentionFileVisualKind}
+ * the row renderer's kind glyph keys off. Reuses the same extension → kind
+ * resolution (`@tutti-os/workspace-file-preview`) the agent composer uses via
+ * its `resolveAgentWorkspaceFileVisualKind`, collapsing the preview package's
+ * `binary` kind to `document` to match the shared vocabulary.
+ */
+function resolveIssueManagerFileBaseVisualKind(
+  path: string
+): MentionFileVisualKind {
+  const kind = resolveWorkspaceFileVisualKind({
+    kind: "file",
+    name: path,
+    path
+  });
+  if (kind === "directory" || kind === "binary") {
+    return "document";
+  }
+  return kind;
 }
 
 function IssueManagerMentionPanel({
@@ -425,7 +492,7 @@ function IssueManagerMentionPanel({
       state={state}
       highlightedKey={highlightedKey}
       getItemKey={(item) => issueManagerMentionMatchKey(item)}
-      renderItem={(item) => renderMentionRow(issueMatchToRowItem(item))}
+      renderItem={(item) => renderMentionRow(issueMatchToRowItem(item, copy))}
       labels={{
         loading: copy.t("richTextAt.loading"),
         empty: copy.t("richTextAt.noMatches"),

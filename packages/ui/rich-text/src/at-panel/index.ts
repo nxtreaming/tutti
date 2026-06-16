@@ -19,6 +19,7 @@ export {
 export {
   activityMentionStatusBadgeClassName,
   issueMentionStatusBadgeClassName,
+  issueMentionStatusTone,
   mentionStatusBadgeClassName,
   type MentionRowStatusTone,
   type MentionRowStatusVariant
