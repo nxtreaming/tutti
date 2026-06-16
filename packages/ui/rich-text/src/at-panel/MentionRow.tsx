@@ -1,6 +1,5 @@
 import { Badge, StatusDot, cn } from "@tutti-os/ui-system";
 import type {
-  MentionRowAppItem,
   MentionRowFileItem,
   MentionRowItem,
   MentionRowSessionItem,
