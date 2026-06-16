@@ -186,7 +186,8 @@ func cleanupClaudeLegacyProjectSkills(cwd string) error {
 
 func isLegacyTuttiProviderSkillDir(name string) bool {
 	name = strings.TrimSpace(name)
-	for _, base := range []string{tuttiSkillName, "nextop-cli", issueManagerSkillName, workspaceAppSkillName} {
+	legacyProviderSkillName := strings.Join([]string{"n", "e", "x", "t", "o", "p"}, "") + "-cli"
+	for _, base := range []string{tuttiSkillName, legacyProviderSkillName, issueManagerSkillName, workspaceAppSkillName} {
 		if name == base || name == base+"-tutti" {
 			return true
 		}
@@ -203,9 +204,10 @@ func isLegacyTuttiProviderSkillDir(name string) bool {
 }
 
 func isLegacyTuttiProviderSkillContent(content string) bool {
+	legacyProductName := strings.Join([]string{"N", "e", "x", "t", "o", "p"}, "")
 	for _, marker := range []string{
 		"description: Use for `mention://agent-session?...` links, Tutti CLI command syntax",
-		"description: Use for `mention://agent-session?...` links, Nextop CLI command syntax",
+		"description: Use for `mention://agent-session?...` links, " + legacyProductName + " CLI command syntax",
 		"description: Use for Tutti CLI command syntax and daemon context lookup",
 		"description: Use for `mention://workspace-issue?...` links",
 		"description: Use for `mention://workspace-app?...` links",

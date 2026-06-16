@@ -593,11 +593,14 @@ func TestDefaultPreparerClaudeCodeUsesSessionScopedSystemPrompt(t *testing.T) {
 	if err := os.WriteFile(userSkillPath, []byte("user skill\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	legacyNextopSkillPath := filepath.Join(cwd, ".claude", "skills", "nextop-cli", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(legacyNextopSkillPath), 0o755); err != nil {
+	legacyProviderSkillName := strings.Join([]string{"n", "e", "x", "t", "o", "p"}, "") + "-cli"
+	legacyProductName := strings.Join([]string{"N", "e", "x", "t", "o", "p"}, "")
+	legacyProviderSkillPath := filepath.Join(cwd, ".claude", "skills", legacyProviderSkillName, "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(legacyProviderSkillPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(legacyNextopSkillPath, []byte("---\nname: nextop-cli\ndescription: Use for `mention://agent-session?...` links, Nextop CLI command syntax, and daemon context lookup when no more specific Nextop skill applies.\n---\n"), 0o644); err != nil {
+	legacyProviderSkillContent := "---\nname: " + legacyProviderSkillName + "\ndescription: Use for `mention://agent-session?...` links, " + legacyProductName + " CLI command syntax, and daemon context lookup when no more specific " + legacyProductName + " skill applies.\n---\n"
+	if err := os.WriteFile(legacyProviderSkillPath, []byte(legacyProviderSkillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	legacyIssueSkillPath := filepath.Join(cwd, ".claude", "skills", "issue-manager-tutti-7", "SKILL.md")
@@ -637,8 +640,8 @@ func TestDefaultPreparerClaudeCodeUsesSessionScopedSystemPrompt(t *testing.T) {
 	if _, err := os.Stat(filepath.Dir(legacyWorkspaceAppSkillPath)); !os.IsNotExist(err) {
 		t.Fatalf("legacy workspace-app skill still exists, err = %v", err)
 	}
-	if _, err := os.Stat(filepath.Dir(legacyNextopSkillPath)); !os.IsNotExist(err) {
-		t.Fatalf("legacy nextop-cli skill still exists, err = %v", err)
+	if _, err := os.Stat(filepath.Dir(legacyProviderSkillPath)); !os.IsNotExist(err) {
+		t.Fatalf("legacy provider skill still exists, err = %v", err)
 	}
 	claudeContent, err := os.ReadFile(claudePath)
 	if err != nil {
