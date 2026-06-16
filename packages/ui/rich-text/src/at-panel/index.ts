@@ -1,3 +1,4 @@
+export { buildMentionPaletteState } from "./buildMentionPaletteState.ts";
 export { MentionPalette } from "./MentionPalette.tsx";
 export { flattenMentionPaletteEntries } from "./mentionPaletteEntries.ts";
 export type {
