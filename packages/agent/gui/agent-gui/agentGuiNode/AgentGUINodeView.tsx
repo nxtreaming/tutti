@@ -54,6 +54,7 @@ import {
 import { AgentConversationFlow } from "../../shared/agentConversation/components/AgentConversationFlow";
 import type { AgentConversationVM } from "../../shared/agentConversation/contracts/agentConversationVM";
 import type { AgentPromptContentBlock } from "../../shared/contracts/dto";
+import type { AgentComposerDraft } from "./model/agentGuiNodeTypes";
 import { useProjectedAgentConversation } from "../../shared/agentConversation/projection/useProjectedAgentConversation";
 import { normalizeOptionalWorkspaceAgentStatus } from "../../shared/workspaceAgentStatusNormalizer";
 import {
@@ -356,7 +357,7 @@ interface AgentGUINodeViewProps {
       payload?: Record<string, unknown>;
     }) => void;
     interruptCurrentTurn: (noRunningResponseMessage: string) => void;
-    updateDraftPrompt: (prompt: string) => void;
+    updateDraftContent: (draftContent: AgentComposerDraft) => void;
     updateSelectedProjectPath?: AgentComposerProps["onProjectPathChange"];
     updateComposerSettings: (settings: {
       model?: string | null;
@@ -1259,8 +1260,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   const submitDisabled =
     isCollaboratorConversation ||
     !isAgentProviderReady ||
-    (!viewModel.canSubmit && !canQueueWhileBusy) ||
-    viewModel.draftPrompt.trim() === "";
+    (!viewModel.canSubmit && !canQueueWhileBusy);
   const hasNonRetryableRecoveryFailure =
     sessionChrome.recovery?.kind === "failed" &&
     sessionChrome.recovery.canRetry === false;
@@ -1281,8 +1281,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     (activeConversationTurnBusy ||
       viewModel.pendingApproval !== null ||
       viewModel.pendingInteractivePrompt !== null ||
-      viewModel.isInterrupting) &&
-    !(canQueueWhileBusy && viewModel.draftPrompt.trim() !== "");
+      viewModel.isInterrupting);
   const syncStatus = resolveSyncIndicatorStatus(
     viewModel.activeConversation?.syncState?.status
   );
@@ -1515,7 +1514,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   const continueInNewConversation = useStableEventCallback(
     actions.continueInNewConversation
   );
-  const updateDraftPrompt = useStableEventCallback(actions.updateDraftPrompt);
+  const updateDraftContent = useStableEventCallback(actions.updateDraftContent);
   const updateSelectedProjectPath = useOptionalStableEventCallback(
     actions.updateSelectedProjectPath
   );
@@ -1558,7 +1557,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       currentUserId: viewModel.currentUserId,
       provider: viewModel.data.provider,
       slashStatus,
-      draftPrompt: viewModel.draftPrompt,
+      draftContent: viewModel.draftContent,
       availableCommands: viewModel.availableCommands,
       hasCompactableContext: viewModel.hasSentUserMessage,
       availableSkills: viewModel.availableSkills,
@@ -1588,7 +1587,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       isSubmittingPrompt: viewModel.isRespondingApproval,
       labels: composerLabels,
       workspaceUserProjectI18n,
-      onDraftChange: updateDraftPrompt,
+      onDraftContentChange: updateDraftContent,
       onProjectPathChange: updateSelectedProjectPath,
       onSettingsChange: updateComposerSettings,
       onSubmit: submitPrompt,
@@ -1629,13 +1628,14 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       stableLinkAction,
       stableRequestWorkspaceReferences,
       updateComposerSettings,
-      updateDraftPrompt,
+      updateDraftContent,
       updateSelectedProjectPath,
       viewModel.availableCommands,
       viewModel.availableSkills,
       viewModel.composerSettings,
       viewModel.currentUserId,
       viewModel.data.provider,
+      viewModel.draftContent,
       viewModel.draftPrompt,
       viewModel.drainingQueuedPromptId,
       viewModel.hasSentUserMessage,
@@ -1860,7 +1860,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
               currentUserId: viewModel.currentUserId,
               provider: viewModel.data.provider,
               slashStatus,
-              draftPrompt: viewModel.draftPrompt,
+              draftContent: viewModel.draftContent,
               availableCommands: viewModel.availableCommands,
               hasCompactableContext: viewModel.hasSentUserMessage,
               compactSupported: viewModel.compactSupported,
@@ -1889,7 +1889,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
               isSubmittingPrompt: viewModel.isRespondingApproval,
               labels: composerLabels,
               workspaceUserProjectI18n,
-              onDraftChange: updateDraftPrompt,
+              onDraftContentChange: updateDraftContent,
               onProjectPathChange: updateSelectedProjectPath,
               onSettingsChange: updateComposerSettings,
               onSubmit: submitPrompt,
