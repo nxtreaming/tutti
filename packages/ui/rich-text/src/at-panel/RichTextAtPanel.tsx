@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
+import { KeyboardFilledIcon } from "@tutti-os/ui-system/icons";
 import { cn } from "@tutti-os/ui-system/utils";
 import type {
   RichTextAtProvider,
@@ -417,43 +418,43 @@ function RichTextAtGroupedPanel({
         {hasVisibleMatches ? (
           <div className="grid gap-3">
             {groups.map((group) => (
-            <RichTextAtPanelGroup
-              activeIndex={activeIndex}
-              activeMatch={activeMatch}
-              group={group}
-              key={group.id}
-              matchIndexByKey={matchIndexByKey}
-              referenceItemsByMatchKey={referenceItemsByMatchKey}
-              referencePageSize={referencePageSize}
-              renderItemIcon={renderItemIcon}
-              text={text}
-              onActiveIndexChange={onActiveIndexChange}
-              onActiveMatchChange={onActiveMatchChange}
-              onExpandGroup={() => {
-                setExpandedCounts((current) => ({
-                  ...current,
-                  [group.id]:
-                    (current[group.id] ??
-                      providerGroups.find(
-                        (candidate) => candidate.id === group.id
-                      )?.pageSize ??
-                      DEFAULT_RICH_TEXT_AT_PANEL_PAGE_SIZE) +
-                    DEFAULT_RICH_TEXT_AT_PANEL_PAGE_SIZE
-                }));
-              }}
-              onLoadMoreReferences={(match) => {
-                void loadMoreReferenceItems({
-                  match,
-                  providersById,
-                  providerContext,
-                  queryKeyword,
-                  referenceItemsByMatchKey,
-                  referencePageSize,
-                  setReferenceItemsByMatchKey
-                });
-              }}
-              onSelect={onSelect}
-            />
+              <RichTextAtPanelGroup
+                activeIndex={activeIndex}
+                activeMatch={activeMatch}
+                group={group}
+                key={group.id}
+                matchIndexByKey={matchIndexByKey}
+                referenceItemsByMatchKey={referenceItemsByMatchKey}
+                referencePageSize={referencePageSize}
+                renderItemIcon={renderItemIcon}
+                text={text}
+                onActiveIndexChange={onActiveIndexChange}
+                onActiveMatchChange={onActiveMatchChange}
+                onExpandGroup={() => {
+                  setExpandedCounts((current) => ({
+                    ...current,
+                    [group.id]:
+                      (current[group.id] ??
+                        providerGroups.find(
+                          (candidate) => candidate.id === group.id
+                        )?.pageSize ??
+                        DEFAULT_RICH_TEXT_AT_PANEL_PAGE_SIZE) +
+                      DEFAULT_RICH_TEXT_AT_PANEL_PAGE_SIZE
+                  }));
+                }}
+                onLoadMoreReferences={(match) => {
+                  void loadMoreReferenceItems({
+                    match,
+                    providersById,
+                    providerContext,
+                    queryKeyword,
+                    referenceItemsByMatchKey,
+                    referencePageSize,
+                    setReferenceItemsByMatchKey
+                  });
+                }}
+                onSelect={onSelect}
+              />
             ))}
           </div>
         ) : (
@@ -686,32 +687,13 @@ function RichTextAtPanelEmptyState({ label }: { label: string }): JSX.Element {
       data-testid="rich-text-at-panel-empty-state"
     >
       <div className="flex max-w-[30ch] flex-col items-center justify-center gap-3 text-[12px] leading-5 text-[var(--text-tertiary)]">
-        <RichTextAtKeyboardIcon className="h-6 w-6 text-[var(--text-tertiary)]" />
+        <KeyboardFilledIcon
+          aria-hidden
+          className="h-6 w-6 text-[var(--text-tertiary)]"
+        />
         <span>{label}</span>
       </div>
     </div>
-  );
-}
-
-function RichTextAtKeyboardIcon({
-  className
-}: {
-  className?: string;
-}): JSX.Element {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="20" height="16" x="2" y="4" rx="2" />
-      <path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10" />
-    </svg>
   );
 }
 
