@@ -56,12 +56,14 @@ const CLAUDE_CODE_PROVIDER_NATIVE_COMMANDS = new Set([
 const CODEX_FALLBACK_COMMANDS: readonly AgentSessionCommand[] = [
   { name: "compact" },
   { name: "status" },
-  { name: "fast" }
+  { name: "fast" },
+  { name: "goal" }
 ];
 const CLAUDE_CODE_FALLBACK_COMMANDS: readonly AgentSessionCommand[] = [
   { name: "compact" },
   { name: "status" },
-  { name: "fast" }
+  { name: "fast" },
+  { name: "goal" }
 ];
 
 export function resolveSlashCommandsForProvider({

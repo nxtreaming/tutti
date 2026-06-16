@@ -33,6 +33,9 @@ const (
 	appServerMethodThreadFork            = "thread/fork"
 	appServerMethodThreadRollback        = "thread/rollback"
 	appServerMethodThreadCompact         = "thread/compact/start"
+	appServerMethodThreadGoalSet         = "thread/goal/set"
+	appServerMethodThreadGoalGet         = "thread/goal/get"
+	appServerMethodThreadGoalClear       = "thread/goal/clear"
 	appServerMethodTurnStart             = "turn/start"
 	appServerMethodTurnSteer             = "turn/steer"
 	appServerMethodTurnInterrupt         = "turn/interrupt"
@@ -67,10 +70,13 @@ const (
 	appServerNotifyDeprecation       = "deprecationNotice"
 	appServerNotifyModelRerouted     = "model/rerouted"
 	appServerNotifyThreadCompacted   = "thread/compacted"
+	appServerNotifyThreadGoalUpdated = "thread/goal/updated"
+	appServerNotifyThreadGoalCleared = "thread/goal/cleared"
 )
 
 const (
 	appServerSlashCompact = "/compact"
+	appServerSlashGoal    = "/goal"
 	appServerSlashReview  = "/review"
 	appServerSlashUndo    = "/undo"
 )
@@ -93,6 +99,7 @@ type codexAppServerSession struct {
 	serverInfo map[string]any
 	account    map[string]any
 	rateLimits map[string]any
+	goal       map[string]any
 	// planModeMask is the Plan preset mask from collaborationMode/list
 	// (flat name/mode/model/reasoning_effort fields); nil when the binary
 	// does not expose collaboration modes. defaultModel backs the required
@@ -862,6 +869,32 @@ func (a *CodexAppServerAdapter) execSlashCommand(
 			}),
 		))
 		return true, nil
+	case appServerSlashGoal:
+		method, params := appServerGoalSlashRequest(args, appSession.threadID)
+		result, err := appSession.client.Call(ctx, method, params,
+			func(ctx context.Context, message acpMessage) error {
+				next, err := a.handleAppServerMessage(ctx, appSession.client, session, turnID, message, normalizer, emitEvents, emitCommands)
+				emitEvents(next)
+				return err
+			})
+		if err != nil {
+			emitTerminal([]activityshared.Event{newTurnActivityEvent(session, EventTurnFailed, turnID, SessionStatusFailed, "", "", acpFailureMetadata(err))})
+			return true, nil
+		}
+		if method == appServerMethodThreadGoalClear {
+			a.applyGoalClear(session.AgentSessionID)
+		} else if goal := appServerGoalFromResult(result); len(goal) > 0 {
+			a.applyGoalUpdate(session.AgentSessionID, goal)
+		}
+		terminalEvents := []activityshared.Event{}
+		if notice := appServerGoalNoticeEvent(session, turnID, method, result); notice != nil {
+			terminalEvents = append(terminalEvents, *notice)
+		}
+		terminalEvents = append(terminalEvents, newTurnActivityEvent(session, EventTurnCompleted, turnID, SessionStatusReady, "", "", map[string]any{
+			"stopReason": "end_turn",
+		}))
+		emitTerminal(terminalEvents)
+		return true, nil
 	case appServerSlashReview:
 		params := map[string]any{
 			"threadId": appSession.threadID,
@@ -1072,6 +1105,9 @@ func (a *CodexAppServerAdapter) SessionState(session Session) SessionStateSnapsh
 	if len(state.rateLimits) > 0 {
 		snapshot.RuntimeContext["rateLimits"] = state.rateLimits
 	}
+	if len(state.goal) > 0 {
+		snapshot.RuntimeContext["goal"] = state.goal
+	}
 	if state.authState != "" {
 		snapshot.AuthState = state.authState
 	}
@@ -1120,6 +1156,7 @@ type codexAppServerSessionStateSnapshot struct {
 	serverInfo        map[string]any
 	account           map[string]any
 	rateLimits        map[string]any
+	goal              map[string]any
 	authState         string
 	authMessage       string
 	planModeSupported bool
@@ -1146,6 +1183,7 @@ func (a *CodexAppServerAdapter) snapshotSessionState(agentSessionID string) (cod
 		serverInfo:           clonePayload(appSession.serverInfo),
 		account:              clonePayload(appSession.account),
 		rateLimits:           clonePayload(appSession.rateLimits),
+		goal:                 clonePayload(appSession.goal),
 		authState:            strings.TrimSpace(appSession.authState),
 		authMessage:          strings.TrimSpace(appSession.authMessage),
 		planModeSupported:    appSession.planModeMask != nil,

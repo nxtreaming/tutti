@@ -6,7 +6,7 @@ import {
 } from "./agentSlashCommandProviderPolicy";
 
 describe("agentSlashCommandProviderPolicy", () => {
-  it("adds Codex compact and status fallback commands after provider commands", () => {
+  it("adds Codex compact, status, fast, and goal fallback commands after provider commands", () => {
     expect(
       resolveSlashCommandsForProvider({
         provider: "codex",
@@ -16,17 +16,18 @@ describe("agentSlashCommandProviderPolicy", () => {
       { name: "web" },
       { name: "compact", description: "ACP" },
       { name: "status" },
-      { name: "fast" }
+      { name: "fast" },
+      { name: "goal" }
     ]);
   });
 
-  it("adds Claude Code fallback commands when ACP commands are empty", () => {
+  it("adds Claude Code fallback commands including goal when ACP commands are empty", () => {
     expect(
       resolveSlashCommandsForProvider({
         provider: "claude-code",
         commands: []
       }).map((command) => command.name)
-    ).toEqual(["compact", "status", "fast"]);
+    ).toEqual(["compact", "status", "fast", "goal"]);
   });
 
   it("filters compact when the session has no compactable context", () => {
@@ -36,7 +37,7 @@ describe("agentSlashCommandProviderPolicy", () => {
         commands: [{ name: "compact", description: "from provider" }],
         hasCompactableContext: false
       })
-    ).toEqual([{ name: "status" }, { name: "fast" }]);
+    ).toEqual([{ name: "status" }, { name: "fast" }, { name: "goal" }]);
   });
 
   it("filters Claude Code plan commands from provider and fallback commands", () => {
@@ -45,7 +46,12 @@ describe("agentSlashCommandProviderPolicy", () => {
         provider: "claude-code",
         commands: [{ name: "plan", description: "provider plan" }]
       })
-    ).toEqual([{ name: "compact" }, { name: "status" }, { name: "fast" }]);
+    ).toEqual([
+      { name: "compact" },
+      { name: "status" },
+      { name: "fast" },
+      { name: "goal" }
+    ]);
   });
 
   it("submits Codex init and compact commands immediately", () => {
@@ -73,6 +79,13 @@ describe("agentSlashCommandProviderPolicy", () => {
         currentDraft: "/"
       })
     ).toEqual({ kind: "fillDraft", draft: "/web " });
+    expect(
+      resolveSlashCommandSelectionEffect({
+        provider: "codex",
+        command: { name: "goal" },
+        currentDraft: "/"
+      })
+    ).toEqual({ kind: "fillDraft", draft: "/goal " });
   });
 
   it("handles Codex local status without provider prompts", () => {
@@ -117,6 +130,16 @@ describe("agentSlashCommandProviderPolicy", () => {
         currentDraft: "/"
       })
     ).toEqual({ kind: "submitPrompt", prompt: "/compact" });
+  });
+
+  it("fills draft for Claude Code goal command so the user can enter an objective", () => {
+    expect(
+      resolveSlashCommandSelectionEffect({
+        provider: "claude-code",
+        command: { name: "goal" },
+        currentDraft: "/"
+      })
+    ).toEqual({ kind: "fillDraft", draft: "/goal " });
   });
 
   it("parses manual Codex status and blocks plan submissions", () => {
