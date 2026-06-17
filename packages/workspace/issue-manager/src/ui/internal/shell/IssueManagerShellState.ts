@@ -1,6 +1,7 @@
 import type {
   IssueManagerIssueSummary,
-  IssueManagerStatusCounts
+  IssueManagerStatusCounts,
+  IssueManagerTaskSummary
 } from "../../../contracts/index.ts";
 import type { IssueManagerI18nRuntime } from "../../../i18n/issueManagerI18n.ts";
 import type { AsyncCollectionState } from "../../../services/controllerTypes.ts";
@@ -139,6 +140,41 @@ export function resolveIssueManagerSubtaskProgress(
     completed,
     percent: (completed / total) * 100,
     total
+  };
+}
+
+export function resolveIssueManagerSubtaskProgressFromTasks(
+  tasks: readonly Pick<IssueManagerTaskSummary, "status">[]
+): IssueManagerSubtaskProgressViewState | null {
+  const total = tasks.length;
+  if (total <= 0) {
+    return null;
+  }
+
+  const completed = tasks.filter(
+    (task) =>
+      task.status === "completed" || task.status === "pending_acceptance"
+  ).length;
+
+  return {
+    completed,
+    percent: (completed / total) * 100,
+    total
+  };
+}
+
+export function resolveIssueManagerSubtaskProgressByIssueId(input: {
+  issueId: string | null;
+  visibleTasks: readonly Pick<IssueManagerTaskSummary, "status">[] | null;
+}): Record<string, IssueManagerSubtaskProgressViewState | null> {
+  if (!input.issueId || !input.visibleTasks) {
+    return {};
+  }
+
+  return {
+    [input.issueId]: resolveIssueManagerSubtaskProgressFromTasks(
+      input.visibleTasks
+    )
   };
 }
 

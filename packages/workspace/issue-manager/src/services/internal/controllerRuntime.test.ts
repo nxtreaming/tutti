@@ -193,6 +193,68 @@ test("controllerRuntime reloads issues when deferred search input changes", asyn
   runtime.release();
 });
 
+test("controllerRuntime includes legacy in-progress issues in the running filter", async () => {
+  const statusFilters: string[] = [];
+  const runtime = createIssueManagerControllerRuntime({
+    feature: createFeature({
+      async listIssues(input) {
+        statusFilters.push(input.statusFilter ?? "");
+        if (input.statusFilter === "running") {
+          return {
+            issues: [
+              {
+                ...createIssueSummary({
+                  issueId: "issue-running",
+                  title: "Running task"
+                }),
+                status: "running"
+              }
+            ]
+          };
+        }
+        if (input.statusFilter === "in_progress") {
+          return {
+            issues: [
+              {
+                ...createIssueSummary({
+                  issueId: "issue-legacy",
+                  title: "Legacy running task"
+                }),
+                status: "in_progress"
+              }
+            ]
+          };
+        }
+        return {
+          issues: []
+        };
+      }
+    }),
+    state: {
+      activeTopicId: "topic-1",
+      issueStatusFilter: "running"
+    },
+    workspaceId: "workspace-1"
+  });
+
+  runtime.retain();
+  await flushAsyncWork();
+  await flushAsyncWork();
+
+  assert.deepEqual(statusFilters, ["running", "in_progress"]);
+  assert.deepEqual(
+    runtime
+      .getSnapshot()
+      .issues.value.map((issue) => [issue.issueId, issue.status]),
+    [
+      ["issue-running", "running"],
+      ["issue-legacy", "in_progress"]
+    ]
+  );
+
+  runtime.release();
+});
+
 test("controllerRuntime reports task search analytics only for explicit search usage", async () => {
   const searches: string[] = [];
   const analyticsEvents: IssueManagerAnalyticsEvent[] = [];

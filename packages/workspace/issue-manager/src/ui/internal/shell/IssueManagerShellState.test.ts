@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { IssueManagerIssueSummary } from "../../../contracts/index.ts";
+import type {
+  IssueManagerIssueSummary,
+  IssueManagerTaskSummary
+} from "../../../contracts/index.ts";
 import type { IssueManagerI18nRuntime } from "../../../i18n/issueManagerI18n.ts";
 import {
   buildIssueManagerStatusCounts,
   resolveIssueManagerStatusCounts,
   resolveIssueManagerShellContentViewState,
   resolveIssueManagerSubtaskProgress,
+  resolveIssueManagerSubtaskProgressByIssueId,
+  resolveIssueManagerSubtaskProgressFromTasks,
   resolveIssueManagerSidebarViewState
 } from "./IssueManagerShellState.ts";
 
@@ -256,6 +261,47 @@ test("subtask progress uses completed subtasks over total subtasks", () => {
   );
 });
 
+test("subtask progress from visible tasks is hidden when all subtasks are filtered out", () => {
+  assert.equal(resolveIssueManagerSubtaskProgressFromTasks([]), null);
+});
+
+test("subtask progress from visible tasks counts review-ready subtasks as completed", () => {
+  assert.deepEqual(
+    resolveIssueManagerSubtaskProgressFromTasks([
+      createTaskSummary({ status: "completed", taskId: "task-1" }),
+      createTaskSummary({ status: "pending_acceptance", taskId: "task-2" }),
+      createTaskSummary({ status: "running", taskId: "task-3" })
+    ]),
+    {
+      completed: 2,
+      percent: 66.66666666666666,
+      total: 3
+    }
+  );
+});
+
+test("subtask progress override hides summary progress when visible subtasks are empty", () => {
+  assert.deepEqual(
+    resolveIssueManagerSubtaskProgressByIssueId({
+      issueId: "issue-1",
+      visibleTasks: []
+    }),
+    {
+      "issue-1": null
+    }
+  );
+});
+
+test("subtask progress override is omitted when no issue detail is available", () => {
+  assert.deepEqual(
+    resolveIssueManagerSubtaskProgressByIssueId({
+      issueId: null,
+      visibleTasks: null
+    }),
+    {}
+  );
+});
+
 test("shell content view state prefers issue editing over task flows", () => {
   assert.deepEqual(
     resolveIssueManagerShellContentViewState({
@@ -339,6 +385,20 @@ function createIssueSummary(
     taskCount: input.taskCount,
     title: input.title ?? "Task",
     topicId: "topic-1",
+    workspaceId: "workspace-1"
+  };
+}
+
+function createTaskSummary(
+  input: Pick<IssueManagerTaskSummary, "status" | "taskId">
+): IssueManagerTaskSummary {
+  return {
+    creatorUserId: "local",
+    issueId: "issue-1",
+    priority: "medium",
+    status: input.status,
+    taskId: input.taskId,
+    title: "Task",
     workspaceId: "workspace-1"
   };
 }

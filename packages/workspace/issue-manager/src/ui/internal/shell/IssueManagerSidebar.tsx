@@ -8,10 +8,15 @@ import {
 } from "./IssueManagerSidebarSections.tsx";
 import { resolveIssueManagerSidebarPresentationState } from "./IssueManagerSidebarState.ts";
 import type { IssueManagerController } from "../../react/index.ts";
+import { resolveIssueManagerSubtaskProgressByIssueId } from "./IssueManagerShellState.ts";
 import type {
   issueManagerStatusFilters,
   IssueManagerSidebarViewState
 } from "./IssueManagerShellState.ts";
+import {
+  resolveIssueManagerIssueRunTaskId,
+  resolveIssueManagerVisibleSubtasks
+} from "../issue/IssueManagerIssueAcceptanceState.ts";
 
 export interface IssueManagerSidebarProps {
   controller: IssueManagerController;
@@ -34,6 +39,31 @@ export function IssueManagerSidebar({
   const presentation = resolveIssueManagerSidebarPresentationState({
     showStandaloneState,
     sidebarViewState
+  });
+  const currentIssueDetail =
+    controller.issueDetail.value?.issue.issueId ===
+    controller.nodeState.selectedIssueId
+      ? controller.issueDetail.value
+      : null;
+  const issueRunTaskId = currentIssueDetail
+    ? resolveIssueManagerIssueRunTaskId({
+        latestRun:
+          currentIssueDetail.latestRun ??
+          currentIssueDetail.recentRuns[0] ??
+          null,
+        selectedIssue: currentIssueDetail.issue,
+        tasks: currentIssueDetail.tasks
+      })
+    : null;
+  const visibleTasks = currentIssueDetail
+    ? resolveIssueManagerVisibleSubtasks({
+        hiddenIssueRunTaskId: issueRunTaskId,
+        tasks: currentIssueDetail.tasks
+      })
+    : [];
+  const subtaskProgressByIssueId = resolveIssueManagerSubtaskProgressByIssueId({
+    issueId: currentIssueDetail?.issue.issueId ?? null,
+    visibleTasks: currentIssueDetail ? visibleTasks : null
   });
 
   return (
@@ -95,6 +125,7 @@ export function IssueManagerSidebar({
             isNarrowLayout={isNarrowLayout}
             selectedIssueId={controller.nodeState.selectedIssueId}
             sidebarViewState={sidebarViewState}
+            subtaskProgressByIssueId={subtaskProgressByIssueId}
             onRetry={() => controller.refreshAll()}
             onSelectIssue={controller.selectIssue}
           />
