@@ -21,6 +21,7 @@ var (
 // resolveComputerMCPCommand returns the full command used to launch the
 // cua-driver MCP server, honoring operator overrides.
 func resolveComputerMCPCommand(_ context.Context) []string {
+	// The override is treated as the binary path; "mcp" is always appended as the subcommand.
 	if command := strings.TrimSpace(os.Getenv(computerMCPCommandOverrideEnv)); command != "" {
 		return []string{command, "mcp"}
 	}
