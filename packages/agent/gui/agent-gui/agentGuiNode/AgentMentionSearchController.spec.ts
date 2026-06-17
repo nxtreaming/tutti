@@ -2,21 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setAgentGuiI18nTestLocale } from "../../i18n/testUtils";
 import { AgentMentionSearchController as BaseAgentMentionSearchController } from "./AgentMentionSearchController";
 import { issuePreviewText } from "./agentMentionSearchHelpers";
-import type { AgentRichTextAtProvider } from "./agentRichTextAtProvider";
-import { AGENT_GUI_MENTION_PROVIDER_IDS } from "./agentRichTextAtProvider";
+import type { AgentContextMentionProvider } from "./agentContextMentionProvider";
+import { AGENT_CONTEXT_MENTION_PROVIDER_IDS } from "./agentContextMentionProvider";
 
-interface TestFileAtItem {
+interface TestFileMentionItem {
   label: string;
   href: string;
 }
 
-interface TestIssueAtItem {
+interface TestIssueMentionItem {
   issueId: string;
   title: string;
   status: string;
 }
 
-interface TestSessionAtItem {
+interface TestSessionMentionItem {
   agentName: string;
   id: string;
   initiatorName: string;
@@ -35,9 +35,9 @@ const {
   file: FILE_PROVIDER_ID,
   workspaceApp: WORKSPACE_APP_PROVIDER_ID,
   workspaceIssue: WORKSPACE_ISSUE_PROVIDER_ID
-} = AGENT_GUI_MENTION_PROVIDER_IDS;
+} = AGENT_CONTEXT_MENTION_PROVIDER_IDS;
 
-interface TestRichTextAtProviderOptions {
+interface TestContextMentionProviderOptions {
   queryAgentGeneratedFiles?: (input: any) => Promise<any>;
   queryFiles?: (input: any) => Promise<any>;
   queryIssues?: (input: any) => Promise<any>;
@@ -45,29 +45,36 @@ interface TestRichTextAtProviderOptions {
   loadSessionSummary?: (input: any) => Promise<any>;
   loadUserProfiles?: (input: any) => Promise<any>;
   loadSessionMessages?: (input: any) => Promise<any>;
-  richTextAtProviders?: readonly AgentRichTextAtProvider[];
+  contextMentionProviders?: readonly AgentContextMentionProvider[];
   debounceMs?: number;
+  diagnosticInfoLogger?: (payload: any) => void;
+  diagnosticNow?: () => number;
+  diagnosticSlowThresholdMs?: number;
   fileLimit?: number;
   issueLimit?: number;
   providerTimeoutMs?: number;
 }
 
 class AgentMentionSearchController extends BaseAgentMentionSearchController {
-  constructor(options: TestRichTextAtProviderOptions) {
+  constructor(options: TestContextMentionProviderOptions) {
     super({
       debounceMs: options.debounceMs,
+      diagnosticInfoLogger: options.diagnosticInfoLogger,
+      diagnosticNow: options.diagnosticNow,
+      diagnosticSlowThresholdMs: options.diagnosticSlowThresholdMs,
       fileLimit: options.fileLimit,
       issueLimit: options.issueLimit,
       providerTimeoutMs: options.providerTimeoutMs,
-      richTextAtProviders:
-        options.richTextAtProviders ?? createTestRichTextAtProviders(options)
+      contextMentionProviders:
+        options.contextMentionProviders ??
+        createTestContextMentionProviders(options)
     });
   }
 }
 
-function createTestRichTextAtProviders(
-  options: TestRichTextAtProviderOptions
-): readonly AgentRichTextAtProvider[] {
+function createTestContextMentionProviders(
+  options: TestContextMentionProviderOptions
+): readonly AgentContextMentionProvider[] {
   return [
     createTestFileProvider(options),
     createTestAgentGeneratedFileProvider(options),
@@ -77,10 +84,11 @@ function createTestRichTextAtProviders(
 }
 
 function createTestAgentGeneratedFileProvider(
-  options: TestRichTextAtProviderOptions
-): AgentRichTextAtProvider<{ label: string; href: string }> {
+  options: TestContextMentionProviderOptions
+): AgentContextMentionProvider<{ label: string; href: string }> {
   return {
     id: AGENT_GENERATED_FILE_PROVIDER_ID,
+    trigger: "@",
     async query({ context, keyword, maxResults }) {
       if (!options.queryAgentGeneratedFiles) {
         return [];
@@ -106,10 +114,11 @@ function createTestAgentGeneratedFileProvider(
 }
 
 function createTestFileProvider(
-  options: TestRichTextAtProviderOptions
-): AgentRichTextAtProvider<{ label: string; href: string }> {
+  options: TestContextMentionProviderOptions
+): AgentContextMentionProvider<{ label: string; href: string }> {
   return {
     id: FILE_PROVIDER_ID,
+    trigger: "@",
     async query({ context, keyword, maxResults }) {
       if (!options.queryFiles) {
         return [];
@@ -136,10 +145,11 @@ function createTestFileProvider(
 }
 
 function createTestIssueProvider(
-  options: TestRichTextAtProviderOptions
-): AgentRichTextAtProvider<any> {
+  options: TestContextMentionProviderOptions
+): AgentContextMentionProvider<any> {
   return {
     id: WORKSPACE_ISSUE_PROVIDER_ID,
+    trigger: "@",
     async query({ context, keyword, maxResults }) {
       if (!options.queryIssues) {
         return [];
@@ -158,13 +168,11 @@ function createTestIssueProvider(
       kind: "mention",
       mention: {
         entityId: item.issueId,
-        href: `mention://${WORKSPACE_ISSUE_PROVIDER_ID}?workspaceId=${item.workspaceId}&id=${item.issueId}`,
-        kind: WORKSPACE_ISSUE_PROVIDER_ID,
         label: item.title,
-        meta: {
-          contentPreview: issuePreviewText(item.content),
-          status: item.status,
-          workspaceId: item.workspaceId
+        scope: { workspaceId: item.workspaceId },
+        presentation: {
+          description: issuePreviewText(item.content),
+          status: item.status
         }
       }
     })
@@ -172,10 +180,11 @@ function createTestIssueProvider(
 }
 
 function createTestSessionProvider(
-  options: TestRichTextAtProviderOptions
-): AgentRichTextAtProvider<any> {
+  options: TestContextMentionProviderOptions
+): AgentContextMentionProvider<any> {
   return {
     id: AGENT_SESSION_PROVIDER_ID,
+    trigger: "@",
     async query({ context, keyword, maxResults }) {
       if (!options.querySessions) {
         return [];
@@ -274,22 +283,16 @@ function createTestSessionProvider(
       kind: "mention",
       mention: {
         entityId: item.id,
-        href: `mention://${AGENT_SESSION_PROVIDER_ID}?workspaceId=${item.workspaceId}&id=${item.id}&provider=${item.provider}`,
-        kind: AGENT_SESSION_PROVIDER_ID,
         label: item.title,
-        meta: {
-          agentName: item.agentName,
-          initiatorAvatarUrl: item.initiatorAvatarUrl,
-          initiatorName: item.initiatorName,
-          inputPreview: item.inputPreview,
-          provider: item.provider,
+        scope: {
           scope: item.scope ?? "",
-          status: item.status,
-          summaryPreview: item.summaryPreview,
-          title: item.title,
-          updatedAtUnixMs: String(item.updatedAtUnixMs),
           userId: item.userId,
           workspaceId: item.workspaceId
+        },
+        presentation: {
+          description: item.inputPreview || item.summaryPreview,
+          status: item.status,
+          subtitle: item.agentName
         }
       }
     })
@@ -496,8 +499,139 @@ describe("AgentMentionSearchController", () => {
     });
   });
 
+  it("logs completed mention search diagnostics without the raw query", async () => {
+    vi.useFakeTimers();
+    const diagnosticLogs: any[] = [];
+    const rawQuery = "secret-file";
+    const controller = new AgentMentionSearchController({
+      queryFiles: vi.fn().mockResolvedValue({
+        workspaceId: "room-1",
+        root: "/workspace",
+        entries: [
+          {
+            path: "/workspace/src/App.tsx",
+            name: "App.tsx",
+            kind: "file",
+            directoryPath: "/workspace/src",
+            score: 10
+          }
+        ]
+      }),
+      queryIssues: vi.fn().mockResolvedValue({
+        issues: [],
+        totalCount: 0,
+        statusCounts: undefined
+      }),
+      querySessions: vi.fn().mockResolvedValue({ presences: [], sessions: [] }),
+      loadSessionMessages: vi
+        .fn()
+        .mockResolvedValue({ messages: [], latestVersion: 0, hasMore: false }),
+      loadSessionSummary: vi.fn(),
+      loadUserProfiles: vi.fn().mockResolvedValue({ users: [] }),
+      debounceMs: 20,
+      diagnosticInfoLogger: (payload) => diagnosticLogs.push(payload),
+      diagnosticSlowThresholdMs: 0
+    });
+    const states: unknown[] = [];
+    controller.subscribe((state) => states.push(state));
+
+    controller.updateQuery({
+      workspaceId: "room-1",
+      currentUserId: "user-1",
+      query: rawQuery
+    });
+    await vi.advanceTimersByTimeAsync(20);
+
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: "ready",
+        query: rawQuery,
+        mode: "results"
+      })
+    );
+    expect(diagnosticLogs).toEqual([
+      expect.objectContaining({
+        debounceMs: 20,
+        event: "agent_gui.mention_search",
+        mode: "results",
+        queryLength: rawQuery.length,
+        status: "ready",
+        workspaceId: "room-1",
+        providerResults: expect.arrayContaining([
+          expect.objectContaining({
+            providerId: FILE_PROVIDER_ID,
+            resultCount: 1,
+            status: "success"
+          }),
+          expect.objectContaining({
+            providerId: WORKSPACE_APP_PROVIDER_ID,
+            resultCount: 0,
+            status: "missing"
+          })
+        ])
+      })
+    ]);
+    expect(JSON.stringify(diagnosticLogs)).not.toContain(rawQuery);
+  });
+
+  it("keeps mention search ready when diagnostic logging fails", async () => {
+    vi.useFakeTimers();
+    const diagnosticInfoLogger = vi.fn(() => {
+      throw new Error("diagnostic sink failed");
+    });
+    const controller = new AgentMentionSearchController({
+      queryFiles: vi.fn().mockResolvedValue({
+        workspaceId: "room-1",
+        root: "/workspace",
+        entries: [
+          {
+            path: "/workspace/src/App.tsx",
+            name: "App.tsx",
+            kind: "file",
+            directoryPath: "/workspace/src",
+            score: 10
+          }
+        ]
+      }),
+      queryIssues: vi.fn().mockResolvedValue({
+        issues: [],
+        totalCount: 0,
+        statusCounts: undefined
+      }),
+      querySessions: vi.fn().mockResolvedValue({ presences: [], sessions: [] }),
+      loadSessionMessages: vi
+        .fn()
+        .mockResolvedValue({ messages: [], latestVersion: 0, hasMore: false }),
+      loadSessionSummary: vi.fn(),
+      loadUserProfiles: vi.fn().mockResolvedValue({ users: [] }),
+      debounceMs: 20,
+      diagnosticInfoLogger,
+      diagnosticSlowThresholdMs: 0
+    });
+    const states: unknown[] = [];
+    controller.subscribe((state) => states.push(state));
+
+    controller.updateQuery({
+      workspaceId: "room-1",
+      currentUserId: "user-1",
+      query: "app"
+    });
+    await vi.advanceTimersByTimeAsync(20);
+
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toMatchObject({
+        status: "ready",
+        query: "app",
+        mode: "results"
+      })
+    );
+    expect(diagnosticInfoLogger).toHaveBeenCalledTimes(1);
+  });
+
   it("times out stalled result providers and keeps partial results", async () => {
     vi.useFakeTimers();
+    const diagnosticLogs: any[] = [];
+    const rawQuery = "secret-token";
     const queryIssues = vi.fn(
       () =>
         new Promise(() => {
@@ -526,6 +660,7 @@ describe("AgentMentionSearchController", () => {
       loadSessionSummary: vi.fn(),
       loadUserProfiles: vi.fn().mockResolvedValue({ users: [] }),
       debounceMs: 20,
+      diagnosticInfoLogger: (payload) => diagnosticLogs.push(payload),
       providerTimeoutMs: 20
     });
     const states: unknown[] = [];
@@ -534,14 +669,14 @@ describe("AgentMentionSearchController", () => {
     controller.updateQuery({
       workspaceId: "room-1",
       currentUserId: "user-1",
-      query: "app"
+      query: rawQuery
     });
     await vi.advanceTimersByTimeAsync(40);
 
     await vi.waitFor(() =>
       expect(states.at(-1)).toMatchObject({
         status: "ready",
-        query: "app",
+        query: rawQuery,
         mode: "results",
         groups: expect.arrayContaining([
           expect.objectContaining({
@@ -557,6 +692,23 @@ describe("AgentMentionSearchController", () => {
       })
     );
     expect(queryIssues).toHaveBeenCalledTimes(1);
+    expect(diagnosticLogs).toEqual([
+      expect.objectContaining({
+        event: "agent_gui.mention_search",
+        mode: "results",
+        providerTimeoutMs: 20,
+        queryLength: rawQuery.length,
+        status: "ready",
+        providerResults: expect.arrayContaining([
+          expect.objectContaining({
+            providerId: WORKSPACE_ISSUE_PROVIDER_ID,
+            resultCount: 0,
+            status: "timeout"
+          })
+        ])
+      })
+    ]);
+    expect(JSON.stringify(diagnosticLogs)).not.toContain(rawQuery);
   });
 
   it("times out stalled browse providers and keeps partial results", async () => {
@@ -668,9 +820,10 @@ describe("AgentMentionSearchController", () => {
         .mockResolvedValue({ messages: [], latestVersion: 0, hasMore: false }),
       loadSessionSummary: vi.fn(),
       loadUserProfiles: vi.fn().mockResolvedValue({ users: [] }),
-      richTextAtProviders: [
+      contextMentionProviders: [
         {
           id: FILE_PROVIDER_ID,
+          trigger: "@",
           query: fileProviderQuery,
           getItemKey: (item) => item.href,
           getItemLabel: (item) => item.label,
@@ -682,6 +835,7 @@ describe("AgentMentionSearchController", () => {
         },
         {
           id: WORKSPACE_ISSUE_PROVIDER_ID,
+          trigger: "@",
           query: issueProviderQuery,
           getItemKey: (item) => item.issueId,
           getItemLabel: (item) => item.title,
@@ -690,15 +844,15 @@ describe("AgentMentionSearchController", () => {
             kind: "mention",
             mention: {
               entityId: item.issueId,
-              href: `mention://${WORKSPACE_ISSUE_PROVIDER_ID}?workspaceId=room-1&id=${item.issueId}`,
-              kind: WORKSPACE_ISSUE_PROVIDER_ID,
               label: item.title,
-              meta: { status: item.status, workspaceId: "room-1" }
+              scope: { workspaceId: "room-1" },
+              presentation: { status: item.status }
             }
           })
         },
         {
           id: AGENT_SESSION_PROVIDER_ID,
+          trigger: "@",
           query: sessionProviderQuery,
           getItemKey: (item) => item.id,
           getItemLabel: (item) => item.title,
@@ -707,26 +861,22 @@ describe("AgentMentionSearchController", () => {
             kind: "mention",
             mention: {
               entityId: item.id,
-              href: `mention://${AGENT_SESSION_PROVIDER_ID}?workspaceId=${item.workspaceId}&id=${item.id}`,
-              kind: AGENT_SESSION_PROVIDER_ID,
               label: item.title,
-              meta: {
-                agentName: item.agentName,
-                initiatorName: item.initiatorName,
-                provider: item.provider,
-                title: item.title,
-                status: item.status,
-                updatedAtUnixMs: String(item.updatedAtUnixMs),
+              scope: {
                 userId: item.userId,
                 workspaceId: item.workspaceId
+              },
+              presentation: {
+                status: item.status,
+                subtitle: item.agentName
               }
             }
           })
         }
       ] satisfies [
-        AgentRichTextAtProvider<TestFileAtItem>,
-        AgentRichTextAtProvider<TestIssueAtItem>,
-        AgentRichTextAtProvider<TestSessionAtItem>
+        AgentContextMentionProvider<TestFileMentionItem>,
+        AgentContextMentionProvider<TestIssueMentionItem>,
+        AgentContextMentionProvider<TestSessionMentionItem>
       ],
       debounceMs: 20
     });
@@ -758,11 +908,11 @@ describe("AgentMentionSearchController", () => {
             items: [
               expect.objectContaining({
                 kind: "session",
-                initiatorName: "User",
-                name: "User & Codex Fix mention session provider",
+                agentName: "Codex",
+                initiatorName: "",
+                name: "Fix mention session provider",
                 scope: "my_sessions",
-                targetId: "session-1",
-                updatedAtUnixMs: 30
+                targetId: "session-1"
               })
             ]
           }),
@@ -1270,7 +1420,8 @@ describe("AgentMentionSearchController", () => {
               expect.objectContaining({
                 kind: "session",
                 targetId: "session-1",
-                name: "Wang & Codex README.md 这是什么内容",
+                agentName: "Codex",
+                name: "@README.md 这是什么内容",
                 title: "README.md 这是什么内容"
               })
             ]
@@ -1864,9 +2015,10 @@ describe("AgentMentionSearchController", () => {
   it("orders matching app groups ahead of weaker session and file matches in all results", async () => {
     vi.useFakeTimers();
     const controller = new AgentMentionSearchController({
-      richTextAtProviders: [
+      contextMentionProviders: [
         {
           id: FILE_PROVIDER_ID,
+          trigger: "@",
           query: vi.fn().mockResolvedValue([
             {
               label: "automation.md",
@@ -1883,6 +2035,7 @@ describe("AgentMentionSearchController", () => {
         },
         {
           id: WORKSPACE_APP_PROVIDER_ID,
+          trigger: "@",
           query: vi.fn().mockResolvedValue([
             {
               appId: "automation",
@@ -1895,18 +2048,14 @@ describe("AgentMentionSearchController", () => {
             kind: "mention",
             mention: {
               entityId: item.appId,
-              href: `mention://${WORKSPACE_APP_PROVIDER_ID}?workspaceId=room-1&appId=${item.appId}`,
-              kind: WORKSPACE_APP_PROVIDER_ID,
               label: item.name,
-              meta: {
-                appId: item.appId,
-                workspaceId: "room-1"
-              }
+              scope: { workspaceId: "room-1" }
             }
           })
         },
         {
           id: AGENT_SESSION_PROVIDER_ID,
+          trigger: "@",
           query: vi.fn().mockResolvedValue([
             {
               agentName: "Codex",
@@ -1926,18 +2075,14 @@ describe("AgentMentionSearchController", () => {
             kind: "mention",
             mention: {
               entityId: item.id,
-              href: `mention://${AGENT_SESSION_PROVIDER_ID}?workspaceId=${item.workspaceId}&id=${item.id}`,
-              kind: AGENT_SESSION_PROVIDER_ID,
               label: item.title,
-              meta: {
-                agentName: item.agentName,
-                initiatorName: item.initiatorName,
-                provider: item.provider,
+              scope: {
                 scope: "my_sessions",
-                title: item.title,
-                updatedAtUnixMs: String(item.updatedAtUnixMs),
                 userId: item.userId,
                 workspaceId: item.workspaceId
+              },
+              presentation: {
+                subtitle: item.agentName
               }
             }
           })
@@ -2184,7 +2329,8 @@ describe("AgentMentionSearchController", () => {
               expect.objectContaining({
                 kind: "session",
                 targetId: "session-1",
-                name: "Wang & Codex hi"
+                agentName: "Codex",
+                name: "hi"
               })
             ]
           }
@@ -2280,7 +2426,8 @@ describe("AgentMentionSearchController", () => {
               expect.objectContaining({
                 kind: "session",
                 targetId: "session-1",
-                name: "Wang & Codex 如何做excel的数据清理",
+                agentName: "Codex",
+                name: "如何做excel的数据清理",
                 title: "如何做excel的数据清理"
               })
             ]

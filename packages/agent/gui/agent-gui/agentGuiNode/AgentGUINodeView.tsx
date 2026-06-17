@@ -108,7 +108,7 @@ import {
   groupConversations
 } from "./agentGuiNodeViewConversation";
 import styles from "./AgentGUINode.styles";
-import type { AgentRichTextAtProvider } from "./agentRichTextAtProvider";
+import type { AgentContextMentionProvider } from "./agentContextMentionProvider";
 
 const AGENT_GUI_STICK_TO_BOTTOM_THRESHOLD_PX = 24;
 
@@ -417,7 +417,7 @@ interface AgentGUINodeViewProps {
   workspaceFileReferenceAdapter?: WorkspaceFileReferenceAdapter | null;
   onRequestGitBranches?: AgentComposerGitBranchLoader | null;
   workspaceFileReferenceCopy?: WorkspaceFileReferenceCopy | null;
-  richTextAtProviders?: readonly AgentRichTextAtProvider[];
+  contextMentionProviders?: readonly AgentContextMentionProvider[];
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
 }
 
@@ -785,16 +785,21 @@ export function AgentGUINodeView({
   workspaceFileReferenceAdapter = null,
   workspaceFileReferenceCopy = null,
   onRequestGitBranches = null,
-  richTextAtProviders,
+  contextMentionProviders,
   workspaceAppIcons = EMPTY_WORKSPACE_APP_ICONS
 }: AgentGUINodeViewProps): React.JSX.Element {
   "use memo";
+  const layoutElementRef = useRef<HTMLDivElement | null>(null);
   const railResizeInteractionRef = useRef<{
+    lastWidthPx: number;
     pointerId: number;
     startClientX: number;
     startWidthPx: number;
   } | null>(null);
   const [isRailResizing, setIsRailResizing] = useState(false);
+  const [railResizeWidthPx, setRailResizeWidthPx] = useState<number | null>(
+    null
+  );
   const [workspaceReferencePickerOpen, setWorkspaceReferencePickerOpen] =
     useState(false);
   const [
@@ -890,10 +895,12 @@ export function AgentGUINodeView({
       event.preventDefault();
       event.currentTarget.setPointerCapture?.(event.pointerId);
       railResizeInteractionRef.current = {
+        lastWidthPx: conversationRailWidthPx,
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startWidthPx: conversationRailWidthPx
       };
+      setRailResizeWidthPx(conversationRailWidthPx);
       setIsRailResizing(true);
     },
     [conversationRailCollapsed, conversationRailWidthPx, previewMode]
@@ -912,25 +919,57 @@ export function AgentGUINodeView({
       const nextWidthPx = clampConversationRailWidth(
         resizeState.startWidthPx + event.clientX - resizeState.startClientX
       );
-      onConversationRailWidthChanged(nextWidthPx);
+      if (resizeState.lastWidthPx !== nextWidthPx) {
+        resizeState.lastWidthPx = nextWidthPx;
+        layoutElementRef.current?.style.setProperty(
+          "--agent-gui-conversation-rail-width",
+          `${nextWidthPx}px`
+        );
+        event.currentTarget.setAttribute("aria-valuenow", String(nextWidthPx));
+      }
     },
-    [clampConversationRailWidth, onConversationRailWidthChanged, previewMode]
+    [clampConversationRailWidth, previewMode]
   );
 
   const endConversationRailResize = useCallback(
     (event?: PointerEvent<HTMLDivElement>): void => {
+      const resizeState = railResizeInteractionRef.current;
       if (
         event &&
-        railResizeInteractionRef.current?.pointerId === event.pointerId &&
+        resizeState?.pointerId === event.pointerId &&
         event.currentTarget.hasPointerCapture?.(event.pointerId)
       ) {
         event.currentTarget.releasePointerCapture?.(event.pointerId);
       }
       railResizeInteractionRef.current = null;
+      if (resizeState) {
+        const nextWidthPx = resizeState.lastWidthPx;
+        setRailResizeWidthPx(nextWidthPx);
+        onConversationRailWidthChanged(nextWidthPx);
+      } else {
+        setRailResizeWidthPx(null);
+      }
       setIsRailResizing(false);
     },
-    []
+    [onConversationRailWidthChanged]
   );
+
+  useEffect(() => {
+    if (isRailResizing || railResizeWidthPx === null) {
+      return;
+    }
+    if (
+      conversationRailCollapsed ||
+      conversationRailWidthPx === railResizeWidthPx
+    ) {
+      setRailResizeWidthPx(null);
+    }
+  }, [
+    conversationRailCollapsed,
+    conversationRailWidthPx,
+    isRailResizing,
+    railResizeWidthPx
+  ]);
 
   const handleConversationRailResizeKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -962,8 +1001,12 @@ export function AgentGUINodeView({
     ]
   );
 
+  const visualConversationRailWidthPx = isRailResizing
+    ? (railResizeInteractionRef.current?.lastWidthPx ?? conversationRailWidthPx)
+    : (railResizeWidthPx ?? conversationRailWidthPx);
+
   const layoutStyle = {
-    "--agent-gui-conversation-rail-width": `${conversationRailWidthPx}px`,
+    "--agent-gui-conversation-rail-width": `${visualConversationRailWidthPx}px`,
     "--agent-gui-detail-min-width": `${detailMinWidthPx}px`,
     gridTemplateColumns: conversationRailCollapsed
       ? "0 minmax(var(--agent-gui-detail-min-width), 1fr)"
@@ -973,8 +1016,10 @@ export function AgentGUINodeView({
   return (
     <TooltipProvider>
       <div
+        ref={layoutElementRef}
         className={styles.layout}
         data-agent-gui-preview={previewMode ? "true" : undefined}
+        data-rail-resizing={isRailResizing ? "true" : undefined}
         inert={previewMode ? true : undefined}
         style={layoutStyle}
       >
@@ -1032,7 +1077,9 @@ export function AgentGUINodeView({
           aria-valuemin={conversationRailMinWidthPx}
           aria-valuemax={conversationRailMaxWidthPx}
           aria-valuenow={
-            conversationRailCollapsed ? undefined : conversationRailWidthPx
+            conversationRailCollapsed
+              ? undefined
+              : visualConversationRailWidthPx
           }
           data-resizing={isRailResizing ? "true" : undefined}
           data-testid="agent-gui-conversation-rail-resize-handle"
@@ -1064,7 +1111,7 @@ export function AgentGUINodeView({
             onAgentProviderLogin={onAgentProviderLogin}
             onRequestWorkspaceReferences={requestWorkspaceReferences}
             onRequestGitBranches={onRequestGitBranches}
-            richTextAtProviders={richTextAtProviders}
+            contextMentionProviders={contextMentionProviders}
             workspaceAppIcons={effectiveWorkspaceAppIcons}
             workspaceUserProjectI18n={workspaceUserProjectI18n}
           />
@@ -1103,7 +1150,7 @@ interface AgentGUIDetailPaneProps {
     | (() => Promise<WorkspaceFileReference[]>)
     | null;
   onRequestGitBranches?: AgentComposerGitBranchLoader | null;
-  richTextAtProviders?: readonly AgentRichTextAtProvider[];
+  contextMentionProviders?: readonly AgentContextMentionProvider[];
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
 }
 
@@ -1191,7 +1238,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   onAgentProviderLogin,
   onRequestWorkspaceReferences,
   onRequestGitBranches,
-  richTextAtProviders,
+  contextMentionProviders,
   workspaceAppIcons = EMPTY_WORKSPACE_APP_ICONS
 }: AgentGUIDetailPaneProps): React.JSX.Element {
   "use memo";
@@ -1733,7 +1780,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       onLinkAction: stableLinkAction,
       onRequestWorkspaceReferences: stableRequestWorkspaceReferences,
       onRequestGitBranches: stableRequestGitBranches,
-      richTextAtProviders
+      contextMentionProviders
     }),
     [
       canQueueWhileBusy,
@@ -1750,8 +1797,8 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       labels.promptTips,
       composerActivePrompt,
       editQueuedPrompt,
-      richTextAtProviders,
       onCapabilitySettingsRequest,
+      contextMentionProviders,
       removeQueuedPrompt,
       sendQueuedPromptNext,
       showPromptImagesUnsupported,
@@ -2041,7 +2088,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
               onLinkAction: stableLinkAction,
               onRequestWorkspaceReferences: stableRequestWorkspaceReferences,
               onRequestGitBranches: stableRequestGitBranches,
-              richTextAtProviders
+              contextMentionProviders
             }}
           />
         ) : (
@@ -2139,6 +2186,13 @@ const AgentGUIDetailHeader = memo(function AgentGUIDetailHeader({
   }
 
   const runPath = activeConversation.cwd.trim();
+  const showConversationStatus = activeConversationStatus !== "ready";
+  let statusTitle: string | undefined;
+  if (showConversationStatus) {
+    statusTitle = statusGroupTitle;
+  } else if (showSyncIndicator) {
+    statusTitle = syncLabel;
+  }
 
   return (
     <div className={styles.detailHeader}>
@@ -2150,7 +2204,7 @@ const AgentGUIDetailHeader = memo(function AgentGUIDetailHeader({
       </span>
       <span
         className="inline-flex flex-none items-center gap-2 whitespace-nowrap"
-        title={statusGroupTitle}
+        title={statusTitle}
       >
         {usage && usage.percentUsed !== null ? (
           <AgentUsageChip
@@ -2170,16 +2224,20 @@ const AgentGUIDetailHeader = memo(function AgentGUIDetailHeader({
             onSubmitCompact={onSubmitCompact}
           />
         ) : null}
-        <StatusDot
-          tone={conversationStatusTone(activeConversationStatus)}
-          pulse={conversationStatusPulse(activeConversationStatus)}
-          size="sm"
-          ariaLabel={activeConversationStatusLabel}
-          title={activeConversationStatusLabel}
-        />
-        <span className={styles.detailHeaderStatus}>
-          {activeConversationStatusLabel}
-        </span>
+        {showConversationStatus ? (
+          <>
+            <StatusDot
+              tone={conversationStatusTone(activeConversationStatus)}
+              pulse={conversationStatusPulse(activeConversationStatus)}
+              size="sm"
+              ariaLabel={activeConversationStatusLabel}
+              title={activeConversationStatusLabel}
+            />
+            <span className={styles.detailHeaderStatus}>
+              {activeConversationStatusLabel}
+            </span>
+          </>
+        ) : null}
         {showSyncIndicator ? (
           <StatusDot
             tone={syncStateTone(syncStatus)}

@@ -1,23 +1,23 @@
-import { AGENT_GUI_MENTION_PROVIDER_IDS } from "@tutti-os/agent-gui/agent-rich-text-at-provider";
-import type { AgentRichTextAtProvider } from "@tutti-os/agent-gui/agent-rich-text-at-provider";
+import { AGENT_CONTEXT_MENTION_PROVIDER_IDS } from "@tutti-os/agent-gui/context-mention-provider";
+import type { AgentContextMentionProvider } from "@tutti-os/agent-gui/context-mention-provider";
 import { resolveAgentMentionFileVisualKind } from "@tutti-os/agent-gui/mention-file-presentation";
 import type { WorkbenchDockPreviewCache } from "@tutti-os/workbench-surface";
-import type { WorkbenchDockFileAtItem } from "./resolveWorkbenchDockFileAtItems.ts";
+import type { WorkbenchDockFileMentionItem } from "./resolveWorkbenchDockFileMentionItems.ts";
 
-const { file: FILE_PROVIDER_ID } = AGENT_GUI_MENTION_PROVIDER_IDS;
+const { file: FILE_PROVIDER_ID } = AGENT_CONTEXT_MENTION_PROVIDER_IDS;
 
 export function wrapDesktopFileMentionProviderWithDockFiles<TItem>(
-  provider: AgentRichTextAtProvider<TItem>,
+  provider: AgentContextMentionProvider<TItem>,
   options: {
     readDockPreview?: WorkbenchDockPreviewCache["read"];
-    resolveDockFiles: () => readonly WorkbenchDockFileAtItem[];
+    resolveDockFiles: () => readonly WorkbenchDockFileMentionItem[];
   }
-): AgentRichTextAtProvider<TItem> {
+): AgentContextMentionProvider<TItem> {
   if (provider.id !== FILE_PROVIDER_ID) {
     return provider;
   }
 
-  const thumbnailUrlByPath = new Map<string, string>();
+  const iconUrlByPath = new Map<string, string>();
 
   return {
     ...provider,
@@ -27,7 +27,7 @@ export function wrapDesktopFileMentionProviderWithDockFiles<TItem>(
       await hydrateDockFileThumbnails({
         dockFiles: allDockFiles,
         readDockPreview: options.readDockPreview,
-        thumbnailUrlByPath
+        iconUrlByPath
       });
 
       if (!keyword) {
@@ -50,22 +50,22 @@ export function wrapDesktopFileMentionProviderWithDockFiles<TItem>(
       });
       return merged;
     },
-    getItemThumbnailUrl(item) {
+    getItemIconUrl(item) {
       const path = provider.getItemKey(item);
       if (resolveAgentMentionFileVisualKind({ path }) !== "image") {
         return null;
       }
-      return thumbnailUrlByPath.get(path) ?? null;
+      return iconUrlByPath.get(path) ?? null;
     }
   };
 }
 
 async function hydrateDockFileThumbnails(input: {
-  dockFiles: readonly WorkbenchDockFileAtItem[];
+  dockFiles: readonly WorkbenchDockFileMentionItem[];
   readDockPreview?: WorkbenchDockPreviewCache["read"];
-  thumbnailUrlByPath: Map<string, string>;
+  iconUrlByPath: Map<string, string>;
 }): Promise<void> {
-  input.thumbnailUrlByPath.clear();
+  input.iconUrlByPath.clear();
   if (!input.readDockPreview) {
     return;
   }
@@ -77,23 +77,23 @@ async function hydrateDockFileThumbnails(input: {
           resolveAgentMentionFileVisualKind({ path: dockFile.path }) === "image"
       )
       .map(async (dockFile) => {
-        const thumbnailUrl = await input
+        const iconUrl = await input
           .readDockPreview?.(dockFile.previewCacheKey)
           .catch(() => null);
-        const normalizedThumbnailUrl = thumbnailUrl?.trim() ?? "";
-        if (!normalizedThumbnailUrl) {
+        const normalizedIconUrl = iconUrl?.trim() ?? "";
+        if (!normalizedIconUrl) {
           return;
         }
-        input.thumbnailUrlByPath.set(dockFile.path, normalizedThumbnailUrl);
+        input.iconUrlByPath.set(dockFile.path, normalizedIconUrl);
       })
   );
 }
 
 function filterDockFiles(
-  dockFiles: readonly WorkbenchDockFileAtItem[],
+  dockFiles: readonly WorkbenchDockFileMentionItem[],
   maxResults?: number,
   keyword?: string
-): WorkbenchDockFileAtItem[] {
+): WorkbenchDockFileMentionItem[] {
   const normalizedKeyword = keyword?.trim().toLowerCase() ?? "";
   const filtered = normalizedKeyword
     ? dockFiles.filter((item) =>
@@ -104,7 +104,7 @@ function filterDockFiles(
 }
 
 function matchesDockFileKeyword(
-  item: WorkbenchDockFileAtItem,
+  item: WorkbenchDockFileMentionItem,
   keyword: string
 ): boolean {
   const haystack = `${item.displayName}\n${item.path}`.toLowerCase();

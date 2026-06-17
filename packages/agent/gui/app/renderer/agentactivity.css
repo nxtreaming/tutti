@@ -3756,6 +3756,10 @@ aside.workspace-agents-status-panel
   transition: grid-template-columns 100ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+.agent-gui-node__layout[data-rail-resizing="true"] {
+  transition: none;
+}
+
 .agent-gui-node__rail-panel {
   min-width: 0;
   min-height: 0;
@@ -3785,6 +3789,10 @@ aside.workspace-agents-status-panel
   transition:
     left 100ms cubic-bezier(0.2, 0, 0, 1),
     opacity 80ms ease;
+}
+
+.agent-gui-node__rail-resize-handle[data-resizing="true"] {
+  transition: none;
 }
 
 .agent-gui-node__rail-resize-handle--collapsed {
@@ -5072,6 +5080,8 @@ button.agent-gui-node__conversation-section-toggle:hover
   align-self: stretch;
   box-sizing: border-box;
   gap: 0;
+  margin-right: auto;
+  margin-left: auto;
   width: min(
     100%,
     calc(
@@ -5086,8 +5096,8 @@ button.agent-gui-node__conversation-section-toggle:hover
 }
 
 .agent-gui-node__bottom-dock > .agent-gui-node__composer {
-  padding-right: 0;
-  padding-left: 0;
+  padding-right: 12px;
+  padding-left: 12px;
 }
 
 .agent-gui-node__bottom-dock-prompt {
@@ -5479,18 +5489,9 @@ button.agent-gui-node__conversation-section-toggle:hover
 }
 
 .agent-gui-node__slash-status-panel {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  justify-self: stretch;
-  width: auto;
-  margin: 0 12px;
-  padding: 6px 12px;
-  border: 1px solid var(--agent-gui-border-subtle, var(--line-2));
-  border-bottom: 0;
-  border-radius: 10px 10px 0 0;
-  background: var(--background-fronted);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 4%);
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
   color: var(--agent-gui-text-primary);
   font-size: 11px;
 }

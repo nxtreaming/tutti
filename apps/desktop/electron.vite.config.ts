@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { PerfMonitorVitePlugin } from "@tutti-os/rrt-plugin-vite";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import type { PluginOption } from "vite";
 
@@ -16,6 +17,15 @@ const aliases = {
   ),
   "@tutti-os/workspace-file-manager": resolve(
     "../../packages/workspace/file-manager/src/index.ts"
+  ),
+  "@tutti-os/workspace-external-core/contracts": resolve(
+    "../../packages/workspace/external-core/src/contracts/index.ts"
+  ),
+  "@tutti-os/workspace-external-core/core": resolve(
+    "../../packages/workspace/external-core/src/core/index.ts"
+  ),
+  "@tutti-os/workspace-external-core": resolve(
+    "../../packages/workspace/external-core/src/index.ts"
   ),
   "@preload": resolve("src/preload"),
   "@renderer": resolve("src/renderer/src"),
@@ -42,6 +52,7 @@ const externalizeRuntimeDeps = externalizeDepsPlugin({
     "@tutti-os/ui-i18n-runtime",
     "@tutti-os/ui-system",
     "@tutti-os/workspace-file-manager",
+    "@tutti-os/workspace-external-core",
     "@tutti-os/workspace-file-preview",
     "ws"
   ]
@@ -58,6 +69,23 @@ const devServer = {
     host: "127.0.0.1"
   }
 };
+
+function envFlagEnabled(value: string | undefined): boolean {
+  return /^(1|true|yes|on)$/iu.test(value?.trim() ?? "");
+}
+
+const perfMonitorEnabled = envFlagEnabled(
+  process.env.TUTTI_ENABLE_PERF_MONITOR
+);
+
+function createPerfMonitorPlugin(): PluginOption {
+  return PerfMonitorVitePlugin({
+    separate: true,
+    diffMode: "lite",
+    updateTrace: true,
+    commitTrace: true
+  });
+}
 
 const webkitBackdropFilterPattern =
   /^([ \t]*)-webkit-backdrop-filter:\s*([^;]+);(?!\n[ \t]*backdrop-filter:)/gm;
@@ -166,7 +194,8 @@ export default defineConfig({
         }
       }),
       tailwindcss(),
-      preserveUnprefixedBackdropFilterPlugin()
+      preserveUnprefixedBackdropFilterPlugin(),
+      ...(perfMonitorEnabled ? [createPerfMonitorPlugin()] : [])
     ],
     resolve: {
       alias: aliases

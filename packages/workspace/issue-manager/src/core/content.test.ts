@@ -68,10 +68,10 @@ test("issue-manager run prompt keeps execute handoff issue-scoped", () => {
     workspaceRoot: "/tmp/workspace"
   });
 
-  assert.match(prompt, /Handle this issue reference/);
+  assert.match(prompt, /Handle this task reference/);
   assert.match(
     prompt,
-    /\[@Plan migration\]\(mention:\/\/workspace-issue\?workspaceId=workspace-1&id=issue-1&mode=execute&topicId=topic-1\)/
+    /\[@Plan migration\]\(mention:\/\/workspace-issue\/issue-1\?workspaceId=workspace-1&topicId=topic-1&mode=execute\)/
   );
   assert.doesNotMatch(prompt, /Port renderer/);
   assert.doesNotMatch(prompt, /taskId=/);
@@ -111,7 +111,7 @@ test("issue-manager run prompt targets selected task when provided", () => {
 
   assert.match(
     prompt,
-    /\[@Plan migration \/ Port renderer\]\(mention:\/\/workspace-issue\?workspaceId=workspace-1&id=issue-1&mode=execute&topicId=topic-1&taskId=task-1\)/
+    /\[@Plan migration \/ Port renderer\]\(mention:\/\/workspace-issue\/issue-1\?workspaceId=workspace-1&topicId=topic-1&mode=execute&taskId=task-1\)/
   );
   assert.doesNotMatch(prompt, /runId=/);
   assert.doesNotMatch(prompt, /outputDir=/);
@@ -134,8 +134,8 @@ test("issue-manager run prompt follows injected locale copy", () => {
     workspaceRoot: "/tmp/workspace"
   });
 
-  assert.match(prompt, /请处理这个 Issue 引用/);
-  assert.doesNotMatch(prompt, /Handle this issue reference/);
+  assert.match(prompt, /请处理这个任务引用/);
+  assert.doesNotMatch(prompt, /Handle this task reference/);
 });
 
 test("issue-manager task breakdown prompt captures issue context", () => {
@@ -178,10 +178,10 @@ test("issue-manager task breakdown prompt captures issue context", () => {
 
   assert.match(
     prompt,
-    /\[@Plan migration\]\(mention:\/\/workspace-issue\?workspaceId=workspace-1&id=issue-1&mode=breakdown&topicId=topic-1\)/
+    /\[@Plan migration\]\(mention:\/\/workspace-issue\/issue-1\?workspaceId=workspace-1&topicId=topic-1&mode=breakdown\)/
   );
-  assert.match(prompt, /Break this issue reference down into executable tasks/);
-  assert.doesNotMatch(prompt, /现有子事项数：1/);
+  assert.match(prompt, /Break this task reference down into executable tasks/);
+  assert.doesNotMatch(prompt, /现有子任务数：1/);
   assert.doesNotMatch(prompt, /引用资料数：1/);
 });
 
@@ -206,10 +206,10 @@ test("issue-manager task breakdown prompt follows injected locale copy", () => {
     workspaceId: "workspace-1"
   });
 
-  assert.match(prompt, /请基于这个 Issue 引用做任务拆解/);
+  assert.match(prompt, /请基于这个任务引用做任务拆解/);
   assert.doesNotMatch(
     prompt,
-    /Break this issue reference down into executable tasks/
+    /Break this task reference down into executable tasks/
   );
 });
 
@@ -232,17 +232,23 @@ test("issue-manager prompts escape markdown-sensitive issue mention labels", () 
 
   assert.match(
     prompt,
-    /\[@\\\[iOS\\\] Login \\\\ refresh\]\(mention:\/\/workspace-issue\?workspaceId=workspace-1&id=issue-1&mode=execute&topicId=topic-1\)/
+    /\[@\\\[iOS\\\] Login \\\\ refresh\]\(mention:\/\/workspace-issue\/issue-1\?workspaceId=workspace-1&topicId=topic-1&mode=execute\)/
   );
 });
 
 test("issue-manager content helpers round-trip rich text mentions", () => {
   const mention = createRichTextMentionAttrs("user", {
     entityId: "u_123",
-    label: "Alice",
-    href: "/people/u_123"
+    label: "Alice"
   });
   const content = `Follow up with ${createIssueManagerMentionMarkdown(mention)} today`;
 
-  assert.deepEqual(extractIssueManagerMentionsFromContent(content), [mention]);
+  assert.deepEqual(extractIssueManagerMentionsFromContent(content), [
+    {
+      trigger: "@",
+      providerId: "user",
+      entityId: "u_123",
+      label: "Alice"
+    }
+  ]);
 });

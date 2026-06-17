@@ -8,6 +8,7 @@ import { createPlatformDesktopApi } from "../api/platform";
 import { createRuntimeDesktopApi } from "../api/runtime";
 import { createUpdateDesktopApi } from "../api/update";
 import { createWallpaperDesktopApi } from "../api/wallpaper";
+import { createWorkspaceAppExternalDesktopApi } from "../api/workspaceAppExternal";
 import type { DesktopApi } from "../types";
 import {
   desktopIpcChannels,
@@ -27,6 +28,7 @@ const desktopApi: DesktopApi = {
 
 if (isWorkspaceWindowPreload()) {
   desktopApi.browser = createBrowserDesktopApi();
+  desktopApi.workspaceAppExternal = createWorkspaceAppExternalDesktopApi();
 }
 
 ipcRenderer.on(

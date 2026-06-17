@@ -98,6 +98,9 @@ export interface CreateAgentGuiWorkbenchContributionInput {
     >,
     helpers: AgentGuiWorkbenchRenderBodyHelpers
   ): ReactNode;
+  resolveDockPopupTitle?: (
+    state: AgentGuiWorkbenchState | null
+  ) => string | null;
   resolveDockEntryVisibility?: (
     provider: AgentGuiWorkbenchProvider
   ) => WorkbenchHostDockEntry["visibility"];
@@ -122,6 +125,7 @@ export function createAgentGuiWorkbenchContribution(
         order: index,
         provider,
         renderPreview: input.renderPreview,
+        resolveDockPopupTitle: input.resolveDockPopupTitle,
         sectionId: input.dockSectionId ?? "agents",
         visibility:
           input.resolveDockEntryVisibility?.(provider) ??
@@ -147,6 +151,7 @@ export function createAgentGuiWorkbenchContribution(
               onStateChange: (state) => {
                 nodeStateSource.writeNodeState({
                   instanceId: context.instanceId,
+                  nodeId: context.node.id,
                   state,
                   typeId: agentGuiWorkbenchTypeId
                 });
@@ -183,6 +188,7 @@ export function createAgentGuiWorkbenchContribution(
           const persistConversationRailCollapsed = (collapsed: boolean) => {
             nodeStateSource.writeNodeState({
               instanceId,
+              nodeId: node.id,
               state: {
                 ...workbenchState,
                 conversationRailCollapsed: collapsed
@@ -282,7 +288,7 @@ export function createAgentGuiWorkbenchContribution(
         nodeStateSource.writeNodeState({
           instanceId,
           state: {
-            ...(previousState ?? normalizeAgentGuiWorkbenchState(null)),
+            ...normalizeAgentGuiWorkbenchState(previousState),
             ...(targetAgentSessionId
               ? { lastActiveAgentSessionId: targetAgentSessionId }
               : {})
@@ -373,6 +379,7 @@ function createAgentGuiWorkbenchDockEntry(input: {
   order: number;
   provider: AgentGuiWorkbenchProvider;
   renderPreview?: CreateAgentGuiWorkbenchContributionInput["renderPreview"];
+  resolveDockPopupTitle?: CreateAgentGuiWorkbenchContributionInput["resolveDockPopupTitle"];
   sectionId: string;
   visibility: WorkbenchHostDockEntry["visibility"];
 }): WorkbenchHostDockEntry {
@@ -397,15 +404,8 @@ function createAgentGuiWorkbenchDockEntry(input: {
         return null;
       }
       const { externalNodeState, node } = item;
-      const state =
-        (externalNodeState as
-          | Partial<
-              AgentGuiWorkbenchState & { conversationCount?: number | null }
-            >
-          | null
-          | undefined) ?? {};
-      const title =
-        resolveAgentGuiWorkbenchDockPopupTitle(externalNodeState) ?? node.title;
+      const state = normalizeAgentGuiWorkbenchState(externalNodeState);
+      const title = input.resolveDockPopupTitle?.(state) ?? node.title;
       const lines = [input.label, state.lastActiveAgentSessionId].filter(
         (line): line is string => Boolean(line?.trim())
       );
@@ -424,7 +424,10 @@ function createAgentGuiWorkbenchDockEntry(input: {
       };
     },
     resolvePopupItem: ({ externalNodeState }) => {
-      const title = resolveAgentGuiWorkbenchDockPopupTitle(externalNodeState);
+      const title =
+        input.resolveDockPopupTitle?.(
+          normalizeAgentGuiWorkbenchState(externalNodeState)
+        ) ?? null;
       return {
         revision: `${input.provider}\n${title ?? ""}`,
         title
@@ -434,12 +437,6 @@ function createAgentGuiWorkbenchDockEntry(input: {
     typeId: agentGuiWorkbenchTypeId,
     visibility: input.visibility
   };
-}
-
-function resolveAgentGuiWorkbenchDockPopupTitle(state: unknown): string | null {
-  const title = (state as Partial<AgentGuiWorkbenchState> | null)
-    ?.lastActiveConversationTitle;
-  return typeof title === "string" && title.trim() ? title.trim() : null;
 }
 
 function createAgentGuiWorkbenchPreviewBodyContext(

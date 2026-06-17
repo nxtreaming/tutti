@@ -13,16 +13,6 @@ export const zhCN = {
     unreachable: "不可达",
     workspace: "工作区"
   },
-  workspaceApp: {
-    managedCredentials: {
-      allow: "允许",
-      authorizationDetail:
-        "应用会通过 Tutti 获取短期凭证，真实 provider key 仍保存在 Tutti。",
-      authorizationMessage: "允许这个应用使用 {{providers}} 吗？",
-      authorizationTitle: "授权托管模型",
-      configuredProviders: "已配置的 provider"
-    }
-  },
   dashboard: {
     chooseWorkspaceTitle: "选择一个工作区",
     chooseWorkspaceDescription: "选择一个工作区继续",
@@ -99,6 +89,7 @@ export const zhCN = {
       exportServiceLogs: "导出服务日志...",
       file: "文件",
       help: "帮助",
+      openPerfMonitor: "打开 Perf Monitor DevTools",
       upToDateDetail: "Tutti {{version}} 是当前的最新版本。",
       upToDateMessage: "您使用的就是最新版本！",
       view: "显示",

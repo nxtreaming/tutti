@@ -18,7 +18,6 @@ export const agentGuiWorkbenchContributionFactory: DesktopWorkbenchContributionF
         onCapabilitySettingsRequest: context.onCapabilitySettingsRequest,
         tuttidClient: context.tuttidClient,
         platformApi: context.platformApi,
-        resolveAppIconUrl: context.dockIcons.appIconUrl,
         reporterService: context.reporterService,
         richTextAtService: context.richTextAtService,
         runtimeApi: context.runtimeApi,

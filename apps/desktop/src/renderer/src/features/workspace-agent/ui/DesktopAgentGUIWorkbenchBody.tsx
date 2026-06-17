@@ -59,7 +59,9 @@ import {
   isDesktopManagedAgentProvider,
   projectDesktopManagedAgentsState
 } from "../services/internal/desktopManagedAgentProviders.ts";
-import { resolveWorkbenchDockFileAtItems } from "../services/internal/resolveWorkbenchDockFileAtItems.ts";
+import { createDesktopWorkspaceAppMentionProvider } from "../../rich-text-at/providers/desktopWorkspaceAppMentionProvider.ts";
+import { AGENT_CONTEXT_MENTION_PROVIDER_IDS } from "@tutti-os/agent-gui/context-mention-provider";
+import { resolveWorkbenchDockFileMentionItems } from "../services/internal/resolveWorkbenchDockFileMentionItems.ts";
 import { createDesktopAgentGeneratedFileMentionProvider } from "../services/internal/createDesktopAgentGeneratedFileMentionProvider.ts";
 import { resolveDesktopWorkspaceAppIconEntries } from "../services/internal/desktopWorkspaceAppIcons.ts";
 import { wrapDesktopFileMentionProviderWithDockFiles } from "../services/internal/wrapDesktopFileMentionProviderWithDockFiles.ts";
@@ -90,8 +92,9 @@ interface DesktopAgentGUIWorkbenchBodyProps {
   onCapabilitySettingsRequest?: AgentGUIProps["onCapabilitySettingsRequest"];
   onStateChange: (state: DesktopAgentGUIWorkbenchState) => void;
   previewMode?: boolean;
-  richTextAtProviders: NonNullable<AgentGUIProps["richTextAtProviders"]>;
-  resolveAppIconUrl?: (appId: string) => string | null;
+  contextMentionProviders: NonNullable<
+    AgentGUIProps["contextMentionProviders"]
+  >;
   runtimeApi?: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">;
   trackWorkspaceFileReferences?: AgentGUIProps["onWorkspaceFileReferencesAdded"];
   workspaceFileReferenceAdapter: NonNullable<
@@ -99,6 +102,11 @@ interface DesktopAgentGUIWorkbenchBodyProps {
   >;
   onRequestGitBranches: NonNullable<AgentGUIProps["onRequestGitBranches"]>;
   workspaceId: string;
+}
+
+interface DesktopAgentGUIWorkbenchStateSync {
+  provider: DesktopAgentGUIProvider;
+  workbenchState: DesktopAgentGUIWorkbenchState;
 }
 
 const EMPTY_AGENT_PROVIDER_STATUS_SNAPSHOT: AgentProviderStatusSnapshot = {
@@ -131,6 +139,16 @@ const DESKTOP_AGENT_GUI_AGENT_SETTINGS = {
 } satisfies NonNullable<AgentGUIProps["agentSettings"]>;
 const DESKTOP_AGENT_GUI_NOOP = (): void => {};
 const DESKTOP_AGENT_GUI_POSITION = { x: 0, y: 0 };
+const DESKTOP_AGENT_GUI_WORKBENCH_SYNC_VERBOSE_LOG_LIMIT = 10;
+const DESKTOP_AGENT_GUI_WORKBENCH_SYNC_SAMPLE_INTERVAL = 25;
+const DESKTOP_AGENT_GUI_PROVIDER_DIAGNOSTIC_ORDER: DesktopAgentGUIProvider[] = [
+  "claude-code",
+  "codex",
+  "nexight",
+  "gemini",
+  "hermes",
+  "openclaw"
+];
 
 type DesktopAgentProbeState = NonNullable<
   AgentGUIProps["workspaceAgentProbes"]
@@ -167,6 +185,35 @@ function withDesktopAgentGUIProviderComposerDefaults(
     },
     provider
   );
+}
+
+function mergeDesktopAgentGUIExternalWorkbenchState(
+  current: DesktopAgentGUINodeState,
+  workbenchState: DesktopAgentGUIWorkbenchState,
+  provider: DesktopAgentGUIProvider
+): DesktopAgentGUINodeState {
+  const next = normalizeDesktopAgentGUINodeState(
+    {
+      ...current,
+      ...workbenchState,
+      provider
+    },
+    provider
+  );
+
+  if (
+    current.lastActiveAgentSessionId &&
+    current.lastActiveAgentSessionId === next.lastActiveAgentSessionId &&
+    current.lastActiveConversationTitle &&
+    current.lastActiveConversationTitle !== next.lastActiveConversationTitle
+  ) {
+    return {
+      ...next,
+      lastActiveConversationTitle: current.lastActiveConversationTitle
+    };
+  }
+
+  return next;
 }
 
 function desktopAgentComposerDefaultsToComposerOverrides(
@@ -220,6 +267,138 @@ function logAgentComposerDefaultsDiagnostic(input: {
   });
 }
 
+function logAgentGUIWorkbenchStateSyncDiagnostic(input: {
+  changedFields: readonly string[];
+  current: DesktopAgentGUINodeState | DesktopAgentGUIWorkbenchState;
+  event:
+    | "agent.gui.workbench_state.apply_external"
+    | "agent.gui.workbench_state.request_external";
+  instanceId: string;
+  next: DesktopAgentGUINodeState | DesktopAgentGUIWorkbenchState;
+  nodeId: string;
+  provider: DesktopAgentGUIProvider;
+  runtimeApi?: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">;
+  syncCount: number;
+  workspaceId: string;
+}): void {
+  if (
+    !input.runtimeApi ||
+    !shouldLogAgentGUIWorkbenchStateSync(input.syncCount)
+  ) {
+    return;
+  }
+
+  void input.runtimeApi.logTerminalDiagnostic({
+    details: {
+      changedFields: input.changedFields.join(",") || "unknown",
+      current: stringifyDiagnosticValue(
+        summarizeAgentGUIStateForDiagnostic(input.current)
+      ),
+      instanceId: input.instanceId,
+      next: stringifyDiagnosticValue(
+        summarizeAgentGUIStateForDiagnostic(input.next)
+      ),
+      nodeId: input.nodeId,
+      provider: input.provider,
+      syncCount: input.syncCount
+    },
+    event: input.event,
+    level: "info",
+    workspaceId: input.workspaceId
+  });
+}
+
+function shouldLogAgentGUIWorkbenchStateSync(syncCount: number): boolean {
+  return (
+    syncCount <= DESKTOP_AGENT_GUI_WORKBENCH_SYNC_VERBOSE_LOG_LIMIT ||
+    syncCount % DESKTOP_AGENT_GUI_WORKBENCH_SYNC_SAMPLE_INTERVAL === 0
+  );
+}
+
+function describeAgentGUIWorkbenchStateChanges(
+  current: DesktopAgentGUIWorkbenchState,
+  next: DesktopAgentGUIWorkbenchState
+): string[] {
+  const changedFields: string[] = [];
+  if (
+    stringifyDiagnosticValue(current.composerOverrides) !==
+    stringifyDiagnosticValue(next.composerOverrides)
+  ) {
+    changedFields.push("composerOverrides");
+  }
+  if (
+    stringifyDiagnosticValue(current.composerOverridesByProvider) !==
+    stringifyDiagnosticValue(next.composerOverridesByProvider)
+  ) {
+    changedFields.push("composerOverridesByProvider");
+  }
+  if (current.conversationRailCollapsed !== next.conversationRailCollapsed) {
+    changedFields.push("conversationRailCollapsed");
+  }
+  if (current.conversationRailWidthPx !== next.conversationRailWidthPx) {
+    changedFields.push("conversationRailWidthPx");
+  }
+  if (current.lastActiveAgentSessionId !== next.lastActiveAgentSessionId) {
+    changedFields.push("lastActiveAgentSessionId");
+  }
+  return changedFields;
+}
+
+function describeAgentGUINodeStateChanges(
+  current: DesktopAgentGUINodeState,
+  next: DesktopAgentGUINodeState
+): string[] {
+  const changedFields = describeAgentGUIWorkbenchStateChanges(current, next);
+  if (current.conversationCount !== next.conversationCount) {
+    changedFields.push("conversationCount");
+  }
+  if (current.provider !== next.provider) {
+    changedFields.push("provider");
+  }
+  return changedFields;
+}
+
+function summarizeAgentGUIStateForDiagnostic(
+  state: DesktopAgentGUINodeState | DesktopAgentGUIWorkbenchState
+): Record<string, unknown> {
+  return {
+    composerOverrides: state.composerOverrides ?? null,
+    composerOverridesByProvider:
+      summarizeComposerOverridesByProviderForDiagnostic(
+        state.composerOverridesByProvider
+      ),
+    ...("conversationCount" in state
+      ? { conversationCount: state.conversationCount ?? null }
+      : {}),
+    conversationRailCollapsed: state.conversationRailCollapsed ?? null,
+    conversationRailWidthPx: state.conversationRailWidthPx ?? null,
+    lastActiveAgentSessionId: state.lastActiveAgentSessionId ?? null,
+    ...("provider" in state ? { provider: state.provider } : {})
+  };
+}
+
+function summarizeComposerOverridesByProviderForDiagnostic(
+  value: DesktopAgentGUINodeState["composerOverridesByProvider"]
+): DesktopAgentGUINodeState["composerOverridesByProvider"] | null {
+  if (!value) {
+    return null;
+  }
+
+  const result: NonNullable<
+    DesktopAgentGUINodeState["composerOverridesByProvider"]
+  > = {};
+  for (const provider of DESKTOP_AGENT_GUI_PROVIDER_DIAGNOSTIC_ORDER) {
+    if (value[provider]) {
+      result[provider] = value[provider];
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function stringifyDiagnosticValue(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
 function stringifyDiagnosticError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -239,8 +418,7 @@ export function DesktopAgentGUIWorkbenchBody({
   onCapabilitySettingsRequest,
   onStateChange,
   previewMode = false,
-  richTextAtProviders,
-  resolveAppIconUrl,
+  contextMentionProviders,
   runtimeApi,
   trackWorkspaceFileReferences,
   workspaceFileReferenceAdapter,
@@ -257,14 +435,27 @@ export function DesktopAgentGUIWorkbenchBody({
     () =>
       resolveDesktopWorkspaceAppIconEntries({
         apps: appCenterState.apps,
-        resolveAppIconUrl,
         workspaceId
       }),
-    [appCenterState.apps, resolveAppIconUrl, workspaceId]
+    [appCenterState.apps, workspaceId]
   );
+  const workspaceAppMentionProvider = useMemo(() => {
+    const baseProvider = contextMentionProviders.find(
+      (provider) =>
+        provider.id === AGENT_CONTEXT_MENTION_PROVIDER_IDS.workspaceApp
+    );
+    return baseProvider
+      ? createDesktopWorkspaceAppMentionProvider({
+          apps: appCenterState.apps,
+          baseProvider,
+          locale,
+          workspaceId
+        })
+      : null;
+  }, [appCenterState.apps, locale, contextMentionProviders, workspaceId]);
   const resolveDockFiles = useCallback(
     () =>
-      resolveWorkbenchDockFileAtItems({
+      resolveWorkbenchDockFileMentionItems({
         host: context.host,
         workspaceId
       }),
@@ -278,21 +469,28 @@ export function DesktopAgentGUIWorkbenchBody({
       }),
     [agentActivityRuntime, workspaceId]
   );
-  const effectiveRichTextAtProviders = useMemo(
+  const effectiveContextMentionProviders = useMemo(
     () => [
-      ...richTextAtProviders.map((provider) =>
-        wrapDesktopFileMentionProviderWithDockFiles(provider, {
-          readDockPreview: dockPreviewCache.read.bind(dockPreviewCache),
-          resolveDockFiles
-        })
-      ),
-      agentGeneratedFileMentionProvider
+      ...contextMentionProviders
+        .filter(
+          (provider) =>
+            provider.id !== AGENT_CONTEXT_MENTION_PROVIDER_IDS.workspaceApp
+        )
+        .map((provider) =>
+          wrapDesktopFileMentionProviderWithDockFiles(provider, {
+            readDockPreview: dockPreviewCache.read.bind(dockPreviewCache),
+            resolveDockFiles
+          })
+        ),
+      agentGeneratedFileMentionProvider,
+      ...(workspaceAppMentionProvider ? [workspaceAppMentionProvider] : [])
     ],
     [
       agentGeneratedFileMentionProvider,
       dockPreviewCache,
       resolveDockFiles,
-      richTextAtProviders
+      contextMentionProviders,
+      workspaceAppMentionProvider
     ]
   );
   const managedAgentsState = useDesktopManagedAgentsState(
@@ -365,6 +563,7 @@ export function DesktopAgentGUIWorkbenchBody({
   const [state, setState] = useState<DesktopAgentGUINodeState>(
     normalizedExternalState
   );
+  const stateRef = useRef<DesktopAgentGUINodeState>(state);
   const [agentProbeDemandBySource, setAgentProbeDemandBySource] = useState<
     Record<string, string>
   >({});
@@ -377,6 +576,13 @@ export function DesktopAgentGUIWorkbenchBody({
     useState<DesktopAgentGUIPrefillPromptRequest | null>(null);
   const lastRequestedWorkbenchStateRef =
     useRef<DesktopAgentGUIWorkbenchState | null>(null);
+  const lastAppliedWorkbenchStateRef =
+    useRef<DesktopAgentGUIWorkbenchStateSync>({
+      provider,
+      workbenchState
+    });
+  const applyWorkbenchStateSyncCountRef = useRef(0);
+  const requestWorkbenchStateSyncCountRef = useRef(0);
   const handledOpenSessionActivationSequenceRef = useRef<number | null>(null);
   const handledPrefillPromptActivationSequenceRef = useRef<number | null>(null);
   const pendingComposerDefaultsWriteRef =
@@ -425,6 +631,10 @@ export function DesktopAgentGUIWorkbenchBody({
     },
     [i18n, runtimeApi, workspaceId]
   );
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     if (previewMode) {
@@ -493,18 +703,70 @@ export function DesktopAgentGUIWorkbenchBody({
   ]);
 
   useEffect(() => {
+    if (previewMode) {
+      return;
+    }
+    const lastAppliedWorkbenchState = lastAppliedWorkbenchStateRef.current;
+    if (
+      lastAppliedWorkbenchState.provider === provider &&
+      areDesktopAgentGUIWorkbenchStatesEqual(
+        lastAppliedWorkbenchState.workbenchState,
+        workbenchState
+      )
+    ) {
+      return;
+    }
+    lastAppliedWorkbenchStateRef.current = {
+      provider,
+      workbenchState
+    };
+    const currentState = stateRef.current;
+    const nextState = normalizeDesktopAgentGUINodeState(
+      {
+        ...currentState,
+        ...workbenchState,
+        provider
+      },
+      provider
+    );
+    if (!areDesktopAgentGUINodeStatesEqual(currentState, nextState)) {
+      const syncCount = ++applyWorkbenchStateSyncCountRef.current;
+      logAgentGUIWorkbenchStateSyncDiagnostic({
+        changedFields: describeAgentGUINodeStateChanges(
+          currentState,
+          nextState
+        ),
+        current: currentState,
+        event: "agent.gui.workbench_state.apply_external",
+        instanceId: context.instanceId,
+        next: nextState,
+        nodeId: context.node.id,
+        provider,
+        runtimeApi,
+        syncCount,
+        workspaceId
+      });
+    }
     setState((current) => {
-      const next = normalizeDesktopAgentGUINodeState(
-        {
-          ...current,
-          ...workbenchState,
-          provider
-        },
+      const next = mergeDesktopAgentGUIExternalWorkbenchState(
+        current,
+        workbenchState,
         provider
       );
-      return areDesktopAgentGUINodeStatesEqual(current, next) ? current : next;
+      if (areDesktopAgentGUINodeStatesEqual(current, next)) {
+        return current;
+      }
+      return next;
     });
-  }, [provider, workbenchState]);
+  }, [
+    context.instanceId,
+    context.node.id,
+    previewMode,
+    provider,
+    runtimeApi,
+    workbenchState,
+    workspaceId
+  ]);
 
   useEffect(() => {
     consumeDesktopAgentGUIOpenSessionActivation({
@@ -704,8 +966,34 @@ export function DesktopAgentGUIWorkbenchBody({
       return;
     }
     lastRequestedWorkbenchStateRef.current = nextWorkbenchState;
+    const syncCount = ++requestWorkbenchStateSyncCountRef.current;
+    logAgentGUIWorkbenchStateSyncDiagnostic({
+      changedFields: describeAgentGUIWorkbenchStateChanges(
+        workbenchState,
+        nextWorkbenchState
+      ),
+      current: workbenchState,
+      event: "agent.gui.workbench_state.request_external",
+      instanceId: context.instanceId,
+      next: nextWorkbenchState,
+      nodeId: context.node.id,
+      provider,
+      runtimeApi,
+      syncCount,
+      workspaceId
+    });
     onStateChange(nextWorkbenchState);
-  }, [onStateChange, previewMode, state, workbenchState]);
+  }, [
+    context.instanceId,
+    context.node.id,
+    onStateChange,
+    previewMode,
+    provider,
+    runtimeApi,
+    state,
+    workbenchState,
+    workspaceId
+  ]);
 
   const frame = context.node.frame;
   const desktopSize = useMemo(
@@ -769,7 +1057,7 @@ export function DesktopAgentGUIWorkbenchBody({
       onWorkspaceFileReferencesAdded={trackWorkspaceFileReferences}
       position={DESKTOP_AGENT_GUI_POSITION}
       previewMode={previewMode}
-      richTextAtProviders={effectiveRichTextAtProviders}
+      contextMentionProviders={effectiveContextMentionProviders}
       state={state}
       title={context.node.title}
       width={frame.width}

@@ -52,7 +52,7 @@ export interface AgentMentionPaletteEntry {
   item?: AgentContextMentionItem;
 }
 
-interface AgentFileMentionPaletteProps {
+export interface AgentFileMentionPaletteProps {
   state: AgentMentionSearchState;
   highlightedKey: string | null;
   label: string;
@@ -195,9 +195,6 @@ export function AgentFileMentionPalette({
   const highlightedBrowseCategory = highlightedKey?.startsWith("category:")
     ? highlightedKey.slice("category:".length)
     : null;
-  const browseDisplayFilter = isBrowseCategoryId(highlightedBrowseCategory)
-    ? highlightedBrowseCategory
-    : filter;
   const showBrowseHint = shouldShowBrowseSearchHint({
     browseFilter: filter,
     groups: state.groups,
@@ -238,7 +235,7 @@ export function AgentFileMentionPalette({
         };
 
   const emptyLabelForShell = showBrowseHint
-    ? browseHintForFilter(browseDisplayFilter)
+    ? browseHintForFilter(filter)
     : resolveMentionPaletteEmptyLabel({
         emptyLabel,
         filter,
@@ -298,6 +295,9 @@ export function AgentFileMentionPalette({
     />
   );
 }
+
+export const AgentContextMentionPalette = AgentFileMentionPalette;
+export type AgentContextMentionPaletteProps = AgentFileMentionPaletteProps;
 
 /**
  * Map a controller group onto the shared shell group, layering in the
@@ -391,6 +391,15 @@ function resolveMentionPaletteEmptyLabel(input: {
     input.query.trim().length > 0
   ) {
     return translate("agentHost.agentGui.mentionNoMatchingFiles");
+  }
+  if (input.filter === "session") {
+    return agentMentionEmptyGroupLabel("my_sessions", input.query);
+  }
+  if (input.filter === "app") {
+    return agentMentionEmptyGroupLabel("apps", input.query);
+  }
+  if (input.filter === "issue") {
+    return agentMentionEmptyGroupLabel("issues", input.query);
   }
   return input.emptyLabel;
 }
@@ -560,18 +569,6 @@ function browseHintForFilter(filter: AgentMentionFilterId): string {
     case "issue":
       return translate("agentHost.agentGui.contextPickerBrowseIssueHint");
   }
-}
-
-function isBrowseCategoryId(
-  value: string | null
-): value is AgentMentionFilterId {
-  return (
-    value === "all" ||
-    value === "app" ||
-    value === "file" ||
-    value === "session" ||
-    value === "issue"
-  );
 }
 
 function hasInteractiveGroupEntries(

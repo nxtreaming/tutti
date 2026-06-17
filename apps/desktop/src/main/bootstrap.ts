@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app } from "electron";
+import { app, BrowserWindow } from "electron";
 import { initializeDesktopEnvironment } from "./defaults";
 import { registerDesktopAppLifecycle } from "./desktopAppLifecycle";
 import { createDesktopAppServices } from "./desktopAppServices";
@@ -20,13 +20,24 @@ import { registerIpcHandlers } from "./ipc/register";
 import { flushDesktopLogger, setupDesktopLogger } from "./logging";
 import { getSystemDesktopLocale } from "./desktopLocale";
 import { openDesktopWorkspaceAppFolder } from "./host/workspaceAppFolderAccess";
+import { openPerfMonitorDevToolsWindow } from "./windows/perfMonitorDevToolsWindow.ts";
+import { createTranslator } from "../shared/i18n/index.ts";
+import {
+  registerTuttiAssetProtocol,
+  registerTuttiAssetProtocolScheme
+} from "./host/tuttiAssetProtocol.ts";
 import { createWorkspaceFileIconCacheStore } from "./host/workspaceFileIconCacheStore.ts";
 import {
   registerWorkspaceFileIconProtocol,
   registerWorkspaceFileIconProtocolScheme
 } from "./host/workspaceFileIconProtocol.ts";
 
+function envFlagEnabled(value: string | undefined): boolean {
+  return /^(1|true|yes|on)$/iu.test(value?.trim() ?? "");
+}
+
 export async function bootstrapDesktopApp(): Promise<void> {
+  registerTuttiAssetProtocolScheme();
   registerWorkspaceFileIconProtocolScheme();
   initializeDesktopEnvironment({
     appVersion: app.getVersion(),
@@ -49,6 +60,7 @@ export async function bootstrapDesktopApp(): Promise<void> {
   const workspaceFileIconCache = createWorkspaceFileIconCacheStore({
     directory: join(app.getPath("userData"), "workspace-file-icons")
   });
+  registerTuttiAssetProtocol();
   registerWorkspaceFileIconProtocol(workspaceFileIconCache);
   const desktopAppServices = await createDesktopAppServices({
     enableDevelopmentReloadShortcut: Boolean(rendererUrl) && !app.isPackaged,
@@ -90,7 +102,22 @@ export async function bootstrapDesktopApp(): Promise<void> {
         desktopAppServices.tuttidClient
       ),
     getLocale: () => desktopAppServices.preferences.getLocale(),
-    logger
+    logger,
+    openPerfMonitorDevTools:
+      rendererUrl && envFlagEnabled(process.env.TUTTI_ENABLE_PERF_MONITOR)
+        ? (ownerWindow) => {
+            const translator = createTranslator(
+              desktopAppServices.preferences.getLocale()
+            );
+            openPerfMonitorDevToolsWindow({
+              logger,
+              ownerWindow:
+                ownerWindow instanceof BrowserWindow ? ownerWindow : null,
+              rendererUrl,
+              title: translator.t("desktop.menu.openPerfMonitor")
+            });
+          }
+        : undefined
   });
 
   registerIpcHandlers({

@@ -422,16 +422,8 @@ func appServerPlanStepStatus(status string) string {
 }
 
 func (a *CodexAppServerAdapter) applyTokenUsage(agentSessionID string, params map[string]any) {
-	tokenUsage := payloadObject(params["tokenUsage"])
-	if len(tokenUsage) == 0 {
-		return
-	}
-	used, usedOK := firstACPInt64(payloadObject(tokenUsage["total"]), "totalTokens")
-	if !usedOK {
-		used, usedOK = firstACPInt64(payloadObject(tokenUsage["last"]), "totalTokens")
-	}
-	window, windowOK := firstACPInt64(tokenUsage, "modelContextWindow")
-	if !usedOK || !windowOK {
+	usage, ok := appServerTokenUsageState(params)
+	if !ok {
 		return
 	}
 	a.mu.Lock()
@@ -440,11 +432,44 @@ func (a *CodexAppServerAdapter) applyTokenUsage(agentSessionID string, params ma
 	if appSession == nil {
 		return
 	}
-	appSession.usage = mergeACPUsageState(appSession.usage, acpUsageState{
+	appSession.usage = mergeACPUsageState(appSession.usage, usage)
+}
+
+// appServerTokenUsageState parses a thread/tokenUsage/updated payload into the
+// context-window portion of acpUsageState. It is shared between the live
+// notification path (applyTokenUsage) and the resume handshake, where codex
+// replays token usage before the session is stored.
+//
+// ThreadTokenUsage schema: "last" = most-recent API call breakdown, "total" =
+// cumulative thread totals. Use last.inputTokens (context fill sent to the
+// model) as the most accurate indicator of how full the window is. Fall back to
+// last.totalTokens (includes response tokens — slightly high but still
+// per-request), then total.totalTokens only when "last" is absent entirely.
+// Using total.totalTokens as primary causes a false compact alert: after 10
+// calls of 27 K tokens each the cumulative reaches 270 K and exceeds the 258 K
+// per-request window even though each call individually used only ~10 %.
+func appServerTokenUsageState(params map[string]any) (acpUsageState, bool) {
+	tokenUsage := payloadObject(params["tokenUsage"])
+	if len(tokenUsage) == 0 {
+		return acpUsageState{}, false
+	}
+	last := payloadObject(tokenUsage["last"])
+	used, usedOK := firstACPInt64(last, "inputTokens")
+	if !usedOK {
+		used, usedOK = firstACPInt64(last, "totalTokens")
+	}
+	if !usedOK {
+		used, usedOK = firstACPInt64(payloadObject(tokenUsage["total"]), "totalTokens")
+	}
+	window, windowOK := firstACPInt64(tokenUsage, "modelContextWindow")
+	if !usedOK || !windowOK {
+		return acpUsageState{}, false
+	}
+	return acpUsageState{
 		contextUsedTokens:   used,
 		contextWindowTokens: window,
 		contextKnown:        true,
-	})
+	}, true
 }
 
 func (a *CodexAppServerAdapter) applyRateLimits(agentSessionID string, snapshot map[string]any) {

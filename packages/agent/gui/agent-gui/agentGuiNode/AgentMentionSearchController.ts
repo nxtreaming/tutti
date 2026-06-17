@@ -1,6 +1,13 @@
 import { resolveAgentMentionFileThumbnailUrl } from "../shared/mentionFilePresentation";
 import { presentAgentGeneratedFileMentionItems } from "./agentMentionAgentGeneratedFilesPresentation";
 import {
+  emitAgentMentionSearchDiagnostic,
+  logAgentMentionSearchInfo,
+  queryAgentMentionProviderWithDiagnostics,
+  type AgentMentionProviderQueryDiagnostic,
+  type AgentMentionSearchDiagnosticLog
+} from "./agentMentionSearchDiagnostics";
+import {
   AGENT_MENTION_FILTER_TAB_ORDER,
   buildEmptyGroup,
   compactText,
@@ -17,16 +24,17 @@ import {
 import { agentMentionFilterLabel } from "./AgentMentionLabels";
 import type { AgentContextMentionItem } from "./agentRichText/agentFileMentionExtension";
 import {
+  buildAgentGenericMentionHref,
   buildAgentSessionMentionHref,
   buildAgentWorkspaceAppMentionHref,
   buildAgentWorkspaceIssueMentionHref,
   normalizeAgentSessionMentionTitle
 } from "./agentRichText/agentFileMentionExtension";
 import type {
-  AgentRichTextAtInsertResult,
-  AgentRichTextAtProvider
-} from "./agentRichTextAtProvider";
-import { AGENT_GUI_MENTION_PROVIDER_IDS } from "./agentRichTextAtProvider";
+  AgentContextMentionInsertResult,
+  AgentContextMentionProvider
+} from "./agentContextMentionProvider";
+import { AGENT_CONTEXT_MENTION_PROVIDER_IDS } from "./agentContextMentionProvider";
 import type {
   MentionPaletteGroup,
   MentionPaletteState
@@ -55,11 +63,14 @@ export type AgentMentionSearchState =
   MentionPaletteState<AgentContextMentionItem>;
 
 interface AgentMentionSearchControllerOptions {
-  richTextAtProviders?: readonly AgentRichTextAtProvider[];
+  contextMentionProviders?: readonly AgentContextMentionProvider[];
   debounceMs?: number;
   fileLimit?: number;
   issueLimit?: number;
   providerTimeoutMs?: number;
+  diagnosticInfoLogger?: (payload: AgentMentionSearchDiagnosticLog) => void;
+  diagnosticNow?: () => number;
+  diagnosticSlowThresholdMs?: number;
 }
 
 type Listener = (state: AgentMentionSearchState) => void;
@@ -69,6 +80,7 @@ const DEFAULT_FILE_LIMIT = 30;
 const DEFAULT_ISSUE_LIMIT = 25;
 const DEFAULT_SESSION_LIMIT = 30;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 3500;
+const DEFAULT_DIAGNOSTIC_SLOW_THRESHOLD_MS = 250;
 
 // Resolve filter tab labels lazily so they reflect the active i18n locale at the
 // time a state is emitted. Computing this at module load froze the labels to the
@@ -87,17 +99,22 @@ const {
   file: FILE_PROVIDER_ID,
   workspaceApp: WORKSPACE_APP_PROVIDER_ID,
   workspaceIssue: WORKSPACE_ISSUE_PROVIDER_ID
-} = AGENT_GUI_MENTION_PROVIDER_IDS;
+} = AGENT_CONTEXT_MENTION_PROVIDER_IDS;
 
 export class AgentMentionSearchController {
-  private readonly richTextAtProviders: ReadonlyMap<
+  private readonly contextMentionProviders: ReadonlyMap<
     string,
-    AgentRichTextAtProvider
+    AgentContextMentionProvider
   >;
   private readonly debounceMs: number;
   private readonly fileLimit: number;
   private readonly issueLimit: number;
   private readonly providerTimeoutMs: number;
+  private readonly diagnosticInfoLogger: (
+    payload: AgentMentionSearchDiagnosticLog
+  ) => void;
+  private readonly diagnosticNow: () => number;
+  private readonly diagnosticSlowThresholdMs: number;
   private readonly listeners = new Set<Listener>();
   private readonly expandedCounts: Partial<
     Record<AgentMentionGroupId, number>
@@ -135,8 +152,8 @@ export class AgentMentionSearchController {
   };
 
   constructor(options: AgentMentionSearchControllerOptions) {
-    this.richTextAtProviders = new Map(
-      (options.richTextAtProviders ?? []).map((provider) => [
+    this.contextMentionProviders = new Map(
+      (options.contextMentionProviders ?? []).map((provider) => [
         provider.id,
         provider
       ])
@@ -146,6 +163,11 @@ export class AgentMentionSearchController {
     this.issueLimit = options.issueLimit ?? DEFAULT_ISSUE_LIMIT;
     this.providerTimeoutMs =
       options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+    this.diagnosticInfoLogger =
+      options.diagnosticInfoLogger ?? logAgentMentionSearchInfo;
+    this.diagnosticNow = options.diagnosticNow ?? Date.now;
+    this.diagnosticSlowThresholdMs =
+      options.diagnosticSlowThresholdMs ?? DEFAULT_DIAGNOSTIC_SLOW_THRESHOLD_MS;
     this.currentFileSearchLimit = this.fileLimit;
     this.currentIssueSearchLimit = this.issueLimit;
   }
@@ -453,6 +475,8 @@ export class AgentMentionSearchController {
     query: string;
     requestId: number;
   }): Promise<void> {
+    const startedAt = this.diagnosticNow();
+    const providerDiagnostics: AgentMentionProviderQueryDiagnostic[] = [];
     try {
       const [fileItems, appItems, issueItems, sessionItems] = await Promise.all(
         [
@@ -461,28 +485,32 @@ export class AgentMentionSearchController {
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: input.query,
-            limit: this.currentFileSearchLimit
+            limit: this.currentFileSearchLimit,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: WORKSPACE_APP_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: input.query,
-            limit: DEFAULT_MENTION_GROUP_PAGE_SIZE
+            limit: DEFAULT_MENTION_GROUP_PAGE_SIZE,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: WORKSPACE_ISSUE_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: input.query,
-            limit: this.currentIssueSearchLimit
+            limit: this.currentIssueSearchLimit,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: AGENT_SESSION_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: input.query,
-            limit: DEFAULT_SESSION_LIMIT
+            limit: DEFAULT_SESSION_LIMIT,
+            diagnostics: providerDiagnostics
           })
         ]
       );
@@ -509,6 +537,7 @@ export class AgentMentionSearchController {
       this.totalCounts.my_sessions = this.rawGroups.my_sessions.length;
       this.totalCounts.collab_sessions = this.rawGroups.collab_sessions.length;
       this.totalCounts.issues = this.rawGroups.issues.length;
+      const groups = this.groupsFromRawGroups();
 
       this.setState({
         status: "ready",
@@ -516,8 +545,19 @@ export class AgentMentionSearchController {
         mode: "results",
         filter: this.currentFilter,
         categories: buildBrowseCategories(),
-        groups: this.groupsFromRawGroups(),
+        groups,
         error: null
+      });
+      this.logSearchDiagnostic({
+        filter: this.currentFilter,
+        groups,
+        mode: "results",
+        providerDiagnostics,
+        query: input.query,
+        requestId: input.requestId,
+        startedAt,
+        status: "ready",
+        workspaceId: input.workspaceId
       });
     } catch (error) {
       if (!this.canApply(input.requestId, input.workspaceId, input.query)) {
@@ -532,6 +572,18 @@ export class AgentMentionSearchController {
         groups: [],
         error: error instanceof Error ? error.message : String(error)
       });
+      this.logSearchDiagnostic({
+        error,
+        filter: this.currentFilter,
+        groups: [],
+        mode: "results",
+        providerDiagnostics,
+        query: input.query,
+        requestId: input.requestId,
+        startedAt,
+        status: "error",
+        workspaceId: input.workspaceId
+      });
     }
   }
 
@@ -541,6 +593,8 @@ export class AgentMentionSearchController {
     requestId: number;
     filter: AgentMentionFilterId;
   }): Promise<void> {
+    const startedAt = this.diagnosticNow();
+    const providerDiagnostics: AgentMentionProviderQueryDiagnostic[] = [];
     try {
       if (input.filter === "file") {
         const [fileItems, agentGeneratedFileItems] = await Promise.all([
@@ -549,14 +603,16 @@ export class AgentMentionSearchController {
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: "",
-            limit: this.fileLimit
+            limit: this.fileLimit,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: AGENT_GENERATED_FILE_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: "",
-            limit: this.fileLimit
+            limit: this.fileLimit,
+            diagnostics: providerDiagnostics
           })
         ]);
         if (!this.canApply(input.requestId, input.workspaceId, "")) {
@@ -585,7 +641,8 @@ export class AgentMentionSearchController {
           workspaceId: input.workspaceId,
           currentUserId: input.currentUserId,
           query: "",
-          limit: DEFAULT_MENTION_GROUP_PAGE_SIZE
+          limit: DEFAULT_MENTION_GROUP_PAGE_SIZE,
+          diagnostics: providerDiagnostics
         });
         if (!this.canApply(input.requestId, input.workspaceId, "")) {
           return;
@@ -610,7 +667,8 @@ export class AgentMentionSearchController {
           workspaceId: input.workspaceId,
           currentUserId: input.currentUserId,
           query: "",
-          limit: this.currentIssueSearchLimit
+          limit: this.currentIssueSearchLimit,
+          diagnostics: providerDiagnostics
         });
         if (!this.canApply(input.requestId, input.workspaceId, "")) {
           return;
@@ -635,7 +693,8 @@ export class AgentMentionSearchController {
           workspaceId: input.workspaceId,
           currentUserId: input.currentUserId,
           query: "",
-          limit: DEFAULT_SESSION_LIMIT
+          limit: DEFAULT_SESSION_LIMIT,
+          diagnostics: providerDiagnostics
         });
         if (!this.canApply(input.requestId, input.workspaceId, "")) {
           return;
@@ -680,35 +739,40 @@ export class AgentMentionSearchController {
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: "",
-            limit: DEFAULT_MENTION_GROUP_PAGE_SIZE
+            limit: DEFAULT_MENTION_GROUP_PAGE_SIZE,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: FILE_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: "",
-            limit: this.fileLimit
+            limit: this.fileLimit,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: AGENT_GENERATED_FILE_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: "",
-            limit: this.fileLimit
+            limit: this.fileLimit,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: WORKSPACE_ISSUE_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: "",
-            limit: this.currentIssueSearchLimit
+            limit: this.currentIssueSearchLimit,
+            diagnostics: providerDiagnostics
           }),
           this.queryProviderMentionItemsById({
             providerId: AGENT_SESSION_PROVIDER_ID,
             workspaceId: input.workspaceId,
             currentUserId: input.currentUserId,
             query: "",
-            limit: DEFAULT_SESSION_LIMIT
+            limit: DEFAULT_SESSION_LIMIT,
+            diagnostics: providerDiagnostics
           })
         ]);
         if (!this.canApply(input.requestId, input.workspaceId, "")) {
@@ -738,6 +802,7 @@ export class AgentMentionSearchController {
           this.rawGroups.collab_sessions.length;
         this.totalCounts.issues = this.rawGroups.issues.length;
       }
+      const groups = this.groupsFromRawGroups();
 
       this.setState({
         status: "ready",
@@ -745,8 +810,19 @@ export class AgentMentionSearchController {
         mode: "browse",
         filter: this.currentFilter,
         categories: buildBrowseCategories(),
-        groups: this.groupsFromRawGroups(),
+        groups,
         error: null
+      });
+      this.logSearchDiagnostic({
+        filter: this.currentFilter,
+        groups,
+        mode: "browse",
+        providerDiagnostics,
+        query: "",
+        requestId: input.requestId,
+        startedAt,
+        status: "ready",
+        workspaceId: input.workspaceId
       });
     } catch (error) {
       if (!this.canApply(input.requestId, input.workspaceId, "")) {
@@ -761,11 +837,23 @@ export class AgentMentionSearchController {
         groups: [],
         error: error instanceof Error ? error.message : String(error)
       });
+      this.logSearchDiagnostic({
+        error,
+        filter: this.currentFilter,
+        groups: [],
+        mode: "browse",
+        providerDiagnostics,
+        query: "",
+        requestId: input.requestId,
+        startedAt,
+        status: "error",
+        workspaceId: input.workspaceId
+      });
     }
   }
 
   private async queryProviderMentionItems(input: {
-    provider: AgentRichTextAtProvider;
+    provider: AgentContextMentionProvider;
     workspaceId: string;
     currentUserId: string;
     query: string;
@@ -776,6 +864,7 @@ export class AgentMentionSearchController {
       keyword: input.query,
       maxResults: input.limit,
       abortSignal: input.abortSignal,
+      trigger: "@",
       context: {
         metadata: {
           currentUserId: input.currentUserId,
@@ -801,12 +890,12 @@ export class AgentMentionSearchController {
         if (!mentionItem || mentionItem.kind !== "file") {
           return mentionItem;
         }
-        const thumbnailUrl = await Promise.resolve(
-          input.provider.getItemThumbnailUrl?.(item) ?? null
+        const iconUrl = await Promise.resolve(
+          input.provider.getItemIconUrl?.(item) ?? null
         ).catch(() => null);
         const resolvedThumbnailUrl = resolveAgentMentionFileThumbnailUrl({
           ...mentionItem,
-          thumbnailUrl
+          thumbnailUrl: iconUrl
         });
         if (!resolvedThumbnailUrl) {
           return mentionItem;
@@ -823,61 +912,64 @@ export class AgentMentionSearchController {
   }
 
   private async queryProviderMentionItemsById(input: {
+    diagnostics: AgentMentionProviderQueryDiagnostic[];
     providerId: string;
     workspaceId: string;
     currentUserId: string;
     query: string;
     limit: number;
   }): Promise<AgentContextMentionItem[]> {
-    const provider = this.richTextAtProviders.get(input.providerId);
-    if (!provider) {
-      return [];
-    }
-    return this.runProviderQuery(
-      (abortSignal) =>
-        this.queryProviderMentionItems({
-          provider,
-          workspaceId: input.workspaceId,
-          currentUserId: input.currentUserId,
-          query: input.query,
-          limit: input.limit,
-          abortSignal
-        }),
-      []
-    );
+    const provider = this.contextMentionProviders.get(input.providerId);
+    return queryAgentMentionProviderWithDiagnostics({
+      diagnosticNow: this.diagnosticNow,
+      diagnostics: input.diagnostics,
+      fallback: [] as AgentContextMentionItem[],
+      providerId: input.providerId,
+      providerTimeoutMs: this.providerTimeoutMs,
+      query: provider
+        ? (abortSignal) =>
+            this.queryProviderMentionItems({
+              provider,
+              workspaceId: input.workspaceId,
+              currentUserId: input.currentUserId,
+              query: input.query,
+              limit: input.limit,
+              abortSignal
+            })
+        : null,
+      resultCount: (result) => result.length
+    });
   }
 
-  private async runProviderQuery<T>(
-    query: (abortSignal: AbortSignal) => Promise<T>,
-    fallback: T
-  ): Promise<T> {
-    const abortController = new AbortController();
-    const queryPromise = Promise.resolve().then(() =>
-      query(abortController.signal)
-    );
-
-    if (
-      this.providerTimeoutMs <= 0 ||
-      !Number.isFinite(this.providerTimeoutMs)
-    ) {
-      return queryPromise;
-    }
-
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    const timeoutPromise = new Promise<T>((resolve) => {
-      timeout = setTimeout(() => {
-        abortController.abort();
-        resolve(fallback);
-      }, this.providerTimeoutMs);
+  private logSearchDiagnostic(input: {
+    error?: unknown;
+    filter: AgentMentionFilterId;
+    groups: readonly AgentMentionGroup[];
+    mode: "browse" | "results";
+    providerDiagnostics: readonly AgentMentionProviderQueryDiagnostic[];
+    query: string;
+    requestId: number;
+    startedAt: number;
+    status: "ready" | "error";
+    workspaceId: string;
+  }): void {
+    emitAgentMentionSearchDiagnostic({
+      debounceMs: this.debounceMs,
+      diagnosticInfoLogger: this.diagnosticInfoLogger,
+      diagnosticNow: this.diagnosticNow,
+      diagnosticSlowThresholdMs: this.diagnosticSlowThresholdMs,
+      error: input.error,
+      filter: input.filter,
+      groups: input.groups,
+      mode: input.mode,
+      providerDiagnostics: input.providerDiagnostics,
+      providerTimeoutMs: this.providerTimeoutMs,
+      query: input.query,
+      requestId: input.requestId,
+      startedAt: input.startedAt,
+      status: input.status,
+      workspaceId: input.workspaceId
     });
-
-    try {
-      return await Promise.race([queryPromise, timeoutPromise]);
-    } finally {
-      if (timeout !== null) {
-        clearTimeout(timeout);
-      }
-    }
   }
 
   private groupsFromRawGroups(): AgentMentionGroup[] {
@@ -1143,7 +1235,7 @@ function textMatchScore(
 function providerItemToAgentMentionItem(input: {
   currentUserId: string;
   providerId: string;
-  insertResult: AgentRichTextAtInsertResult;
+  insertResult: AgentContextMentionInsertResult;
   label: string;
   subtitle: string;
   workspaceId: string;
@@ -1172,118 +1264,116 @@ function providerItemToAgentMentionItem(input: {
   if (!targetId) {
     return null;
   }
-  const kind = mention.kind?.trim() || input.providerId;
-  const workspaceId = mention.meta?.workspaceId?.trim() || input.workspaceId;
-  if (kind === WORKSPACE_ISSUE_PROVIDER_ID) {
+  const scope = normalizeMentionScope(mention.scope);
+  const presentation = mention.presentation ?? {};
+  const workspaceId = scope.workspaceId || input.workspaceId;
+  if (
+    input.providerId === FILE_PROVIDER_ID ||
+    input.providerId === AGENT_GENERATED_FILE_PROVIDER_ID
+  ) {
+    return {
+      kind: "file",
+      href: buildAgentGenericMentionHref(input.providerId, targetId, scope),
+      path: targetId,
+      name: label,
+      entryKind: targetId.endsWith("/") ? "directory" : "unknown",
+      directoryPath: dirnameFromProviderWorkspaceFileHref(targetId),
+      thumbnailUrl: presentation.thumbnailUrl?.trim() || undefined
+    };
+  }
+  if (input.providerId === WORKSPACE_ISSUE_PROVIDER_ID) {
     return {
       kind: "workspace-issue",
-      href:
-        mention.href?.trim() ||
-        buildAgentWorkspaceIssueMentionHref(workspaceId, targetId),
+      href: buildAgentWorkspaceIssueMentionHref(workspaceId, targetId, {
+        topicId: scope.topicId
+      }),
       workspaceId,
       targetId,
+      topicId: scope.topicId,
       name: label,
       title: label,
-      status: mention.meta?.status?.trim() || undefined,
+      status: presentation.status?.trim() || undefined,
       contentPreview:
-        compactText(mention.meta?.contentPreview) ||
+        compactText(presentation.description) ||
         compactText(input.subtitle) ||
         undefined
     };
   }
-  if (kind === WORKSPACE_APP_PROVIDER_ID) {
-    const appId = mention.meta?.appId?.trim() || targetId;
+  if (input.providerId === WORKSPACE_APP_PROVIDER_ID) {
+    const appId = targetId;
     return {
       kind: "workspace-app",
-      href:
-        mention.href?.trim() ||
-        buildAgentWorkspaceAppMentionHref(workspaceId, appId),
+      href: buildAgentWorkspaceAppMentionHref(workspaceId, appId),
       workspaceId,
       targetId: appId,
       appId,
       name: label,
       description:
-        compactText(mention.meta?.description) ||
+        compactText(presentation.description) ||
+        compactText(presentation.subtitle) ||
         compactText(input.subtitle) ||
         undefined,
-      iconUrl: mention.meta?.iconUrl?.trim() || undefined
+      iconUrl: presentation.iconUrl?.trim() || undefined
     };
   }
-  if (kind === AGENT_SESSION_PROVIDER_ID || kind === "session") {
-    const provider = mention.meta?.provider?.trim() || "";
-    const agentName = mention.meta?.agentName?.trim() || provider;
-    const userId = mention.meta?.userId?.trim() || "";
-    const initiatorName = normalizeSessionInitiatorDisplayName(
-      mention.meta?.initiatorName?.trim() || userId
-    );
-    const initiatorAvatarUrl = mention.meta?.initiatorAvatarUrl?.trim() || "";
-    const scope = mentionSessionScope({
-      currentUserId: input.currentUserId,
-      rawScope: mention.meta?.scope,
-      userId
-    });
-    const title =
-      normalizeAgentSessionMentionTitle(mention.meta?.title?.trim() || label) ||
-      label;
-    const inputPreview = mention.meta?.inputPreview?.trim() || "";
+  if (input.providerId === AGENT_SESSION_PROVIDER_ID) {
+    const agentName = presentation.subtitle?.trim() || "";
+    const title = normalizeAgentSessionMentionTitle(label) || label;
+    const description = compactText(presentation.description);
     const summaryPreview =
-      mention.meta?.summaryPreview?.trim() ||
-      compactText(input.subtitle) ||
-      undefined;
-    const updatedAtUnixMs = numberFromString(mention.meta?.updatedAtUnixMs);
+      description || compactText(input.subtitle) || undefined;
     return {
       kind: "session",
-      href:
-        mention.href?.trim() ||
-        buildAgentSessionMentionHref(workspaceId, targetId, provider),
+      href: buildAgentSessionMentionHref(workspaceId, targetId),
       workspaceId,
       targetId,
-      name:
-        initiatorName || agentName
-          ? `${initiatorName}${
-              initiatorName && agentName ? " & " : ""
-            }${agentName} ${title}`.trim()
-          : label,
+      name: label,
       title,
-      scope,
-      initiatorName,
-      ...(initiatorAvatarUrl ? { initiatorAvatarUrl } : {}),
+      scope: mentionSessionScope({
+        currentUserId: input.currentUserId,
+        rawScope: scope.scope,
+        userId: scope.userId
+      }),
+      initiatorName: "",
       agentName,
-      status: mention.meta?.status?.trim() || undefined,
-      inputPreview: inputPreview || undefined,
-      summaryPreview,
-      updatedAtUnixMs: updatedAtUnixMs ?? undefined
+      status: presentation.status?.trim() || undefined,
+      inputPreview: description || undefined,
+      summaryPreview
     };
   }
   return null;
 }
 
-function normalizeSessionInitiatorDisplayName(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.toLowerCase() === "local" ? "User" : trimmed;
+function normalizeMentionScope(
+  scope?: Readonly<Record<string, string>>
+): Partial<Record<string, string>> {
+  return Object.fromEntries(
+    Object.entries(scope ?? {})
+      .map(([key, value]) => [key.trim(), value.trim()] as const)
+      .filter(([key, value]) => key.length > 0 && value.length > 0)
+  );
 }
 
 function mentionSessionScope(input: {
   currentUserId: string;
   rawScope: string | undefined;
-  userId: string;
+  userId?: string;
 }): Extract<AgentContextMentionItem, { kind: "session" }>["scope"] {
   const rawScope = input.rawScope?.trim() ?? "";
   if (rawScope === "my_sessions" || rawScope === "collab_sessions") {
     return rawScope;
   }
-  return input.userId && input.userId === input.currentUserId
-    ? "my_sessions"
-    : "collab_sessions";
-}
-
-function numberFromString(value: string | undefined): number | null {
-  const trimmed = value?.trim() ?? "";
-  if (!trimmed) {
-    return null;
+  const userId = input.userId?.trim() ?? "";
+  const currentUserId = input.currentUserId.trim();
+  if (
+    !userId ||
+    !currentUserId ||
+    userId === "local" ||
+    currentUserId === "local"
+  ) {
+    return "my_sessions";
   }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+  return userId === currentUserId ? "my_sessions" : "collab_sessions";
 }
 
 function dirnameFromProviderWorkspaceFileHref(href: string): string {

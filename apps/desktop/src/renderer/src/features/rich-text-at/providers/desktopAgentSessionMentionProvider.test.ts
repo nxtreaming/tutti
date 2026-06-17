@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentRichTextAtProvider } from "@tutti-os/agent-gui/agent-rich-text-at-provider";
+import type { AgentContextMentionProvider } from "@tutti-os/agent-gui/context-mention-provider";
 import { createDesktopAgentSessionMentionProvider } from "./desktopAgentSessionMentionProvider.ts";
 
 interface FakeSessionItem {
@@ -8,21 +8,35 @@ interface FakeSessionItem {
   readonly meta: Record<string, string>;
 }
 
-function createBaseSessionProvider(): AgentRichTextAtProvider<FakeSessionItem> {
+function createBaseSessionProvider(): AgentContextMentionProvider<FakeSessionItem> {
   return {
     id: "agent-session",
+    trigger: "@",
     getItemKey: (item) => item.id,
     getItemLabel: (item) => item.meta.title ?? item.id,
     getItemSubtitle: (item) => item.meta.status ?? "",
     query: async () => [],
+    resolveMention: (identity) => ({
+      label: identity.label,
+      presentation: {
+        agentProviderId: "codex",
+        status: "working",
+        subtitle: "codex"
+      }
+    }),
     toInsertResult: (item) => ({
       kind: "mention",
       mention: {
         entityId: item.id,
-        href: `mention://agent-session?id=${item.id}`,
-        kind: "agent-session",
         label: item.meta.title ?? item.id,
-        meta: item.meta
+        presentation: {
+          participant: [item.meta.initiatorName, item.meta.agentName]
+            .map((value) => value?.trim() ?? "")
+            .filter(Boolean)
+            .join(" & "),
+          status: item.meta.status,
+          subtitle: item.meta.provider
+        }
       }
     })
   };
@@ -37,7 +51,7 @@ const RESOLVERS = {
       : { dataStatus: status, label: status, pulse: false }
 };
 
-test("agent session mention provider enriches meta with avatars, participant, and status", () => {
+test("agent session mention provider enriches presentation with avatars, participant, and status", () => {
   const provider = createDesktopAgentSessionMentionProvider({
     baseProvider: createBaseSessionProvider(),
     ...RESOLVERS
@@ -58,19 +72,30 @@ test("agent session mention provider enriches meta with avatars, participant, an
   if (insertResult.kind !== "mention") {
     return;
   }
-  const meta = insertResult.mention.meta ?? {};
-  assert.equal(meta.participant, "wang jomes & Codex");
-  assert.equal(meta.agentIconUrl, "icon://codex");
+  const presentation = insertResult.mention.presentation ?? {};
+  assert.equal(presentation.participant, "wang jomes & Codex");
+  assert.equal(presentation.agentIconUrl, "icon://codex");
   assert.equal(
-    meta.userAvatarPlaceholderUrl,
+    provider.getItemIconUrl?.({
+      id: "session-1",
+      meta: {
+        agentName: "Codex",
+        initiatorName: "wang jomes",
+        provider: "codex",
+        status: "working",
+        title: "wang jomes & Codex hi"
+      }
+    }),
+    "icon://codex"
+  );
+  assert.equal(
+    presentation.userAvatarPlaceholderUrl,
     "asset://user-avatar-placeholder.png"
   );
-  assert.equal(meta.statusDataStatus, "working");
-  assert.equal(meta.statusLabel, "Working");
-  assert.equal(meta.statusPulse, "true");
-  // Base meta is preserved.
-  assert.equal(meta.provider, "codex");
-  assert.equal(meta.title, "wang jomes & Codex hi");
+  assert.equal(presentation.statusDataStatus, "working");
+  assert.equal(presentation.statusLabel, "Working");
+  assert.equal(presentation.statusPulse, "true");
+  assert.equal(presentation.subtitle, "codex");
 });
 
 test("agent session mention provider omits status fields when status is absent", () => {
@@ -93,10 +118,42 @@ test("agent session mention provider omits status fields when status is absent",
   if (insertResult.kind !== "mention") {
     return;
   }
-  const meta = insertResult.mention.meta ?? {};
-  assert.equal(meta.statusDataStatus, undefined);
-  assert.equal(meta.statusLabel, undefined);
-  assert.equal(meta.statusPulse, undefined);
-  assert.equal(meta.participant, "wang jomes & Codex");
-  assert.equal(meta.agentIconUrl, "icon://codex");
+  const presentation = insertResult.mention.presentation ?? {};
+  assert.equal(presentation.statusDataStatus, undefined);
+  assert.equal(presentation.statusLabel, undefined);
+  assert.equal(presentation.statusPulse, undefined);
+  assert.equal(presentation.participant, "wang jomes & Codex");
+  assert.equal(presentation.agentIconUrl, "icon://codex");
+});
+
+test("agent session mention provider restores derived presentation on resolve", async () => {
+  const provider = createDesktopAgentSessionMentionProvider({
+    baseProvider: createBaseSessionProvider(),
+    ...RESOLVERS
+  });
+
+  const resolved = await provider.resolveMention?.({
+    entityId: "session-1",
+    label: "wang jomes & Codex hi",
+    providerId: "agent-session",
+    scope: {
+      workspaceId: "workspace-1"
+    }
+  });
+
+  assert.deepEqual(resolved, {
+    label: "wang jomes & Codex hi",
+    presentation: {
+      agentProviderId: "codex",
+      agentIconUrl: "icon://codex",
+      iconUrl: "icon://codex",
+      participant: "codex",
+      status: "working",
+      statusDataStatus: "working",
+      statusLabel: "Working",
+      statusPulse: "true",
+      subtitle: "codex",
+      userAvatarPlaceholderUrl: "asset://user-avatar-placeholder.png"
+    }
+  });
 });

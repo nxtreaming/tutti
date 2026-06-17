@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentRichTextAtProvider } from "@tutti-os/agent-gui/agent-rich-text-at-provider";
+import type { AgentContextMentionProvider } from "@tutti-os/agent-gui/context-mention-provider";
 import type { WorkspaceAppCenterApp } from "@tutti-os/workspace-app-center";
-import { createDefaultWorkspaceAppIconResolver } from "../../workspace-workbench/services/workspaceAppIconStyle.ts";
 import { createDesktopWorkspaceAppMentionProvider } from "./desktopWorkspaceAppMentionProvider.ts";
 
 test("workspace app mention provider uses localized Chinese app text", async () => {
@@ -35,6 +34,7 @@ test("workspace app mention provider uses localized Chinese app text", async () 
 
   const items = await provider.query({
     context: {},
+    trigger: "@",
     keyword: "自动",
     maxResults: 10
   });
@@ -47,19 +47,13 @@ test("workspace app mention provider uses localized Chinese app text", async () 
     kind: "mention",
     mention: {
       entityId: "automation",
-      href: "mention://workspace-app?appId=automation&workspaceId=workspace-1",
-      kind: "workspace-app",
       label: "自动化",
-      meta: {
-        appId: "automation",
-        commandCount: "1",
-        commandDescriptions: "",
-        commandPaths: "automation run",
-        commandSummaries: "Run automation",
-        description: "管理工作区自动化任务。",
-        iconUrl: "",
-        scopes: "automation",
+      scope: {
         workspaceId: "workspace-1"
+      },
+      presentation: {
+        description: "管理工作区自动化任务。",
+        subtitle: "管理工作区自动化任务。"
       }
     }
   });
@@ -93,6 +87,7 @@ test("workspace app mention provider falls back from regional locale to language
 
   const items = await provider.query({
     context: {},
+    trigger: "@",
     keyword: "",
     maxResults: 10
   });
@@ -100,12 +95,12 @@ test("workspace app mention provider falls back from regional locale to language
   assert.equal(provider.getItemLabel(items[0]!), "自动化");
 });
 
-test("workspace app mention provider prefers resolved built-in app icons", async () => {
+test("workspace app mention provider prefers App Center icons over base icons", async () => {
   const provider = createDesktopWorkspaceAppMentionProvider({
     apps: [
       createWorkspaceApp({
         appId: "automation",
-        iconUrl: "old-app-icon.png",
+        iconUrl: "app-center-icon.png",
         name: "Automation"
       })
     ],
@@ -117,62 +112,63 @@ test("workspace app mention provider prefers resolved built-in app icons", async
       }
     ]),
     locale: "en",
-    resolveAppIconUrl: (appId) =>
-      appId === "automation" ? "resolved-automation-icon.png" : null,
     workspaceId: "workspace-1"
   });
 
   const items = await provider.query({
     context: {},
+    trigger: "@",
     keyword: "",
     maxResults: 10
   });
 
   const item = items[0];
-  assert.equal(item?.iconUrl, "resolved-automation-icon.png");
+  assert.equal(item?.iconUrl, "app-center-icon.png");
   assert.ok(item);
   const insertResult = provider.toInsertResult(item);
   assert.equal(insertResult.kind, "mention");
   assert.equal(
-    insertResult.mention.meta?.iconUrl,
-    "resolved-automation-icon.png"
+    insertResult.mention.presentation?.iconUrl,
+    "app-center-icon.png"
   );
 });
 
-test("workspace app mention provider resolves built-in agent app icons without App Center metadata", async () => {
+test("workspace app mention provider uses base icons without App Center metadata", async () => {
   const provider = createDesktopWorkspaceAppMentionProvider({
     apps: [],
     baseProvider: createBaseWorkspaceAppProvider([
       {
         appId: "agent-codex",
+        iconUrl: "tutti-asset://agent/codex.png",
         label: "Codex",
         scopes: "codex"
       },
       {
         appId: "agent-claude-code",
+        iconUrl: "tutti-asset://agent/claudecode.png",
         label: "Claude Code",
         scopes: "claude"
       }
     ]),
     locale: "en",
-    resolveAppIconUrl: createDefaultWorkspaceAppIconResolver(),
     workspaceId: "workspace-1"
   });
 
   const items = await provider.query({
     context: {},
+    trigger: "@",
     keyword: "agent",
     maxResults: 10
   });
 
   const claude = items.find((item) => item.appId === "agent-claude-code");
   const codex = items.find((item) => item.appId === "agent-codex");
-  assert.match(claude?.iconUrl ?? "", /\/claudecode\.png$/u);
-  assert.match(codex?.iconUrl ?? "", /\/codex\.png$/u);
+  assert.equal(claude?.iconUrl, "tutti-asset://agent/claudecode.png");
+  assert.equal(codex?.iconUrl, "tutti-asset://agent/codex.png");
   assert.ok(codex);
   const insertResult = provider.toInsertResult(codex);
   assert.equal(insertResult.kind, "mention");
-  assert.equal(insertResult.mention.meta?.iconUrl, codex.iconUrl);
+  assert.equal(insertResult.mention.presentation?.iconUrl, codex.iconUrl);
 });
 
 test("workspace app mention provider keeps English fallback when localization is missing", async () => {
@@ -199,6 +195,7 @@ test("workspace app mention provider keeps English fallback when localization is
 
   const items = await provider.query({
     context: {},
+    trigger: "@",
     keyword: "vibe",
     maxResults: 10
   });
@@ -233,6 +230,7 @@ test("workspace app mention provider uses CLI command fields for search", async 
 
   const items = await provider.query({
     context: {},
+    trigger: "@",
     keyword: "recurring",
     maxResults: 1
   });
@@ -258,6 +256,7 @@ test("workspace app mention provider does not truncate CLI apps with maxResults"
 
   const items = await provider.query({
     context: {},
+    trigger: "@",
     keyword: "",
     maxResults: 10
   });
@@ -299,9 +298,10 @@ function createBaseWorkspaceAppProvider(
     scopes?: string;
   }>,
   requestedMaxResults: Array<number | undefined> = []
-): AgentRichTextAtProvider<(typeof items)[number]> {
+): AgentContextMentionProvider<(typeof items)[number]> {
   return {
     id: "workspace-app",
+    trigger: "@",
     getItemKey: (item) => item.appId,
     getItemLabel: (item) => item.label,
     getItemSubtitle: (item) => item.description ?? "",
@@ -313,19 +313,13 @@ function createBaseWorkspaceAppProvider(
       kind: "mention",
       mention: {
         entityId: item.appId,
-        href: `mention://workspace-app?appId=${item.appId}&workspaceId=workspace-1`,
-        kind: "workspace-app",
         label: item.label,
-        meta: {
-          appId: item.appId,
-          commandCount: "1",
-          commandDescriptions: item.commandDescriptions ?? "",
-          commandPaths: item.commandPaths ?? "automation run",
-          commandSummaries: item.commandSummaries ?? "Run automation",
-          description: item.description ?? "",
-          iconUrl: item.iconUrl ?? "",
-          scopes: item.scopes ?? "automation",
+        scope: {
           workspaceId: "workspace-1"
+        },
+        presentation: {
+          description: item.description ?? "",
+          iconUrl: item.iconUrl ?? ""
         }
       }
     })

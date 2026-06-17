@@ -191,6 +191,33 @@ describe("AgentMessageMarkdown", () => {
     expect(onLinkClick).toHaveBeenCalledWith("README.md");
   });
 
+  it("does not nest path links inside markdown links with inline code labels", () => {
+    const onLinkClick = vi.fn();
+    const { container } = render(
+      <AgentMessageMarkdown
+        content={
+          "已创建 [`AGENTS.md`](/Users/ryan/Documents/tutti/proj2/AGENTS.md)"
+        }
+        onLinkClick={onLinkClick}
+        workspaceLinkContext={{
+          workspaceRoot: "/Users/ryan/Documents/tutti/proj2",
+          basePath: "/Users/ryan/Documents/tutti/proj2",
+          source: "agent-markdown"
+        }}
+      />
+    );
+
+    const link = screen.getByRole("link", { name: "AGENTS.md" });
+    expect(container.querySelectorAll("a")).toHaveLength(1);
+    expect(link.querySelector("code")).toHaveTextContent("AGENTS.md");
+
+    fireEvent.click(link);
+
+    expect(onLinkClick).toHaveBeenCalledWith(
+      "/Users/ryan/Documents/tutti/proj2/AGENTS.md"
+    );
+  });
+
   it("resolves workspace link actions when workspace context is provided", () => {
     const onLinkAction = vi.fn();
     render(
@@ -555,7 +582,7 @@ describe("AgentMessageMarkdown", () => {
       <h2>
         <AgentMessageMarkdown
           content={
-            "[@wang jomes & Codex hi](mention://agent-session?workspaceId=room-1&id=session-1)"
+            "[@wang jomes & Codex hi](mention://agent-session/session-1?workspaceId=room-1)"
           }
           inline
         />
@@ -569,7 +596,7 @@ describe("AgentMessageMarkdown", () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByText(
-        "[@wang jomes & Codex hi](mention://agent-session?workspaceId=room-1&id=session-1)"
+        "[@wang jomes & Codex hi](mention://agent-session/session-1?workspaceId=room-1)"
       )
     ).toBeNull();
   });
@@ -578,7 +605,7 @@ describe("AgentMessageMarkdown", () => {
     const { container, rerender } = render(
       <AgentMessageMarkdown
         content={
-          " [@local & Codex 帮我整理这个文件夹@Documents](mention://agent-session?workspaceId=room-1&id=session-1) "
+          " [@local & Codex 帮我整理这个文件夹@Documents](mention://agent-session/session-1?workspaceId=room-1) "
         }
       />
     );
@@ -590,7 +617,7 @@ describe("AgentMessageMarkdown", () => {
     rerender(
       <AgentMessageMarkdown
         content={
-          "回复 [@local & Codex 帮我整理这个文件夹@Documents](mention://agent-session?workspaceId=room-1&id=session-1)"
+          "回复 [@local & Codex 帮我整理这个文件夹@Documents](mention://agent-session/session-1?workspaceId=room-1)"
         }
       />
     );
@@ -605,7 +632,7 @@ describe("AgentMessageMarkdown", () => {
     const { container } = render(
       <AgentMessageMarkdown
         content={
-          "回复 [@2046494774160003072 & Codex 哈喽](mention://agent-session?workspaceId=room-1&id=session-1)"
+          "回复 [@2046494774160003072 & Codex 哈喽](mention://agent-session/session-1?workspaceId=room-1)"
         }
         onLinkClick={onLinkClick}
       />
@@ -620,7 +647,7 @@ describe("AgentMessageMarkdown", () => {
     fireEvent.click(mention as HTMLElement);
 
     expect(onLinkClick).toHaveBeenCalledWith(
-      "mention://agent-session?workspaceId=room-1&id=session-1"
+      "mention://agent-session/session-1?workspaceId=room-1"
     );
   });
 
@@ -662,7 +689,7 @@ describe("AgentMessageMarkdown", () => {
     const iconUrl = "data:image/png;base64,weather";
     const { container } = render(
       <AgentMessageMarkdown
-        content="使用 [@Weather](mention://workspace-app?workspaceId=room-1&appId=weather)"
+        content="使用 [@Weather](mention://workspace-app/weather?workspaceId=room-1)"
         workspaceAppIcons={[
           {
             appId: "weather",
@@ -687,7 +714,7 @@ describe("AgentMessageMarkdown", () => {
 
   it("renders workspace app factory mentions as object tokens", () => {
     const { container, queryByText } = render(
-      <AgentMessageMarkdown content="[@Create App](mention://workspace-app-factory)" />
+      <AgentMessageMarkdown content="[@Create App](mention://workspace-app-factory/create)" />
     );
 
     const mention = container.querySelector('[data-agent-file-mention="true"]');
@@ -697,7 +724,7 @@ describe("AgentMessageMarkdown", () => {
     );
     expect(mention).toHaveTextContent("Create App");
     expect(
-      queryByText("[@Create App](mention://workspace-app-factory)")
+      queryByText("[@Create App](mention://workspace-app-factory/create)")
     ).toBeNull();
   });
 
@@ -744,7 +771,7 @@ describe("AgentMessageMarkdown", () => {
     const { container } = render(
       <AgentMessageMarkdown
         content={
-          "回复 [@sunhello135-png & Nexight 长标题会话]\n(mention://agent-session?workspaceId=room-1&id=session-with-long-title)"
+          "回复 [@sunhello135-png & Nexight 长标题会话]\n(mention://agent-session/session-with-long-title?workspaceId=room-1)"
         }
       />
     );

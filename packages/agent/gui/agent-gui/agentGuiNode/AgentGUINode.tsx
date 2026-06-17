@@ -58,7 +58,7 @@ import {
   resolveAgentGUIConversationRailMaxWidthPx,
   shouldAutoCollapseAgentGUIConversationRail
 } from "./model/agentGuiRailLayout";
-import type { AgentRichTextAtProvider } from "./agentRichTextAtProvider";
+import type { AgentContextMentionProvider } from "./agentContextMentionProvider";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../shared/AgentMessageMarkdown";
 import type {
   AgentComposerCapabilityMenuState,
@@ -145,7 +145,7 @@ export interface AgentGUINodeProps {
   workspaceAgentProbes?: WorkspaceDesktopAgentProbesState | null;
   onAgentProbeDemandChange?: WorkspaceDesktopAgentProbeDemandChange;
   managedAgentsState?: AgentHostManagedAgentsState | null;
-  richTextAtProviders?: readonly AgentRichTextAtProvider[];
+  contextMentionProviders?: readonly AgentContextMentionProvider[];
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
   embedded?: boolean;
   previewMode?: boolean;
@@ -350,7 +350,6 @@ function agentGuiStateEquals(
     left === right ||
     (left.provider === right.provider &&
       left.lastActiveAgentSessionId === right.lastActiveAgentSessionId &&
-      left.lastActiveConversationTitle === right.lastActiveConversationTitle &&
       left.conversationRailWidthPx === right.conversationRailWidthPx &&
       left.conversationRailCollapsed === right.conversationRailCollapsed &&
       (left.composerOverrides?.model ?? null) ===
@@ -437,7 +436,7 @@ function areAgentGUINodePropsEqual(
     ) &&
     previous.onAgentProbeDemandChange === next.onAgentProbeDemandChange &&
     previous.managedAgentsState === next.managedAgentsState &&
-    previous.richTextAtProviders === next.richTextAtProviders &&
+    previous.contextMentionProviders === next.contextMentionProviders &&
     previous.workspaceAppIcons === next.workspaceAppIcons &&
     previous.embedded === next.embedded &&
     previous.previewMode === next.previewMode &&
@@ -485,7 +484,7 @@ export const AgentGUINode = memo(function AgentGUINode({
   workspaceAgentProbes,
   onAgentProbeDemandChange,
   managedAgentsState,
-  richTextAtProviders,
+  contextMentionProviders,
   workspaceAppIcons,
   embedded = false,
   previewMode = false
@@ -1028,6 +1027,9 @@ export const AgentGUINode = memo(function AgentGUINode({
   );
   const windowTitle = windowAgentTitle || title;
   useEffect(() => {
+    if (previewMode) {
+      return;
+    }
     if (!viewModel.activeConversation) {
       return;
     }
@@ -1055,6 +1057,7 @@ export const AgentGUINode = memo(function AgentGUINode({
   }, [
     activeConversationDockTitle,
     onUpdateNode,
+    previewMode,
     state.lastActiveAgentSessionId,
     state.lastActiveConversationTitle,
     viewModel.activeConversation
@@ -1244,7 +1247,7 @@ export const AgentGUINode = memo(function AgentGUINode({
             workspaceFileReferenceAdapter={workspaceFileReferenceAdapter}
             onRequestGitBranches={onRequestGitBranches}
             workspaceFileReferenceCopy={workspaceFileReferenceCopy}
-            richTextAtProviders={richTextAtProviders}
+            contextMentionProviders={contextMentionProviders}
             workspaceAppIcons={workspaceAppIcons}
           />
         );

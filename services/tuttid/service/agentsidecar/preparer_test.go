@@ -58,7 +58,7 @@ func TestDefaultPreparerCodexWritesInstructionsSkillManifestAndEnv(t *testing.T)
 			{
 				Name: "app-factory",
 				Files: map[string]string{
-					"SKILL.md":                        "---\nname: app-factory\n---\nmention://workspace-app-factory\n",
+					"SKILL.md":                        "---\nname: app-factory\n---\nmention://workspace-app-factory/create\n",
 					"references/manifest-contract.md": "manifest contract",
 				},
 			},
@@ -221,7 +221,7 @@ func TestDefaultPreparerCodexWritesInstructionsSkillManifestAndEnv(t *testing.T)
 	if err != nil {
 		t.Fatalf("app-factory skill missing: %v", err)
 	}
-	if !strings.Contains(string(appFactorySkill), "mention://workspace-app-factory") {
+	if !strings.Contains(string(appFactorySkill), "mention://workspace-app-factory/create") {
 		t.Fatalf("app-factory skill content = %q", string(appFactorySkill))
 	}
 	appFactoryReference, err := os.ReadFile(filepath.Join(codexHome, "skills", "app-factory", "references", "manifest-contract.md"))
@@ -618,26 +618,16 @@ func TestDefaultPreparerClaudeCodeUsesSessionScopedSystemPrompt(t *testing.T) {
 		t.Fatalf("cwd CLAUDE.md content = %q, want user guidance unchanged", string(claudeContent))
 	}
 	tuttiSkillPath := filepath.Join(cwd, ".claude", "skills", "tutti-cli-tutti", "SKILL.md")
-	tuttiSkill, err := os.ReadFile(tuttiSkillPath)
-	if err != nil {
-		t.Fatalf("claude cwd tutti provider skill missing: %v", err)
-	}
-	if !strings.Contains(string(tuttiSkill), "tutti issue list") {
-		t.Fatalf("claude cwd tutti provider skill content = %q", string(tuttiSkill))
-	}
-	if !strings.Contains(string(tuttiSkill), "fallback router") ||
-		!strings.Contains(string(tuttiSkill), "`mention://workspace-issue?...` -> `issue-manager`") ||
-		!strings.Contains(string(tuttiSkill), "`mention://workspace-app?...` -> `workspace-app`") ||
-		!strings.Contains(string(tuttiSkill), "`mention://agent-session?...` -> `tutti-cli`") {
-		t.Fatalf("claude cwd tutti provider skill content = %q, want mention router guidance", string(tuttiSkill))
+	if _, err := os.Stat(tuttiSkillPath); !os.IsNotExist(err) {
+		t.Fatalf("claude cwd tutti provider skill exists after prepare, err = %v", err)
 	}
 	issueSkillPath := filepath.Join(cwd, ".claude", "skills", "issue-manager", "SKILL.md")
-	issueSkill, err := os.ReadFile(issueSkillPath)
-	if err != nil {
-		t.Fatalf("claude cwd issue-manager skill missing: %v", err)
+	if _, err := os.Stat(issueSkillPath); !os.IsNotExist(err) {
+		t.Fatalf("claude cwd issue-manager skill exists after prepare, err = %v", err)
 	}
-	if !strings.Contains(string(issueSkill), "mention://workspace-issue") {
-		t.Fatalf("claude cwd issue-manager skill content = %q", string(issueSkill))
+	workspaceAppSkillPath := filepath.Join(cwd, ".claude", "skills", "workspace-app", "SKILL.md")
+	if _, err := os.Stat(workspaceAppSkillPath); !os.IsNotExist(err) {
+		t.Fatalf("claude cwd workspace-app skill exists after prepare, err = %v", err)
 	}
 	systemPromptPath := envValue(prepared.Env, claudeSystemPromptFileEnv)
 	if systemPromptPath == "" {
@@ -667,9 +657,9 @@ func TestDefaultPreparerClaudeCodeUsesSessionScopedSystemPrompt(t *testing.T) {
 		!strings.Contains(string(systemPrompt), "Treat `mention://...` links as internal Tutti references") ||
 		!strings.Contains(string(systemPrompt), "Do not try to open `mention://...` links in a browser") ||
 		!strings.Contains(string(systemPrompt), "If no matching skill is visible") ||
-		!strings.Contains(string(systemPrompt), "`mention://workspace-issue?...`") ||
+		!strings.Contains(string(systemPrompt), "`mention://workspace-issue/<issueId>?workspaceId=...`") ||
 		!strings.Contains(string(systemPrompt), "issue get --issue-id <issue-id> --json") ||
-		!strings.Contains(string(systemPrompt), "`mention://agent-session?...`") ||
+		!strings.Contains(string(systemPrompt), "`mention://agent-session/<sessionId>?workspaceId=...`") ||
 		!strings.Contains(string(systemPrompt), "agent session-summary --session-id <session-id> --json") {
 		t.Fatalf("claude system prompt content = %q, want mention handoff fallback guidance", string(systemPrompt))
 	}
@@ -717,8 +707,8 @@ func TestDefaultPreparerClaudeCodeUsesSessionScopedSystemPrompt(t *testing.T) {
 	}
 	if !strings.Contains(string(pluginSkill), "tutti issue list") ||
 		!strings.Contains(string(pluginSkill), "mention://agent-session") ||
-		!strings.Contains(string(pluginSkill), "`mention://workspace-issue?...` belongs to `issue-manager`") ||
-		!strings.Contains(string(pluginSkill), "`mention://workspace-app?...` belongs to `workspace-app`") {
+		!strings.Contains(string(pluginSkill), "`mention://workspace-issue/<issueId>?workspaceId=...` belongs to `issue-manager`") ||
+		!strings.Contains(string(pluginSkill), "`mention://workspace-app/<appId>?workspaceId=...` belongs to `workspace-app`") {
 		t.Fatalf("claude plugin skill content = %q", string(pluginSkill))
 	}
 	issuePluginSkill, err := os.ReadFile(filepath.Join(pluginDir, "skills", "issue-manager", "SKILL.md"))
@@ -824,9 +814,9 @@ func TestDefaultPreparerCleanupRemovesClaudeSystemPromptRuntimeRoot(t *testing.T
 	if _, err := os.Stat(filepath.Join(pluginDir, ".claude-plugin", "plugin.json")); err != nil {
 		t.Fatalf("claude plugin manifest missing before cleanup: %v", err)
 	}
-	issueSkillPath := filepath.Join(cwd, ".claude", "skills", "issue-manager", "SKILL.md")
-	if _, err := os.Stat(issueSkillPath); err != nil {
-		t.Fatalf("claude cwd issue-manager skill missing before cleanup: %v", err)
+	projectClaudeDir := filepath.Join(cwd, ".claude")
+	if _, err := os.Stat(projectClaudeDir); !os.IsNotExist(err) {
+		t.Fatalf("cwd .claude exists after prepare, err = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cwd, "CLAUDE.md")); !os.IsNotExist(err) {
 		t.Fatalf("cwd CLAUDE.md exists after prepare, err = %v", err)
@@ -844,8 +834,8 @@ func TestDefaultPreparerCleanupRemovesClaudeSystemPromptRuntimeRoot(t *testing.T
 	if _, err := os.Stat(pluginDir); !os.IsNotExist(err) {
 		t.Fatalf("claude plugin dir still exists, err = %v", err)
 	}
-	if _, err := os.Stat(issueSkillPath); !os.IsNotExist(err) {
-		t.Fatalf("claude cwd issue-manager skill still exists, err = %v", err)
+	if _, err := os.Stat(projectClaudeDir); !os.IsNotExist(err) {
+		t.Fatalf("cwd .claude exists after cleanup, err = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cwd, "CLAUDE.md")); !os.IsNotExist(err) {
 		t.Fatalf("cwd CLAUDE.md exists after cleanup, err = %v", err)

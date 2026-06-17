@@ -1,6 +1,7 @@
 import type {
   IssueManagerIssueSummary,
-  IssueManagerStatusCounts
+  IssueManagerStatusCounts,
+  IssueManagerTaskSummary
 } from "../../../contracts/index.ts";
 import type { IssueManagerI18nRuntime } from "../../../i18n/issueManagerI18n.ts";
 import type { AsyncCollectionState } from "../../../services/controllerTypes.ts";
@@ -10,7 +11,6 @@ export const issueManagerStatusFilters = [
   "all",
   "not_started",
   "running",
-  "in_progress",
   "pending_acceptance",
   "completed",
   "failed",
@@ -80,15 +80,15 @@ export function buildIssueManagerStatusCounts(
     canceled: 0,
     completed: 0,
     failed: 0,
-    in_progress: 0,
     not_started: 0,
     pending_acceptance: 0,
     running: 0
   };
 
   for (const issue of issues) {
-    if (issue.status in counts) {
-      counts[issue.status as keyof typeof counts] += 1;
+    const status = issue.status === "in_progress" ? "running" : issue.status;
+    if (status in counts) {
+      counts[status as keyof typeof counts] += 1;
     }
   }
 
@@ -111,10 +111,70 @@ function mapIssueManagerStatusCounts(
     canceled: counts.canceled,
     completed: counts.completed,
     failed: counts.failed,
-    in_progress: counts.inProgress,
     not_started: counts.notStarted,
     pending_acceptance: counts.pendingAcceptance,
-    running: counts.running
+    running: counts.running + counts.inProgress
+  };
+}
+
+export interface IssueManagerSubtaskProgressViewState {
+  completed: number;
+  percent: number;
+  total: number;
+}
+
+export function resolveIssueManagerSubtaskProgress(
+  issue: Pick<IssueManagerIssueSummary, "completedCount" | "taskCount">
+): IssueManagerSubtaskProgressViewState | null {
+  const total = Math.max(0, Math.trunc(issue.taskCount ?? 0));
+  if (total <= 0) {
+    return null;
+  }
+
+  const completed = Math.min(
+    total,
+    Math.max(0, Math.trunc(issue.completedCount ?? 0))
+  );
+
+  return {
+    completed,
+    percent: (completed / total) * 100,
+    total
+  };
+}
+
+export function resolveIssueManagerSubtaskProgressFromTasks(
+  tasks: readonly Pick<IssueManagerTaskSummary, "status">[]
+): IssueManagerSubtaskProgressViewState | null {
+  const total = tasks.length;
+  if (total <= 0) {
+    return null;
+  }
+
+  const completed = tasks.filter(
+    (task) =>
+      task.status === "completed" || task.status === "pending_acceptance"
+  ).length;
+
+  return {
+    completed,
+    percent: (completed / total) * 100,
+    total
+  };
+}
+
+export function resolveIssueManagerSubtaskProgressByIssueId(input: {
+  issueId: string | null;
+  visibleTasks: readonly Pick<IssueManagerTaskSummary, "status">[] | null;
+}): Record<string, IssueManagerSubtaskProgressViewState | null> {
+  if (!input.issueId || !input.visibleTasks) {
+    return {};
+  }
+
+  return {
+    [input.issueId]: resolveIssueManagerSubtaskProgressFromTasks(
+      input.visibleTasks
+    )
   };
 }
 

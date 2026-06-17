@@ -21,6 +21,8 @@ import {
 } from "../../../services/controllerModel.ts";
 import {
   issueManagerStatusFilters,
+  resolveIssueManagerSubtaskProgress,
+  type IssueManagerSubtaskProgressViewState,
   type IssueManagerSidebarViewState
 } from "./IssueManagerShellState.ts";
 import { issueManagerStatusBadgeVariant } from "../status/IssueManagerStatusBadge.ts";
@@ -101,6 +103,7 @@ export function IssueManagerSidebarBody({
   isNarrowLayout,
   selectedIssueId,
   sidebarViewState,
+  subtaskProgressByIssueId,
   onRetry,
   onSelectIssue
 }: {
@@ -108,6 +111,10 @@ export function IssueManagerSidebarBody({
   isNarrowLayout: boolean;
   selectedIssueId: string | null;
   sidebarViewState: IssueManagerSidebarViewState;
+  subtaskProgressByIssueId: Record<
+    string,
+    IssueManagerSubtaskProgressViewState | null
+  >;
   onRetry: () => void;
   onSelectIssue: (issueId: string | null) => void;
 }): JSX.Element {
@@ -143,6 +150,7 @@ export function IssueManagerSidebarBody({
             isNarrowLayout={isNarrowLayout}
             issues={sidebarViewState.issues}
             selectedIssueId={selectedIssueId}
+            subtaskProgressByIssueId={subtaskProgressByIssueId}
             onSelectIssue={onSelectIssue}
           />
         )}
@@ -244,12 +252,17 @@ function IssueManagerSidebarIssueList({
   isNarrowLayout,
   issues,
   selectedIssueId,
+  subtaskProgressByIssueId,
   onSelectIssue
 }: {
   copy: IssueManagerI18nRuntime;
   isNarrowLayout: boolean;
   issues: readonly IssueManagerIssueSummary[];
   selectedIssueId: string | null;
+  subtaskProgressByIssueId: Record<
+    string,
+    IssueManagerSubtaskProgressViewState | null
+  >;
   onSelectIssue: (issueId: string | null) => void;
 }): JSX.Element {
   return (
@@ -268,6 +281,11 @@ function IssueManagerSidebarIssueList({
           issue={issue}
           key={issue.issueId}
           selected={selectedIssueId === issue.issueId}
+          subtaskProgress={
+            issue.issueId in subtaskProgressByIssueId
+              ? subtaskProgressByIssueId[issue.issueId]
+              : undefined
+          }
           onSelect={onSelectIssue}
         />
       ))}
@@ -280,14 +298,21 @@ function IssueManagerSidebarItem({
   isNarrowLayout,
   issue,
   onSelect,
-  selected
+  selected,
+  subtaskProgress: subtaskProgressOverride
 }: {
   copy: IssueManagerI18nRuntime;
   isNarrowLayout: boolean;
   issue: IssueManagerIssueSummary;
   onSelect: (issueId: string | null) => void;
   selected: boolean;
+  subtaskProgress?: IssueManagerSubtaskProgressViewState | null;
 }): JSX.Element {
+  const subtaskProgress =
+    subtaskProgressOverride === undefined
+      ? resolveIssueManagerSubtaskProgress(issue)
+      : subtaskProgressOverride;
+
   return (
     <button
       className={cn(
@@ -316,9 +341,30 @@ function IssueManagerSidebarItem({
           {issue.title}
         </p>
       </div>
-      <div className="mt-2 text-[11px] leading-[1.55] text-[var(--text-secondary)]">
-        {copy.t("labels.taskCount", { count: issue.taskCount ?? 0 })}
-      </div>
+      {subtaskProgress ? (
+        <div
+          aria-label={`${copy.t("labels.taskCount", {
+            count: subtaskProgress.total
+          })}, ${subtaskProgress.completed}/${subtaskProgress.total}`}
+          className="mt-3 flex min-w-0 items-center gap-2 text-[11px] font-semibold leading-none text-[var(--text-secondary)]"
+        >
+          <span className="shrink-0">
+            {copy.t("labels.taskCount", { count: subtaskProgress.total })}
+          </span>
+          <span
+            aria-hidden="true"
+            className="h-0.5 w-14 shrink-0 overflow-hidden rounded-full bg-[var(--transparency-block)]"
+          >
+            <span
+              className="block h-full rounded-full bg-[var(--status-running)]"
+              style={{ width: `${subtaskProgress.percent}%` }}
+            />
+          </span>
+          <span className="shrink-0 text-[var(--text-primary)]">
+            {subtaskProgress.completed}/{subtaskProgress.total}
+          </span>
+        </div>
+      ) : null}
     </button>
   );
 }

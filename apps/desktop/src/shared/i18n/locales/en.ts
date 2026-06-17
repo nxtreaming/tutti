@@ -11,16 +11,6 @@ export const en = {
     unreachable: "unreachable",
     workspace: "workspace"
   },
-  workspaceApp: {
-    managedCredentials: {
-      allow: "Allow",
-      authorizationDetail:
-        "The app will receive a short-lived credential through Tutti. Provider keys stay in Tutti.",
-      authorizationMessage: "Allow this app to use {{providers}}?",
-      authorizationTitle: "Authorize managed models",
-      configuredProviders: "configured providers"
-    }
-  },
   dashboard: {
     chooseWorkspaceTitle: "Choose a workspace",
     chooseWorkspaceDescription: "Choose a workspace to continue",
@@ -100,6 +90,7 @@ export const en = {
       exportServiceLogs: "Export Service Logs...",
       file: "File",
       help: "Help",
+      openPerfMonitor: "Open Perf Monitor DevTools",
       upToDateDetail: "Tutti {{version}} is currently the latest version.",
       upToDateMessage: "You're up to date!",
       view: "View",
