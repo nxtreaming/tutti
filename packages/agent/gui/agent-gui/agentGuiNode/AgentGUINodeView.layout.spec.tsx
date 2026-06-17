@@ -151,6 +151,42 @@ describe("AgentGUINodeView layout persistence", () => {
     expect(onConversationRailWidthChanged).toHaveBeenCalledWith(360);
   });
 
+  it("keeps the in-flight rail width across parent rerenders", () => {
+    const onConversationRailWidthChanged = vi.fn();
+    const initialOptions = {
+      conversationRailWidthPx: 240,
+      onConversationRailWidthChanged
+    };
+
+    const { container, rerender } = renderAgentGUINodeView(initialOptions);
+    const layout = container.querySelector(".agent-gui-node__layout");
+    const resizeHandle = screen.getByTestId(
+      "agent-gui-conversation-rail-resize-handle"
+    );
+
+    fireEvent.pointerDown(resizeHandle, {
+      button: 0,
+      clientX: 0,
+      pointerId: 1
+    });
+    fireEvent.pointerMove(resizeHandle, { clientX: 120, pointerId: 1 });
+    expect(layout).toHaveStyle({
+      "--agent-gui-conversation-rail-width": "360px"
+    });
+
+    rerender(buildAgentGUINodeViewElement(initialOptions));
+
+    expect(layout).toHaveStyle({
+      "--agent-gui-conversation-rail-width": "360px"
+    });
+
+    fireEvent.pointerUp(resizeHandle, { pointerId: 1 });
+    expect(onConversationRailWidthChanged).toHaveBeenCalledWith(360);
+    expect(layout).toHaveStyle({
+      "--agent-gui-conversation-rail-width": "360px"
+    });
+  });
+
   it("keeps the rail resize affordance active while dragging", () => {
     const { container } = renderAgentGUINodeView();
 

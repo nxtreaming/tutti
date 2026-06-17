@@ -781,6 +781,9 @@ export function AgentGUINodeView({
     startWidthPx: number;
   } | null>(null);
   const [isRailResizing, setIsRailResizing] = useState(false);
+  const [railResizeWidthPx, setRailResizeWidthPx] = useState<number | null>(
+    null
+  );
   const [workspaceReferencePickerOpen, setWorkspaceReferencePickerOpen] =
     useState(false);
   const [
@@ -881,6 +884,7 @@ export function AgentGUINodeView({
         startClientX: event.clientX,
         startWidthPx: conversationRailWidthPx
       };
+      setRailResizeWidthPx(conversationRailWidthPx);
       setIsRailResizing(true);
     },
     [conversationRailCollapsed, conversationRailWidthPx, previewMode]
@@ -923,12 +927,33 @@ export function AgentGUINodeView({
       }
       railResizeInteractionRef.current = null;
       if (resizeState) {
-        onConversationRailWidthChanged(resizeState.lastWidthPx);
+        const nextWidthPx = resizeState.lastWidthPx;
+        setRailResizeWidthPx(nextWidthPx);
+        onConversationRailWidthChanged(nextWidthPx);
+      } else {
+        setRailResizeWidthPx(null);
       }
       setIsRailResizing(false);
     },
     [onConversationRailWidthChanged]
   );
+
+  useEffect(() => {
+    if (isRailResizing || railResizeWidthPx === null) {
+      return;
+    }
+    if (
+      conversationRailCollapsed ||
+      conversationRailWidthPx === railResizeWidthPx
+    ) {
+      setRailResizeWidthPx(null);
+    }
+  }, [
+    conversationRailCollapsed,
+    conversationRailWidthPx,
+    isRailResizing,
+    railResizeWidthPx
+  ]);
 
   const handleConversationRailResizeKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -960,8 +985,12 @@ export function AgentGUINodeView({
     ]
   );
 
+  const visualConversationRailWidthPx = isRailResizing
+    ? (railResizeInteractionRef.current?.lastWidthPx ?? conversationRailWidthPx)
+    : (railResizeWidthPx ?? conversationRailWidthPx);
+
   const layoutStyle = {
-    "--agent-gui-conversation-rail-width": `${conversationRailWidthPx}px`,
+    "--agent-gui-conversation-rail-width": `${visualConversationRailWidthPx}px`,
     "--agent-gui-detail-min-width": `${detailMinWidthPx}px`,
     gridTemplateColumns: conversationRailCollapsed
       ? "0 minmax(var(--agent-gui-detail-min-width), 1fr)"
@@ -1032,7 +1061,9 @@ export function AgentGUINodeView({
           aria-valuemin={conversationRailMinWidthPx}
           aria-valuemax={conversationRailMaxWidthPx}
           aria-valuenow={
-            conversationRailCollapsed ? undefined : conversationRailWidthPx
+            conversationRailCollapsed
+              ? undefined
+              : visualConversationRailWidthPx
           }
           data-resizing={isRailResizing ? "true" : undefined}
           data-testid="agent-gui-conversation-rail-resize-handle"
