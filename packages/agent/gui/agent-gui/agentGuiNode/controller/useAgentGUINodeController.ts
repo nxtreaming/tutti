@@ -1072,6 +1072,14 @@ function normalizeConfigOptionValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function draftAgentSessionIdFromComposerOptions(
+  options: AgentActivityComposerOptions | null | undefined
+): string | null {
+  return normalizeConfigOptionValue(
+    options?.runtimeContext?.draftAgentSessionId
+  );
+}
+
 function reasoningConfigOptionIdForProvider(
   provider: AgentGUINodeData["provider"]
 ): string {
@@ -4278,7 +4286,11 @@ export function useAgentGUINodeController({
     if (previewMode) {
       return;
     }
-    loadDraftComposerOptions();
+    loadDraftComposerOptions(
+      data.provider === "claude-code" && isComposerHome
+        ? { force: true }
+        : undefined
+    );
   }, [
     activeConversationId,
     data.provider,
@@ -4869,7 +4881,15 @@ export function useAgentGUINodeController({
         const initialSettings = resolveEffectiveComposerSettings({
           settings: initialNodeSettings
         });
-        const agentSessionId = createAgentGUIConversationId();
+        const snapshotComposerOptions =
+          agentActivityRuntime.getSnapshot(workspaceId)
+            .composerOptionsByProvider?.[provider] ?? null;
+        const draftAgentSessionId =
+          normalizedInitialContent.length > 0 && provider === "claude-code"
+            ? draftAgentSessionIdFromComposerOptions(snapshotComposerOptions)
+            : null;
+        const agentSessionId =
+          draftAgentSessionId ?? createAgentGUIConversationId();
         pendingCreateAgentSessionId = agentSessionId;
         const createdAtUnixMs = Date.now();
         const optimisticConversation: AgentGUIConversationSummary = {
@@ -6085,7 +6105,11 @@ export function useAgentGUINodeController({
           previousSettings,
           nextSettings: merged
         });
-        loadDraftComposerOptions();
+        loadDraftComposerOptions(
+          dataRef.current.provider === "claude-code"
+            ? { force: true }
+            : undefined
+        );
         return;
       }
       const activeSessionState =

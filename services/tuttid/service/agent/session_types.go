@@ -30,6 +30,7 @@ type RuntimeController interface {
 	Exec(context.Context, RuntimeExecInput) (RuntimeExecResult, error)
 	Resume(context.Context, RuntimeResumeInput) (RuntimeSession, error)
 	Session(workspaceID string, agentSessionID string) (RuntimeSession, bool)
+	SetVisible(context.Context, RuntimeSetVisibleInput) (RuntimeSession, error)
 	Sessions(workspaceID string) []RuntimeSession
 	Start(context.Context, RuntimeStartInput) (RuntimeSession, error)
 	SubmitInteractive(context.Context, RuntimeSubmitInteractiveInput) error
@@ -222,6 +223,12 @@ type RuntimeUpdateSettingsInput struct {
 	WorkspaceID    string
 	AgentSessionID string
 	Settings       ComposerSettingsPatch
+}
+
+type RuntimeSetVisibleInput struct {
+	WorkspaceID    string
+	AgentSessionID string
+	Visible        bool
 }
 
 type ComposerSettingsPatch struct {

@@ -2245,6 +2245,11 @@ type UpdateWorkspaceAgentSessionPinRequest struct {
 	Pinned bool `json:"pinned"`
 }
 
+// UpdateWorkspaceAgentSessionVisibilityRequest defines model for UpdateWorkspaceAgentSessionVisibilityRequest.
+type UpdateWorkspaceAgentSessionVisibilityRequest struct {
+	Visible bool `json:"visible"`
+}
+
 // UpdateWorkspaceRequest defines model for UpdateWorkspaceRequest.
 type UpdateWorkspaceRequest struct {
 	Name string `json:"name"`
@@ -3035,6 +3040,9 @@ type UpdateWorkspaceAgentSessionPinJSONRequestBody = UpdateWorkspaceAgentSession
 
 // UpdateWorkspaceAgentSessionSettingsJSONRequestBody defines body for UpdateWorkspaceAgentSessionSettings for application/json ContentType.
 type UpdateWorkspaceAgentSessionSettingsJSONRequestBody = AgentSessionComposerSettings
+
+// UpdateWorkspaceAgentSessionVisibilityJSONRequestBody defines body for UpdateWorkspaceAgentSessionVisibility for application/json ContentType.
+type UpdateWorkspaceAgentSessionVisibilityJSONRequestBody = UpdateWorkspaceAgentSessionVisibilityRequest
 
 // CreateWorkspaceAppFactoryJobJSONRequestBody defines body for CreateWorkspaceAppFactoryJob for application/json ContentType.
 type CreateWorkspaceAppFactoryJobJSONRequestBody = CreateWorkspaceAppFactoryJobRequest

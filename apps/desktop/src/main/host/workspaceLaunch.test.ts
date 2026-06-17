@@ -93,6 +93,9 @@ function createTransportClient(
     async createWorkspaceAgentSession() {
       throw new Error("not used");
     },
+    async updateWorkspaceAgentSessionVisibility() {
+      throw new Error("not used");
+    },
     async createWorkspaceAppFactoryJob() {
       throw new Error("not used");
     },
