@@ -164,16 +164,23 @@ describe("buildComposerModelMenuModel", () => {
             value: "sonnet",
             label: "Sonnet",
             description: "Sonnet 4.6 · Best for everyday tasks · medium effort"
+          },
+          {
+            value: "opus",
+            label: "Opus 4.8",
+            description:
+              "Opus 4.8 with 1M context · Most capable for complex work"
           }
         ]
       }),
       labels
     );
 
+    expect(menu.trigger.modelLabel).toBe("Default");
     expect(menu.model.options).toEqual([
       {
         value: "default",
-        label: "Opus 4.8",
+        label: "Default",
         description: "Opus 4.8 with 1M context · Most capable for complex work",
         summary: ["1M"],
         tooltip: {
@@ -184,13 +191,24 @@ describe("buildComposerModelMenuModel", () => {
       },
       {
         value: "sonnet",
-        label: "Sonnet 4.6",
+        label: "Sonnet",
         description: "Sonnet 4.6 · Best for everyday tasks · medium effort",
         summary: ["Medium"],
         tooltip: {
           description: "Best for everyday tasks",
           title: "Sonnet 4.6",
           version: "Version: medium effort"
+        }
+      },
+      {
+        value: "opus",
+        label: "Opus",
+        description: "Opus 4.8 with 1M context · Most capable for complex work",
+        summary: ["1M"],
+        tooltip: {
+          contextWindow: "1M context window",
+          description: "Most capable for complex work",
+          title: "Opus 4.8"
         }
       }
     ]);

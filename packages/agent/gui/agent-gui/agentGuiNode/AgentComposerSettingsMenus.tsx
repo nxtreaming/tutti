@@ -2,7 +2,6 @@ import {
   cloneElement,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type HTMLAttributes,
   type ReactElement
@@ -569,7 +568,7 @@ function ComposerMenuOptionItems({
         const showModelTooltip = descriptionPresentation === "model-tooltip";
         const showTooltipDescription =
           descriptionPresentation === "tooltip" && hasDescription;
-        return (
+        const item = (
           <DropdownMenuItem
             key={option.value}
             className={cn(
@@ -591,25 +590,23 @@ function ComposerMenuOptionItems({
             }}
           >
             {showModelTooltip ? (
-              <ComposerModelOptionTooltip option={option}>
-                <span className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
-                  <span className="min-w-0 truncate leading-[1.15]">
-                    {option.label}
-                  </span>
-                  {option.summary && option.summary.length > 0 ? (
-                    <span className="flex min-w-0 shrink-0 items-baseline gap-1.5 overflow-hidden text-[var(--agent-gui-text-tertiary)]">
-                      {option.summary.map((summary) => (
-                        <span
-                          key={summary}
-                          className="max-w-[64px] truncate leading-[1.15]"
-                        >
-                          {summary}
-                        </span>
-                      ))}
-                    </span>
-                  ) : null}
+              <span className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+                <span className="min-w-0 truncate leading-[1.15]">
+                  {option.label}
                 </span>
-              </ComposerModelOptionTooltip>
+                {option.summary && option.summary.length > 0 ? (
+                  <span className="flex min-w-0 shrink-0 items-baseline gap-1.5 overflow-hidden text-[var(--agent-gui-text-tertiary)]">
+                    {option.summary.map((summary) => (
+                      <span
+                        key={summary}
+                        className="max-w-[64px] truncate leading-[1.15]"
+                      >
+                        {summary}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+              </span>
             ) : (
               <span
                 className={cn(
@@ -643,6 +640,13 @@ function ComposerMenuOptionItems({
             />
           </DropdownMenuItem>
         );
+        return showModelTooltip ? (
+          <ComposerModelOptionTooltip key={option.value} option={option}>
+            {item}
+          </ComposerModelOptionTooltip>
+        ) : (
+          item
+        );
       })}
     </>
   );
@@ -669,8 +673,8 @@ function ComposerModelOptionTooltip({
       <TooltipContent
         side="right"
         align="start"
-        sideOffset={10}
-        className="w-[320px] max-w-[calc(100vw-32px)] whitespace-normal rounded-lg border border-[var(--line-2)] bg-[var(--background-fronted)] p-4 text-[13px] leading-[1.3] text-[var(--text-primary)] shadow-lg"
+        sideOffset={8}
+        className="flex w-[320px] max-w-[calc(100vw-32px)] flex-col items-start gap-0 whitespace-normal rounded-lg border border-[var(--line-2)] bg-[var(--background-fronted)] px-4 py-3 text-[13px] leading-[1.3] text-[var(--text-primary)] shadow-lg"
         data-agent-model-option-tooltip="true"
       >
         <span className="block text-[15px] font-semibold leading-[1.2]">

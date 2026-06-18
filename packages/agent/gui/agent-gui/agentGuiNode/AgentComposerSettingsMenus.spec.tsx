@@ -1584,31 +1584,38 @@ describe("AgentModelReasoningDropdown", () => {
     const localizedOption = await screen.findByRole("menuitem", {
       name: /GPT-5\.5/
     });
-    const localizedTooltipTrigger = localizedOption.querySelector(
-      '[data-agent-model-option-tooltip-trigger="true"]'
+    expect(localizedOption).toHaveAttribute(
+      "data-agent-model-option-tooltip-trigger",
+      "true"
     );
-    if (!localizedTooltipTrigger) {
-      throw new Error("Expected localized model tooltip trigger");
-    }
     fireEvent.mouseEnter(localizedOption);
-    fireEvent.pointerMove(localizedTooltipTrigger, { pointerType: "mouse" });
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "复杂编码模型说明"
+    fireEvent.pointerMove(localizedOption, { pointerType: "mouse" });
+    const localizedTooltip = await screen.findByRole("tooltip");
+    expect(localizedTooltip).toHaveTextContent("复杂编码模型说明");
+    const localizedTooltipSurface = document.querySelector(
+      '[data-agent-model-option-tooltip="true"]'
+    );
+    if (!localizedTooltipSurface) {
+      throw new Error("Expected localized model tooltip surface");
+    }
+    expect(localizedTooltipSurface).toHaveClass(
+      "flex",
+      "flex-col",
+      "items-start",
+      "gap-0"
     );
 
     const customOption = await screen.findByRole("menuitem", {
-      name: /Custom 1\.0/
+      name: /Custom/
     });
     expect(customOption).toHaveTextContent("1M");
     expect(customOption).toHaveTextContent("High");
-    const customTooltipTrigger = customOption.querySelector(
-      '[data-agent-model-option-tooltip-trigger="true"]'
+    expect(customOption).toHaveAttribute(
+      "data-agent-model-option-tooltip-trigger",
+      "true"
     );
-    if (!customTooltipTrigger) {
-      throw new Error("Expected custom model tooltip trigger");
-    }
     fireEvent.mouseEnter(customOption);
-    fireEvent.pointerMove(customTooltipTrigger, { pointerType: "mouse" });
+    fireEvent.pointerMove(customOption, { pointerType: "mouse" });
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip).toHaveTextContent("Custom model description");
     expect(tooltip).toHaveTextContent("1M context window");

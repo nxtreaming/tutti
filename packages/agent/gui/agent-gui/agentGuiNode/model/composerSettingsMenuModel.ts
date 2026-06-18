@@ -207,9 +207,7 @@ function modelOptionPresentation(input: {
 } {
   const description = input.description?.trim() || "";
   const parsed = parseModelDescription(description);
-  const label = parsed.title
-    ? preferredModelLabel(input.label, parsed.title)
-    : input.label;
+  const label = shortModelDisplayLabel(input.label);
   const summary = uniqueNonEmpty([
     parsed.contextWindow?.summary,
     parsed.effort
@@ -222,7 +220,7 @@ function modelOptionPresentation(input: {
   const tooltip =
     description || summary.length > 0
       ? {
-          title: label,
+          title: parsed.title ?? label,
           ...(tooltipDescription ? { description: tooltipDescription } : {}),
           ...(parsed.contextWindow
             ? {
@@ -237,34 +235,6 @@ function modelOptionPresentation(input: {
         }
       : undefined;
   return { label, summary, ...(tooltip ? { tooltip } : {}) };
-}
-
-function preferredModelLabel(
-  currentLabel: string,
-  parsedTitle: string
-): string {
-  const normalizedCurrent = normalizeModelLabelForCompare(currentLabel);
-  const normalizedTitle = normalizeModelLabelForCompare(parsedTitle);
-  if (
-    normalizedCurrent === "default" ||
-    normalizedCurrent === "default recommended" ||
-    normalizedCurrent === "opus" ||
-    normalizedCurrent === "sonnet" ||
-    normalizedCurrent === "haiku" ||
-    normalizedTitle.startsWith(normalizedCurrent)
-  ) {
-    return parsedTitle;
-  }
-  return currentLabel;
-}
-
-function normalizeModelLabelForCompare(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\([^)]*\)/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
@@ -394,6 +364,20 @@ export function formatModelDisplayLabel(label: string): string {
   return capitalized.replace(/gpt/gi, "GPT");
 }
 
+function shortModelDisplayLabel(label: string): string {
+  const formatted = formatModelDisplayLabel(label.replace(/\([^)]*\)/g, ""));
+  const family = formatted.trim().split(/\s+/)[0];
+  switch (family?.toLowerCase()) {
+    case "default":
+    case "opus":
+    case "sonnet":
+    case "haiku":
+      return family;
+    default:
+      return formatted.trim() || label;
+  }
+}
+
 export function resolveModelDescription(
   description: string | undefined,
   labels: Pick<AgentComposerSettingsMenuLabels, "modelDescriptions">
@@ -428,7 +412,7 @@ function resolveSelectedModelLabel(
     (option) => option.value === selectedValue
   );
   if (selected) {
-    return formatModelDisplayLabel(selected.label);
+    return shortModelDisplayLabel(selected.label);
   }
   if (composerSettings.modelUnavailable) {
     return labels.inheritedUnavailable;
@@ -438,7 +422,7 @@ function resolveSelectedModelLabel(
   }
   const firstAvailableModel = composerSettings.availableModels[0]?.label;
   if (firstAvailableModel) {
-    return formatModelDisplayLabel(firstAvailableModel);
+    return shortModelDisplayLabel(firstAvailableModel);
   }
   return labels.defaultModel;
 }
