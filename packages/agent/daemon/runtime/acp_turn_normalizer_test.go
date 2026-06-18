@@ -69,6 +69,33 @@ func TestAppendAssistantChunkIgnoresDuplicateSnapshotChunk(t *testing.T) {
 	}
 }
 
+func TestApplyAssistantFinalTextReplacesEditedSnapshot(t *testing.T) {
+	t.Parallel()
+
+	session := testSession()
+	normalizer := newACPTurnNormalizer()
+	streamed := "我刚才只是打招呼。你可以直接把要做的事发来，比如改代码、查问题、跑命令、整理文档等。"
+	finalText := "我刚才只是打招呼。你可以直接把要我做的事发来，比如改代码、查问题、跑命令、整理文档等。"
+
+	events := normalizer.AppendAssistantChunk(session, "turn-1", streamed)
+	if len(events) != 1 {
+		t.Fatalf("stream events = %d, want 1", len(events))
+	}
+
+	normalizer.ApplyAssistantFinalText(finalText)
+	completed := normalizer.FinishCompleted(session, "turn-1")
+	for _, event := range completed {
+		if event.Type != activityshared.EventMessageAppended {
+			continue
+		}
+		if got := event.Payload.Content; got != finalText {
+			t.Fatalf("completed content = %q, want final snapshot only", got)
+		}
+		return
+	}
+	t.Fatal("completed assistant message not emitted")
+}
+
 func TestAppendAssistantChunkReplacesCumulativeSnapshotChunk(t *testing.T) {
 	t.Parallel()
 
