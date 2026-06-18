@@ -4,6 +4,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  stat,
   utimes,
   writeFile
 } from "node:fs/promises";
@@ -32,6 +33,10 @@ test("resolveLaunchSpec prefers the development tuttid binary when present", asy
     delete process.env.TUTTID_BIN;
     if (!(await fileIsExecutable(binaryPath))) {
       t.skip("development tuttid binary is not built");
+      return;
+    }
+    if (!(await developmentBinaryIsFresh(binaryPath))) {
+      t.skip("development tuttid binary is stale relative to tuttid sources");
       return;
     }
 
@@ -282,5 +287,28 @@ async function fileIsExecutable(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+// Mirrors isFreshDevelopmentTuttidBinary in tuttidManager.ts: resolveLaunchSpec
+// only prefers the dev binary when it is newer than the generated sources, so
+// the positive-path test must apply the same precondition.
+async function developmentBinaryIsFresh(binaryPath: string): Promise<boolean> {
+  const sentinelPath = join(
+    repoRoot,
+    "services/tuttid/api/events/generated/protocol.gen.go"
+  );
+
+  let binaryModifiedAt: number;
+  try {
+    binaryModifiedAt = (await stat(binaryPath)).mtimeMs;
+  } catch {
+    return false;
+  }
+
+  try {
+    return (await stat(sentinelPath)).mtimeMs <= binaryModifiedAt;
+  } catch {
+    return true;
   }
 }
