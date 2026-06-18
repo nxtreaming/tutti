@@ -1226,6 +1226,7 @@ function hostStatePatchEventFromSession(
         Date.now(),
       provider: session.provider,
       providerSessionId: session.providerSessionId ?? undefined,
+      runtimeContext: session.runtimeContext ?? undefined,
       title: session.title,
       ...(inferredTurnState
         ? {

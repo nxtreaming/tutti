@@ -378,6 +378,9 @@ export function agentActivitySessionFromTuttidSession(
     visible: session.visible ?? true,
     resumable: session.resumable ?? false,
     lastError: session.lastError ?? null,
+    ...(session.runtimeContext != null
+      ? { runtimeContext: recordValue(session.runtimeContext) }
+      : {}),
     lastEventUnixMs: updatedAtUnixMs,
     pinnedAtUnixMs: session.pinnedAtUnixMs ?? null,
     startedAtUnixMs: createdAtUnixMs,
