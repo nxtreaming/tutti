@@ -17,7 +17,6 @@ test("desktop release latest metadata exposes CloudFront URLs for every asset", 
 
     const latest = await buildDesktopReleaseLatest({
       assetDirPath: dir,
-      downloadBaseUrl: "https://tutti.sh/desktop/download",
       releaseAssetBaseUrl:
         "https://d111111abcdef8.cloudfront.net/desktop-release-assets/",
       releaseTag: "tutti-desktop-v1.2.3"
@@ -55,21 +54,13 @@ test("desktop release latest metadata exposes CloudFront URLs for every asset", 
     assert.deepEqual(
       latest.assets.map((asset) => asset.url),
       [
-        "https://tutti.sh/desktop/download?version=1.2.3&platform=macos&arch=arm64&format=dmg",
-        "https://tutti.sh/desktop/download?version=1.2.3&platform=macos&arch=universal&format=dmg",
-        "https://tutti.sh/desktop/download?version=1.2.3&platform=macos&arch=x64&format=dmg",
-        "https://tutti.sh/desktop/download?version=1.2.3&platform=windows&arch=x64&format=exe"
-      ]
-    );
-    assert.deepEqual(
-      latest.assets.map((asset) => asset.cdnUrl),
-      [
         "https://d111111abcdef8.cloudfront.net/desktop-release-assets/tutti-desktop-v1.2.3/Tutti-1.2.3-mac-arm64.dmg",
         "https://d111111abcdef8.cloudfront.net/desktop-release-assets/tutti-desktop-v1.2.3/Tutti-1.2.3-mac-universal.dmg",
         "https://d111111abcdef8.cloudfront.net/desktop-release-assets/tutti-desktop-v1.2.3/Tutti-1.2.3-mac-x64.dmg",
         "https://d111111abcdef8.cloudfront.net/desktop-release-assets/tutti-desktop-v1.2.3/Tutti-1.2.3-win-x64.exe"
       ]
     );
+    assert.ok(latest.assets.every((asset) => !("cdnUrl" in asset)));
     assert.equal(latest.downloads, undefined);
   } finally {
     await rm(dir, { force: true, recursive: true });

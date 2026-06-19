@@ -22,15 +22,6 @@ function encodeURLPathSegment(value) {
   return encodeURIComponent(value);
 }
 
-function buildDownloadUrl(baseUrl, releaseVersion, asset) {
-  const url = new URL(normalizeBaseUrl(baseUrl));
-  url.searchParams.set("version", releaseVersion);
-  url.searchParams.set("platform", asset.platform);
-  url.searchParams.set("arch", asset.arch);
-  url.searchParams.set("format", asset.format);
-  return url.href;
-}
-
 function releaseVersionFromTag(tag) {
   return tag.replace(/^tutti-desktop-v/, "").replace(/^v/, "");
 }
@@ -94,9 +85,6 @@ async function buildDesktopReleaseLatest(options) {
   const baseUrl = normalizeBaseUrl(
     requireNonEmpty(options.releaseAssetBaseUrl, "releaseAssetBaseUrl")
   );
-  const downloadBaseUrl = normalizeBaseUrl(
-    requireNonEmpty(options.downloadBaseUrl, "downloadBaseUrl")
-  );
 
   const entries = await readdir(assetDirPath, { withFileTypes: true });
   const assetNames = entries
@@ -108,13 +96,11 @@ async function buildDesktopReleaseLatest(options) {
   for (const name of assetNames) {
     const fileStat = await stat(path.join(assetDirPath, name));
     const classification = classifyDesktopReleaseAsset(name);
-    const cdnUrl = `${baseUrl}/${encodeURLPathSegment(releaseTag)}/${encodeURLPathSegment(name)}`;
     assets.push({
       ...classification,
-      cdnUrl,
       name,
       sizeBytes: fileStat.size,
-      url: buildDownloadUrl(downloadBaseUrl, releaseVersion, classification)
+      url: `${baseUrl}/${encodeURLPathSegment(releaseTag)}/${encodeURLPathSegment(name)}`
     });
   }
 
@@ -131,7 +117,6 @@ async function main() {
   const [assetDirPath, outputPath] = process.argv.slice(2);
   const latest = await buildDesktopReleaseLatest({
     assetDirPath,
-    downloadBaseUrl: process.env.DOWNLOAD_BASE_URL,
     releaseAssetBaseUrl: process.env.RELEASE_ASSET_BASE_URL,
     releaseTag: process.env.RELEASE_TAG
   });
@@ -154,7 +139,6 @@ if (
 }
 
 export {
-  buildDownloadUrl,
   buildDesktopReleaseLatest,
   classifyDesktopReleaseAsset,
   normalizeBaseUrl,

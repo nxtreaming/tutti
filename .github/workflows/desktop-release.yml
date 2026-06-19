@@ -408,7 +408,6 @@ jobs:
       - name: Build desktop release latest metadata
         if: ${{ env.TUTTI_DESKTOP_RELEASE_ASSETS_BASE_URL != '' }}
         env:
-          DOWNLOAD_BASE_URL: https://tutti.sh/desktop/download
           RELEASE_ASSET_BASE_URL: ${{ env.TUTTI_DESKTOP_RELEASE_ASSETS_BASE_URL }}
           RELEASE_TAG: ${{ env.TUTTI_DESKTOP_RELEASE_TAG }}
         run: node apps/desktop/scripts/build-release-latest.mjs release-assets release-latest.json
