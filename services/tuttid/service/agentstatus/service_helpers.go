@@ -172,8 +172,12 @@ func (s Service) resolveAuth(ctx context.Context, spec ProviderSpec, installed b
 		if auth, ok := s.resolveAuthFromCommand(ctx, spec, binaryPath); ok {
 			return auth
 		}
-		return AuthInfo{Status: AuthUnknown}
+		return s.resolveAuthFromMarkers(spec)
 	}
+	return s.resolveAuthFromMarkers(spec)
+}
+
+func (s Service) resolveAuthFromMarkers(spec ProviderSpec) AuthInfo {
 	if len(spec.AuthMarkerPaths) == 0 {
 		return AuthInfo{Status: AuthUnknown}
 	}
@@ -185,11 +189,24 @@ func (s Service) resolveAuth(ctx context.Context, spec ProviderSpec, installed b
 
 	for _, marker := range spec.AuthMarkerPaths {
 		path := expandHomePath(marker, home)
-		if s.fileExists(path) {
-			return AuthInfo{Status: AuthAuthenticated}
+		if auth, ok := s.authFromMarkerFile(spec, path); ok {
+			return auth
 		}
 	}
 	return AuthInfo{Status: AuthRequired}
+}
+
+func (s Service) authFromMarkerFile(spec ProviderSpec, path string) (AuthInfo, bool) {
+	if !s.fileExists(path) {
+		return AuthInfo{}, false
+	}
+	if spec.Provider == agentprovider.ClaudeCode {
+		if auth, ok := parseClaudeAuthMarkerFile(path); ok {
+			return auth, true
+		}
+		return AuthInfo{}, false
+	}
+	return AuthInfo{Status: AuthAuthenticated}, true
 }
 
 func (s Service) resolveAuthFromCommand(ctx context.Context, spec ProviderSpec, binaryPath string) (AuthInfo, bool) {
@@ -285,6 +302,47 @@ func parseClaudeAuthStatusOutput(output []byte) (AuthInfo, bool) {
 	if strings.Contains(normalized, `"loggedin":true`) ||
 		strings.Contains(normalized, "logged in") {
 		return AuthInfo{Status: AuthAuthenticated}, true
+	}
+	return AuthInfo{}, false
+}
+
+func parseClaudeAuthMarkerFile(path string) (AuthInfo, bool) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return AuthInfo{}, false
+	}
+	return parseClaudeAuthMarkerContent(content)
+}
+
+func parseClaudeAuthMarkerContent(content []byte) (AuthInfo, bool) {
+	content = bytes.TrimSpace(content)
+	if len(content) == 0 {
+		return AuthInfo{}, false
+	}
+	var payload struct {
+		AccountLabel string `json:"accountLabel"`
+		AuthMethod   string `json:"authMethod"`
+		Email        string `json:"email"`
+		LoggedIn     *bool  `json:"loggedIn"`
+		UserID       string `json:"userID"`
+	}
+	if err := json.Unmarshal(content, &payload); err != nil {
+		return AuthInfo{}, false
+	}
+	if payload.LoggedIn != nil {
+		if *payload.LoggedIn {
+			return AuthInfo{
+				AccountLabel: firstNonBlank(payload.AccountLabel, payload.Email, payload.AuthMethod, payload.UserID),
+				Status:       AuthAuthenticated,
+			}, true
+		}
+		return AuthInfo{Status: AuthRequired}, true
+	}
+	if strings.TrimSpace(payload.UserID) != "" {
+		return AuthInfo{
+			AccountLabel: strings.TrimSpace(payload.UserID),
+			Status:       AuthAuthenticated,
+		}, true
 	}
 	return AuthInfo{}, false
 }

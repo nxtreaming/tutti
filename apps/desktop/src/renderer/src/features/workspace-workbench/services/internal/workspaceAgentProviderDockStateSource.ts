@@ -1,7 +1,4 @@
-import type {
-  WorkbenchHostDockEntry,
-  WorkbenchHostDockEntryStateSource
-} from "@tutti-os/workbench-surface";
+import type { WorkbenchHostDockEntryStateSource } from "@tutti-os/workbench-surface";
 import type { AgentProviderStatus } from "@tutti-os/client-tuttid-ts";
 import type {
   AgentProviderStatusService,
@@ -47,49 +44,45 @@ export function createWorkspaceAgentProviderDockStateSource(input: {
       }
       const snapshot = input.agentProviderStatusService.getSnapshot();
       const status = input.agentProviderStatusService.getStatus(provider);
-      const state = resolveLaunchableDefaultAgentProviderSetupState(
-        provider,
-        status,
-        resolveAgentProviderDockStatusProps({
-          copy: {
-            checking: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.checking
-            ),
-            install: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.install
-            ),
-            installing: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.installing
-            ),
-            installRequired: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.installRequired
-            ),
-            login: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.login
-            ),
-            loginRequired: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.loginRequired
-            ),
-            refresh: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.refresh
-            ),
-            unsupported: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.comingSoon
-            ),
-            unknown: input.i18n.t(
-              workspaceWorkbenchDesktopI18nKeys.agentProviders.unknown
-            )
-          },
-          isLoading: snapshot.isLoading,
-          pendingActionIds: new Set(
-            snapshot.pendingActions
-              .filter((action) => action.provider === provider)
-              .map((action) => action.actionId)
+      const state = resolveAgentProviderDockStatusProps({
+        copy: {
+          checking: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.checking
           ),
-          order: resolveAgentProviderDockOrder(provider, status),
-          status
-        })
-      );
+          install: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.install
+          ),
+          installing: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.installing
+          ),
+          installRequired: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.installRequired
+          ),
+          login: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.login
+          ),
+          loginRequired: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.loginRequired
+          ),
+          refresh: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.refresh
+          ),
+          unsupported: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.comingSoon
+          ),
+          unknown: input.i18n.t(
+            workspaceWorkbenchDesktopI18nKeys.agentProviders.unknown
+          )
+        },
+        isLoading: snapshot.isLoading,
+        pendingActionIds: new Set(
+          snapshot.pendingActions
+            .filter((action) => action.provider === provider)
+            .map((action) => action.actionId)
+        ),
+        order: resolveAgentProviderDockOrder(provider, status),
+        status
+      });
       return {
         ...state,
         diagnostics: createAgentProviderDockDiagnostics({
@@ -150,29 +143,6 @@ function createAgentProviderDockDiagnostics(input: {
     pendingActionIds: input.pendingActionIds,
     provider: input.provider,
     snapshotError: input.snapshotError
-  };
-}
-
-function resolveLaunchableDefaultAgentProviderSetupState(
-  provider: WorkspaceAgentGuiProvider,
-  status: AgentProviderStatus | null,
-  state: Pick<WorkbenchHostDockEntry, "hoverActions" | "order" | "state">
-): Pick<WorkbenchHostDockEntry, "hoverActions" | "order" | "state"> {
-  if (
-    !isWorkspaceAgentGuiDefaultDockProvider(provider) ||
-    (status?.availability.status !== "not_installed" &&
-      status?.availability.status !== "auth_required") ||
-    state.state?.kind !== "disabled"
-  ) {
-    return state;
-  }
-
-  return {
-    ...state,
-    state: {
-      ...state.state,
-      kind: "enabled"
-    }
   };
 }
 

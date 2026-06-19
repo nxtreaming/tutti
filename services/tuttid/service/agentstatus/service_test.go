@@ -1164,6 +1164,68 @@ func TestServiceListRetriesClaudeAuthStatusCommandWhenOutputIsUnrecognized(t *te
 	}
 }
 
+func TestServiceListFallsBackToClaudeAuthMarkerWhenAuthStatusCommandIsUnrecognized(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".nvm", "versions", "node", "v24.12.0", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin dir: %v", err)
+	}
+	claudePath := filepath.Join(binDir, "claude")
+	writeExecutable(t, claudePath, "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, filepath.Join(binDir, "claude-agent-acp"), "#!/bin/sh\nexit 0\n")
+	writePackageManifest(t, binDir, "@agentclientprotocol/claude-agent-acp", "0.46.0")
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"userID":"user_123"}`), 0o600); err != nil {
+		t.Fatalf("write claude marker: %v", err)
+	}
+	registryStore, prefixDir := fakeClaudeExternalRegistry(t)
+	runtimeRoot := fakeManagedRuntimeRoot(t)
+	packageDir := npmPackageInstallDir(prefixDir, "@agentclientprotocol/claude-agent-acp")
+	if err := os.MkdirAll(packageDir, 0o755); err != nil {
+		t.Fatalf("mkdir package dir: %v", err)
+	}
+	writePackageManifest(t, packageDir, "@agentclientprotocol/claude-agent-acp", "0.46.0")
+
+	service := Service{
+		Environ: func() []string {
+			return []string{"PATH=/usr/bin:/bin"}
+		},
+		HomeDir: func() (string, error) {
+			return home, nil
+		},
+		LookPath: func(_ string) (string, error) {
+			return "", errors.New("not found")
+		},
+		Now: func() time.Time {
+			return time.Date(2026, 6, 2, 8, 0, 0, 0, time.UTC)
+		},
+		AuthStatusCommandRetryDelay: time.Nanosecond,
+		RunAuthStatusCommand: func(_ context.Context, spec ProviderSpec, binaryPath string) (AuthInfo, bool) {
+			if spec.Provider != "claude-code" {
+				t.Fatalf("auth status provider = %q, want claude-code", spec.Provider)
+			}
+			if binaryPath != claudePath {
+				t.Fatalf("auth status binaryPath = %q, want %q", binaryPath, claudePath)
+			}
+			return AuthInfo{}, false
+		},
+		ExternalAgentRegistry: registryStore,
+		ManagedRuntime:        fakeManagedRuntimeResolver(t, runtimeRoot),
+	}
+
+	snapshot, err := service.List(context.Background(), ListInput{Providers: []string{"claude-code"}})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	status := onlyStatus(t, snapshot)
+	if status.Availability.Status != AvailabilityReady {
+		t.Fatalf("Availability.Status = %q, want %q", status.Availability.Status, AvailabilityReady)
+	}
+	if status.Auth.Status != AuthAuthenticated {
+		t.Fatalf("Auth.Status = %q, want %q", status.Auth.Status, AuthAuthenticated)
+	}
+}
+
 func TestParseClaudeAuthStatusOutputReportsAuthenticated(t *testing.T) {
 	auth, ok := parseClaudeAuthStatusOutput([]byte(`{"loggedIn":true,"authMethod":"oauth"}`))
 	if !ok {
@@ -1174,6 +1236,32 @@ func TestParseClaudeAuthStatusOutputReportsAuthenticated(t *testing.T) {
 	}
 	if auth.AccountLabel != "oauth" {
 		t.Fatalf("AccountLabel = %q, want oauth", auth.AccountLabel)
+	}
+}
+
+func TestParseClaudeAuthMarkerContentReportsAuthenticated(t *testing.T) {
+	auth, ok := parseClaudeAuthMarkerContent([]byte(`{"loggedIn":true,"email":"dev@example.com"}`))
+	if !ok {
+		t.Fatal("parseClaudeAuthMarkerContent ok = false, want true")
+	}
+	if auth.Status != AuthAuthenticated {
+		t.Fatalf("Status = %q, want %q", auth.Status, AuthAuthenticated)
+	}
+	if auth.AccountLabel != "dev@example.com" {
+		t.Fatalf("AccountLabel = %q, want dev@example.com", auth.AccountLabel)
+	}
+}
+
+func TestParseClaudeAuthMarkerContentUsesUserIDFallback(t *testing.T) {
+	auth, ok := parseClaudeAuthMarkerContent([]byte(`{"userID":"user_123"}`))
+	if !ok {
+		t.Fatal("parseClaudeAuthMarkerContent ok = false, want true")
+	}
+	if auth.Status != AuthAuthenticated {
+		t.Fatalf("Status = %q, want %q", auth.Status, AuthAuthenticated)
+	}
+	if auth.AccountLabel != "user_123" {
+		t.Fatalf("AccountLabel = %q, want user_123", auth.AccountLabel)
 	}
 }
 

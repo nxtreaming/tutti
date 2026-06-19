@@ -62,6 +62,33 @@ test("agent provider dock status only shows install for not installed providers"
   assert.deepEqual(props.hoverActions, [{ id: "install", label: "install" }]);
 });
 
+test("agent provider dock status shows loading while install is pending", () => {
+  const props = resolveAgentProviderDockStatusProps({
+    copy,
+    isLoading: false,
+    pendingActionIds: new Set(["install"]),
+    status: createStatus({
+      actions: [{ id: "install", kind: "daemon_action" }],
+      availability: "not_installed"
+    })
+  });
+
+  assert.deepEqual(props, {
+    hoverActions: [
+      {
+        disabled: true,
+        id: "install",
+        label: "install",
+        pendingLabel: "installing"
+      }
+    ],
+    state: {
+      kind: "loading",
+      reason: "installing"
+    }
+  });
+});
+
 test("agent provider dock status shows login reason with login and refresh actions for auth required providers", () => {
   const props = resolveAgentProviderDockStatusProps({
     copy,

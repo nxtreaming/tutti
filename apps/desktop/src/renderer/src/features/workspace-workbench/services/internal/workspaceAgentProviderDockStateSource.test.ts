@@ -47,7 +47,7 @@ test("agent provider dock state source resolves dynamic login state", () => {
       }),
       order: 0,
       state: {
-        kind: "enabled",
+        kind: "disabled",
         reason: "login"
       },
       visibility: "always"
@@ -124,7 +124,7 @@ test("agent provider dock state source reads latest service snapshot without rec
       }),
       order: 100,
       state: {
-        kind: "enabled",
+        kind: "disabled",
         reason: "install required"
       },
       visibility: "always"
@@ -162,8 +162,54 @@ test("agent provider dock state source reads latest service snapshot without rec
       }),
       order: 0,
       state: {
-        kind: "enabled",
+        kind: "disabled",
         reason: "login"
+      },
+      visibility: "always"
+    }
+  );
+});
+
+test("agent provider dock state source shows install pending as loading", () => {
+  const service = createAgentProviderStatusService({
+    pendingActions: [{ actionId: "install", provider: "claude-code" }],
+    statuses: [
+      createStatus({
+        actions: [{ id: "install", kind: "daemon_action" }],
+        availability: "not_installed",
+        provider: "claude-code"
+      })
+    ]
+  });
+  const source = createWorkspaceAgentProviderDockStateSource({
+    agentProviderStatusService: service,
+    i18n: createI18n()
+  });
+
+  assert.deepEqual(
+    source.getEntryState(workspaceAgentGuiDockEntryId("claude-code")),
+    {
+      hoverActions: [
+        {
+          disabled: true,
+          id: "install",
+          label: "install",
+          pendingLabel: "installing"
+        }
+      ],
+      diagnostics: createExpectedDiagnostics({
+        actions: [{ id: "install", kind: "daemon_action" }],
+        adapterInstalled: false,
+        authStatus: "unknown",
+        availability: "not_installed",
+        cliInstalled: false,
+        pendingActionIds: ["install"],
+        provider: "claude-code"
+      }),
+      order: 100,
+      state: {
+        kind: "loading",
+        reason: "installing"
       },
       visibility: "always"
     }
@@ -394,6 +440,10 @@ test("agent provider dock state source hides Nexight until ready", () => {
 });
 
 function createAgentProviderStatusService(input: {
+  pendingActions?: Array<{
+    actionId: string;
+    provider: AgentProviderStatus["provider"];
+  }>;
   statuses: AgentProviderStatus[];
 }): AgentProviderStatusService & {
   emit(): void;
@@ -414,7 +464,7 @@ function createAgentProviderStatusService(input: {
       defaultProvider: null,
       error: null,
       isLoading: false,
-      pendingActions: [],
+      pendingActions: input.pendingActions ?? [],
       statuses
     }),
     getStatus: (provider) =>
@@ -496,6 +546,7 @@ function createExpectedDiagnostics(input: {
   authStatus: string;
   availability: string;
   cliInstalled: boolean;
+  pendingActionIds?: string[];
   provider: AgentProviderStatus["provider"];
 }): Record<string, unknown> {
   return {
@@ -507,7 +558,7 @@ function createExpectedDiagnostics(input: {
     isDefaultDockProvider:
       input.provider === "claude-code" || input.provider === "codex",
     isLoading: false,
-    pendingActionIds: [],
+    pendingActionIds: input.pendingActionIds ?? [],
     provider: input.provider,
     snapshotError: null
   };

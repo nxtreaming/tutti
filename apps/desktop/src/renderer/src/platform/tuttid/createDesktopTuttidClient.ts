@@ -341,6 +341,12 @@ export function createDesktopTuttidClient(
         request
       );
     },
+    async listWorkspaceAgentGeneratedFiles(workspaceID, request) {
+      return (await resolveClient()).listWorkspaceAgentGeneratedFiles(
+        workspaceID,
+        request
+      );
+    },
     async listUserProjects() {
       return (await resolveClient()).listUserProjects();
     },

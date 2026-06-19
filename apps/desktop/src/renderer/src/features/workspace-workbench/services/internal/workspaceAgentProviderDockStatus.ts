@@ -56,6 +56,7 @@ export function resolveAgentProviderDockStatusProps(input: {
         }
       };
     case "not_installed":
+      const isInstallPending = input.pendingActionIds?.has("install") === true;
       return {
         hoverActions: agentProviderDockActions(
           input.status.actions,
@@ -65,8 +66,10 @@ export function resolveAgentProviderDockStatusProps(input: {
         ),
         ...dockOrderProp(input.order),
         state: {
-          kind: "disabled",
-          reason: input.copy.installRequired
+          kind: isInstallPending ? "loading" : "disabled",
+          reason: isInstallPending
+            ? input.copy.installing
+            : input.copy.installRequired
         }
       };
     case "auth_required":

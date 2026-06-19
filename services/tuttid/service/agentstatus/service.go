@@ -176,7 +176,7 @@ type Service struct {
 	ManagedRuntime              managedruntime.Resolver
 }
 
-const authStatusCommandTimeout = 3 * time.Second
+const authStatusCommandTimeout = 5 * time.Second
 const authStatusCommandAttempts = 2
 const defaultAuthStatusCommandRetryDelay = 150 * time.Millisecond
 const defaultInstallTimeout = 5 * time.Minute
