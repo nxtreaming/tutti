@@ -43,5 +43,5 @@
   - `node --import ./apps/desktop/test/register-asset-stub.mjs --test --experimental-strip-types ./apps/desktop/src/renderer/src/features/workspace-workbench/services/internal/workspaceAgentProviderDockStateSource.test.ts`
   - `pnpm --filter @tutti-os/desktop typecheck`
 - Status: fixed locally
-- Commit: pending
-- Feishu status update: pending
+- Commit: `55d04f80`
+- Feishu status update: set to `已修复待打包`.
