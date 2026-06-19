@@ -481,7 +481,6 @@ export const zhCN = {
       usageTokensLabel: "Token 用量",
       usageLimitsLabel: "限额",
       usageCompactAction: "压缩",
-      usageCompactTooltip: "压缩会话上下文（/compact）",
       usageAlertWarnMessage: "上下文已使用 {{percent}}%，建议压缩会话。",
       usageAlertCriticalMessage:
         "上下文已使用 {{percent}}%，请立即压缩以继续会话。",
@@ -805,6 +804,7 @@ export const zhCN = {
         selectGroupHint: "从左侧选择一个目录",
         selectedCount: "已选择 {{count}} 项",
         title: "选择工作区引用",
+        sourceColumn: "分类",
         workspaceRootGroup: "工作区"
       },
       projectLocked: "会话开始后项目不可更改",

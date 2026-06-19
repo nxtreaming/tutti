@@ -524,7 +524,6 @@ export const en = {
       usageTokensLabel: "Tokens",
       usageLimitsLabel: "Limits",
       usageCompactAction: "Compact",
-      usageCompactTooltip: "Compact the conversation context (/compact)",
       usageAlertWarnMessage:
         "Context is {{percent}}% full. Consider compacting the conversation.",
       usageAlertCriticalMessage:
@@ -871,6 +870,7 @@ export const en = {
         searchPlaceholder: "Search files and folders",
         selectGroupHint: "Select a folder on the left",
         selectedCount: "{{count}} selected",
+        sourceColumn: "Category",
         title: "Pick workspace references",
         workspaceRootGroup: "Workspace"
       },
