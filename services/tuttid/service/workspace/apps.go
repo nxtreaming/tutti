@@ -503,7 +503,7 @@ func (s *AppCenterService) startRuntimePreload() {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		if err := runner.PreloadRuntime(ctx); err != nil {
+		if err := runner.PreloadRuntimeForProfile(ctx, workspaceAppNodeRuntimePreloadProfile); err != nil {
 			slog.Warn("workspace app runtime preload failed", "error", err)
 		}
 	}()
