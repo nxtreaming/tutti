@@ -23,6 +23,7 @@ type AppCenterService struct {
 	AppFactoryStore       workspacedata.AppFactoryStore
 	WorkspaceRootResolver WorkspaceRootResolver
 	WorkspaceStore        workspacedata.CatalogStore
+	PreferencesStore      workspacedata.PreferencesStore
 	Runner                *AppRunner
 	AppCLIRegistry        *appcliservice.Registry
 	StateDir              string
@@ -87,7 +88,7 @@ func (s *AppCenterService) InitBuiltinPackages(ctx context.Context) error {
 		return errors.New("workspace app store is not configured")
 	}
 
-	builtins, err := s.builtinCatalog()
+	builtins, err := s.builtinCatalog(ctx)
 	if err != nil {
 		return err
 	}
@@ -126,7 +127,7 @@ func (s *AppCenterService) List(ctx context.Context, workspaceID string) ([]work
 		return nil, err
 	}
 
-	builtins, err := s.builtinCatalog()
+	builtins, err := s.builtinCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +160,7 @@ func (s *AppCenterService) RefreshCatalog(ctx context.Context, workspaceID strin
 		return nil, err
 	}
 	if s.BuiltinCatalog == nil {
-		if _, err := builtinapps.RefreshRemoteCatalogAndWait(ctx); err != nil {
+		if _, err := s.refreshBuiltinCatalogAndWait(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -185,18 +186,27 @@ func (s *AppCenterService) InstallWithOptions(ctx context.Context, workspaceID s
 	if err != nil {
 		return workspacebiz.WorkspaceApp{}, err
 	}
-	s.startInstallJob(workspaceID, appID, options, func(ctx context.Context) (workspacebiz.AppPackage, error) {
+	runtimeProfileHint := s.installRuntimeProfileHint(ctx, appID, app)
+	s.startInstallJob(workspaceID, appID, options, runtimeProfileHint, func(ctx context.Context) (workspacebiz.AppPackage, error) {
 		return s.packageForInstall(ctx, appID)
 	})
 	return app, nil
 }
 
-func (s *AppCenterService) startInstallJob(workspaceID string, appID string, options InstallOptions, resolvePackage appInstallPackageResolver) bool {
+func (s *AppCenterService) startInstallJob(workspaceID string, appID string, options InstallOptions, runtimeProfileHint string, resolvePackage appInstallPackageResolver) bool {
 	if !s.beginInstallJob(workspaceID, appID, options) {
 		return false
 	}
-	go s.runInstallJob(workspaceID, appID, resolvePackage)
+	go s.runInstallJob(workspaceID, appID, runtimeProfileHint, resolvePackage)
 	return true
+}
+
+func (s *AppCenterService) installRuntimeProfileHint(ctx context.Context, appID string, app workspacebiz.WorkspaceApp) string {
+	remoteBuiltin, ok, err := s.remoteBuiltinForAppID(ctx, appID)
+	if err == nil && ok && shouldUseRemoteBuiltin(app.Package, remoteBuiltin) {
+		return appRuntimeProfileForManifest(remoteBuiltin.Manifest)
+	}
+	return appRuntimeProfileForPackage(app.Package)
 }
 
 func (s *AppCenterService) installPackage(ctx context.Context, workspaceID string, appPackage workspacebiz.AppPackage, options InstallOptions) (workspacebiz.WorkspaceApp, error) {
@@ -234,7 +244,7 @@ func (s *AppCenterService) installPackage(ctx context.Context, workspaceID strin
 	return s.publishAppIfChanged(ctx, workspaceID, appPackage.AppID, app), nil
 }
 
-func (s *AppCenterService) runInstallJob(workspaceID string, appID string, resolvePackage appInstallPackageResolver) {
+func (s *AppCenterService) runInstallJob(workspaceID string, appID string, runtimeProfileHint string, resolvePackage appInstallPackageResolver) {
 	startedAt := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -247,11 +257,7 @@ func (s *AppCenterService) runInstallJob(workspaceID string, appID string, resol
 		tracker.clear()
 	}()
 
-	var (
-		appPackage workspacebiz.AppPackage
-		packageErr error
-		runtimeErr error
-	)
+	var appPackage workspacebiz.AppPackage
 	type installJobResult struct {
 		appPackage workspacebiz.AppPackage
 		err        error
@@ -274,7 +280,12 @@ func (s *AppCenterService) runInstallJob(workspaceID string, appID string, resol
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := s.runner().PreloadRuntime(tracker.runtimeProgressContext(ctx))
+		var err error
+		if strings.TrimSpace(runtimeProfileHint) == workspaceAppNodeRuntimePreloadProfile {
+			err = s.runner().PreloadRuntimeForProfile(tracker.runtimeProgressContext(ctx), workspaceAppNodeRuntimePreloadProfile)
+		} else {
+			err = s.runner().PreloadRuntime(tracker.runtimeProgressContext(ctx))
+		}
 		results <- installJobResult{
 			err:  err,
 			kind: "runtime",
@@ -285,9 +296,6 @@ func (s *AppCenterService) runInstallJob(workspaceID string, appID string, resol
 		result := <-results
 		if result.kind == "package" {
 			appPackage = result.appPackage
-			packageErr = result.err
-		} else {
-			runtimeErr = result.err
 		}
 		if result.err != nil {
 			cancel()
@@ -297,13 +305,8 @@ func (s *AppCenterService) runInstallJob(workspaceID string, appID string, resol
 		}
 	}
 	wg.Wait()
-
-	if packageErr != nil {
-		s.handleInstallJobFailure(ctx, workspaceID, appID, appPackage, packageErr, startedAt)
-		return
-	}
-	if runtimeErr != nil {
-		s.handleInstallJobFailure(ctx, workspaceID, appID, appPackage, runtimeErr, startedAt)
+	if err := ctx.Err(); err != nil {
+		s.handleInstallJobFailure(ctx, workspaceID, appID, appPackage, err, startedAt)
 		return
 	}
 
@@ -337,7 +340,7 @@ func (s *AppCenterService) packageForInstall(ctx context.Context, appID string) 
 		}
 		return s.materializeRemoteBuiltinPackage(ctx, appID)
 	}
-	remoteBuiltin, ok, err := s.remoteBuiltinForAppID(appID)
+	remoteBuiltin, ok, err := s.remoteBuiltinForAppID(ctx, appID)
 	if err != nil {
 		return appPackage, nil
 	}
@@ -496,6 +499,8 @@ func (s *AppCenterService) startRuntimePreload() {
 	s.mu.Unlock()
 
 	go func() {
+		startedAt := time.Now()
+		slog.Info("workspace app runtime preload started", "profile", workspaceAppNodeRuntimePreloadProfile)
 		defer func() {
 			s.mu.Lock()
 			s.runtimePreloadInFlight = false
@@ -503,9 +508,11 @@ func (s *AppCenterService) startRuntimePreload() {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		if err := runner.PreloadRuntime(ctx); err != nil {
-			slog.Warn("workspace app runtime preload failed", "error", err)
+		if err := runner.PreloadRuntimeForProfile(ctx, workspaceAppNodeRuntimePreloadProfile); err != nil {
+			slog.Warn("workspace app runtime preload failed", "profile", workspaceAppNodeRuntimePreloadProfile, "durationMs", time.Since(startedAt).Milliseconds(), "error", err)
+			return
 		}
+		slog.Info("workspace app runtime preload completed", "profile", workspaceAppNodeRuntimePreloadProfile, "durationMs", time.Since(startedAt).Milliseconds())
 	}()
 }
 
@@ -590,7 +597,7 @@ func (s *AppCenterService) withCurrentRevision(app workspacebiz.WorkspaceApp, wo
 }
 
 func (s *AppCenterService) materializeRemoteBuiltinPackage(ctx context.Context, appID string) (workspacebiz.AppPackage, error) {
-	builtins, err := s.builtinCatalog()
+	builtins, err := s.builtinCatalog(ctx)
 	if err != nil {
 		return workspacebiz.AppPackage{}, err
 	}
@@ -603,8 +610,8 @@ func (s *AppCenterService) materializeRemoteBuiltinPackage(ctx context.Context, 
 	return workspacebiz.AppPackage{}, workspacedata.ErrWorkspaceAppNotFound
 }
 
-func (s *AppCenterService) remoteBuiltinForAppID(appID string) (builtinapps.App, bool, error) {
-	builtins, err := s.builtinCatalog()
+func (s *AppCenterService) remoteBuiltinForAppID(ctx context.Context, appID string) (builtinapps.App, bool, error) {
+	builtins, err := s.builtinCatalog(ctx)
 	if err != nil {
 		return builtinapps.App{}, false, err
 	}
@@ -626,7 +633,7 @@ func (s *AppCenterService) remoteBuiltinWorkspaceApp(builtin builtinapps.App, wo
 
 func (s *AppCenterService) workspaceAppProjectionForInstall(ctx context.Context, workspaceID string, appID string) (workspacebiz.WorkspaceApp, error) {
 	appPackage, packageErr := s.Store.GetAppPackage(ctx, appID)
-	remoteBuiltin, hasRemoteBuiltin, remoteErr := s.remoteBuiltinForAppID(appID)
+	remoteBuiltin, hasRemoteBuiltin, remoteErr := s.remoteBuiltinForAppID(ctx, appID)
 	if packageErr != nil {
 		if !errors.Is(packageErr, workspacedata.ErrWorkspaceAppNotFound) {
 			return workspacebiz.WorkspaceApp{}, packageErr

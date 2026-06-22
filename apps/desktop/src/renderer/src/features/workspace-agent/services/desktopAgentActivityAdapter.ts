@@ -1,5 +1,6 @@
 import type {
   AgentActivityAdapter,
+  AgentActivityComposerCapabilityOption,
   AgentActivityComposerOptions,
   AgentActivityComposerPermissionConfig,
   AgentActivityComposerSettingOption,
@@ -24,6 +25,9 @@ export function createDesktopAgentActivityAdapter({
   tuttidClient,
   runtimeApi
 }: CreateDesktopAgentActivityAdapterInput): AgentActivityAdapter {
+  // At most one pre-warm draft per workspace. Switching plan/permission/model
+  // updates this draft in place via the ACP protocol instead of tearing it
+  // down and creating a brand new hidden session on every toggle.
   const claudeDrafts = new Map<string, ClaudeDraftSessionEntry>();
 
   const deleteClaudeDraft = (entry: ClaudeDraftSessionEntry): void => {
@@ -31,7 +35,9 @@ export function createDesktopAgentActivityAdapter({
       return;
     }
     entry.status = "disposed";
-    claudeDrafts.delete(entry.key);
+    if (claudeDrafts.get(entry.workspaceId) === entry) {
+      claudeDrafts.delete(entry.workspaceId);
+    }
     void entry.promise
       .then((session) =>
         tuttidClient.deleteWorkspaceAgentSession(entry.workspaceId, session.id)
@@ -39,28 +45,17 @@ export function createDesktopAgentActivityAdapter({
       .catch(() => undefined);
   };
 
-  const ensureClaudeDraft = (
-    input: ClaudeDraftInput
+  const createClaudeDraft = (
+    input: ClaudeDraftInput,
+    cwd: string | null,
+    settingsKey: string
   ): Promise<WorkspaceAgentSession> => {
-    const key = claudeDraftKey(input);
-    const existing = claudeDrafts.get(key);
-    if (
-      existing &&
-      existing.status !== "disposed" &&
-      existing.status !== "failed"
-    ) {
-      return existing.promise;
-    }
-    for (const entry of claudeDrafts.values()) {
-      if (entry.workspaceId === input.workspaceId && entry.key !== key) {
-        deleteClaudeDraft(entry);
-      }
-    }
+    const draftKey = claudeDraftKey({ ...input, cwd });
     const agentSessionId = createDesktopAgentActivitySessionId();
     const promise = tuttidClient
       .createWorkspaceAgentSession(input.workspaceId, {
         agentSessionId,
-        cwd: input.cwd ?? null,
+        cwd,
         initialContent: [],
         model: input.settings.model,
         permissionModeId: input.settings.permissionModeId,
@@ -71,15 +66,16 @@ export function createDesktopAgentActivityAdapter({
         title: null,
         visible: false
       })
-      .then((session) => sessionWithClaudeDraftContext(session, key));
+      .then((session) => sessionWithClaudeDraftContext(session, draftKey));
     const entry: ClaudeDraftSessionEntry = {
-      key,
+      cwd,
       promise,
       sessionId: agentSessionId,
+      settingsKey,
       status: "starting",
       workspaceId: input.workspaceId
     };
-    claudeDrafts.set(key, entry);
+    claudeDrafts.set(input.workspaceId, entry);
     void promise.then(
       (session) => {
         if (entry.status === "starting") {
@@ -89,10 +85,64 @@ export function createDesktopAgentActivityAdapter({
       },
       () => {
         entry.status = "failed";
-        claudeDrafts.delete(key);
+        if (claudeDrafts.get(input.workspaceId) === entry) {
+          claudeDrafts.delete(input.workspaceId);
+        }
       }
     );
     return promise;
+  };
+
+  const ensureClaudeDraft = (
+    input: ClaudeDraftInput
+  ): Promise<WorkspaceAgentSession> => {
+    const cwd = input.cwd ?? null;
+    const settingsKey = JSON.stringify(input.settings);
+    const existing = claudeDrafts.get(input.workspaceId);
+    if (
+      existing &&
+      existing.status !== "disposed" &&
+      existing.status !== "failed" &&
+      existing.cwd === cwd
+    ) {
+      if (existing.settingsKey === settingsKey) {
+        return existing.promise;
+      }
+      // Settings changed (e.g. plan/permission mode toggled): patch the live
+      // draft in place rather than recreating a session. The returned session
+      // carries the refreshed permissionConfig/runtimeContext.
+      const draftKey = claudeDraftKey({ ...input, cwd });
+      existing.settingsKey = settingsKey;
+      const updated = existing.promise.then((session) =>
+        tuttidClient
+          .updateWorkspaceAgentSessionSettings(input.workspaceId, session.id, {
+            model: input.settings.model,
+            permissionModeId: input.settings.permissionModeId,
+            planMode: input.settings.planMode,
+            reasoningEffort: input.settings.reasoningEffort,
+            speed: input.settings.speed
+          })
+          .then((next) => sessionWithClaudeDraftContext(next, draftKey))
+      );
+      existing.promise = updated;
+      void updated.then(
+        (session) => {
+          if (existing.status === "starting" || existing.status === "ready") {
+            existing.status = "ready";
+            existing.sessionId = session.id;
+          }
+        },
+        () => {
+          // Keep the existing draft if the in-place update fails; the final
+          // settings are applied again when the draft is promoted on send.
+        }
+      );
+      return updated;
+    }
+    if (existing) {
+      deleteClaudeDraft(existing);
+    }
+    return createClaudeDraft(input, cwd, settingsKey);
   };
 
   const promoteClaudeDraft = async (
@@ -107,18 +157,17 @@ export function createDesktopAgentActivityAdapter({
     ) {
       return null;
     }
-    const entry = [...claudeDrafts.values()].find(
-      (draft) =>
-        draft.workspaceId === input.workspaceId &&
-        draft.sessionId === agentSessionId &&
-        draft.status !== "disposed" &&
-        draft.status !== "failed"
-    );
-    if (!entry) {
+    const entry = claudeDrafts.get(input.workspaceId);
+    if (
+      !entry ||
+      entry.sessionId !== agentSessionId ||
+      isDeadDraftStatus(entry.status)
+    ) {
       return null;
     }
+    // entry.status can flip to "failed" while awaiting the create promise.
     await entry.promise;
-    if (entry.status === "disposed" || entry.status === "failed") {
+    if (isDeadDraftStatus(entry.status)) {
       return null;
     }
     await tuttidClient.updateWorkspaceAgentSessionVisibility(
@@ -127,7 +176,9 @@ export function createDesktopAgentActivityAdapter({
       { visible: true }
     );
     entry.status = "promoted";
-    claudeDrafts.delete(entry.key);
+    if (claudeDrafts.get(input.workspaceId) === entry) {
+      claudeDrafts.delete(input.workspaceId);
+    }
     const session = await tuttidClient.sendWorkspaceAgentSessionInput(
       input.workspaceId,
       agentSessionId,
@@ -312,7 +363,8 @@ interface ClaudeDraftInput {
 }
 
 interface ClaudeDraftSessionEntry {
-  key: string;
+  cwd: string | null;
+  settingsKey: string;
   promise: Promise<WorkspaceAgentSession>;
   sessionId: string;
   status: ClaudeDraftStatus;
@@ -338,6 +390,10 @@ function normalizedClaudeDraftSettings(
     reasoningEffort: normalizeText(settings?.reasoningEffort) ?? null,
     speed: normalizeText(settings?.speed) ?? null
   };
+}
+
+function isDeadDraftStatus(status: ClaudeDraftStatus): boolean {
+  return status === "disposed" || status === "failed";
 }
 
 function claudeDraftKey(input: ClaudeDraftInput): string {
@@ -468,6 +524,16 @@ export function agentActivityComposerOptionsFromTuttidResult(
   );
   const skillsFromResult = skillOptionsFromValue(result.skills);
   const skillsFromRuntimeContext = skillOptionsFromValue(runtimeContext.skills);
+  const capabilitiesFromResult = capabilityOptionsFromValue(
+    result.capabilityCatalog
+  );
+  const capabilitiesFromRuntimeContext = capabilityOptionsFromValue(
+    runtimeContext.capabilityCatalog
+  );
+  const capabilityCatalog =
+    capabilitiesFromResult.length > 0
+      ? capabilitiesFromResult
+      : capabilitiesFromRuntimeContext;
   return {
     provider: normalizeText(result.provider) ?? provider,
     models:
@@ -494,6 +560,7 @@ export function agentActivityComposerOptionsFromTuttidResult(
     runtimeContext,
     skills:
       skillsFromResult.length > 0 ? skillsFromResult : skillsFromRuntimeContext,
+    capabilityCatalog,
     loadedAtUnixMs: Date.now()
   };
 }
@@ -644,12 +711,16 @@ function skillOptionsFromValue(
     seen.add(trigger);
     const description = normalizeText(record.description);
     const pluginName = normalizeText(record.pluginName);
+    const path = normalizeText(record.path);
+    const kind = normalizeSkillKind(record.kind);
     options.push({
       name,
       trigger,
       sourceKind,
       ...(description ? { description } : {}),
-      ...(pluginName ? { pluginName } : {})
+      ...(pluginName ? { pluginName } : {}),
+      ...(path ? { path } : {}),
+      ...(kind ? { kind } : {})
     });
   }
   return options;
@@ -666,6 +737,120 @@ function normalizeSkillSourceKind(
     case "plugin":
     case "system":
     case "tutti-injected":
+    case "connector":
+      return normalized;
+    default:
+      return null;
+  }
+}
+
+function normalizeSkillKind(
+  value: unknown
+): AgentActivityComposerSkillOption["kind"] | null {
+  const normalized = normalizeText(value);
+  switch (normalized) {
+    case "skill":
+    case "connector":
+      return normalized;
+    default:
+      return null;
+  }
+}
+
+function capabilityOptionsFromValue(
+  value: unknown
+): AgentActivityComposerCapabilityOption[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const options: AgentActivityComposerCapabilityOption[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const record = recordValue(item);
+    const id = normalizeText(record.id);
+    const kind = normalizeCapabilityKind(record.kind);
+    const name = normalizeText(record.name);
+    const label = normalizeText(record.label) ?? name;
+    const status = normalizeCapabilityStatus(record.status);
+    const invocation = normalizeCapabilityInvocation(record.invocation);
+    if (
+      !id ||
+      !kind ||
+      !name ||
+      !label ||
+      !status ||
+      !invocation ||
+      seen.has(id)
+    ) {
+      continue;
+    }
+    seen.add(id);
+    const description = normalizeText(record.description);
+    const source = normalizeText(record.source);
+    const pluginName = normalizeText(record.pluginName);
+    const serverName = normalizeText(record.serverName);
+    const toolName = normalizeText(record.toolName);
+    const trigger = normalizeText(record.trigger);
+    const path = normalizeText(record.path);
+    options.push({
+      id,
+      kind,
+      name,
+      label,
+      status,
+      invocation,
+      ...(description ? { description } : {}),
+      ...(source ? { source } : {}),
+      ...(pluginName ? { pluginName } : {}),
+      ...(serverName ? { serverName } : {}),
+      ...(toolName ? { toolName } : {}),
+      ...(trigger ? { trigger } : {}),
+      ...(path ? { path } : {})
+    });
+  }
+  return options;
+}
+
+function normalizeCapabilityKind(
+  value: unknown
+): AgentActivityComposerCapabilityOption["kind"] | null {
+  const normalized = normalizeText(value);
+  switch (normalized) {
+    case "skill":
+    case "plugin":
+    case "connector":
+    case "mcpServer":
+    case "mcpTool":
+      return normalized;
+    default:
+      return null;
+  }
+}
+
+function normalizeCapabilityStatus(
+  value: unknown
+): AgentActivityComposerCapabilityOption["status"] | null {
+  const normalized = normalizeText(value);
+  switch (normalized) {
+    case "available":
+    case "disabled":
+    case "authRequired":
+    case "setupRequired":
+    case "unsupported":
+      return normalized;
+    default:
+      return null;
+  }
+}
+
+function normalizeCapabilityInvocation(
+  value: unknown
+): AgentActivityComposerCapabilityOption["invocation"] | null {
+  const normalized = normalizeText(value);
+  switch (normalized) {
+    case "promptItem":
+    case "textTrigger":
+    case "none":
       return normalized;
     default:
       return null;

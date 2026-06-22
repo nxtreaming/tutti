@@ -544,7 +544,7 @@ export function AppCenterPanel({
       )}
     >
       {statusToast ? <AppCenterStatusToast toast={statusToast} /> : null}
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-6 pb-6 pt-5 [container-type:inline-size]">
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-6 pt-5 [container-type:inline-size]">
         <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <div className="flex h-8 min-w-0 items-center justify-between gap-3">
             <SectionTabs
@@ -1111,8 +1111,10 @@ function FactoryPermissionDropdown({
         aria-label={copy.t("factory.labels.review")}
         className={cn(
           "h-9 max-w-full rounded-[999px] border border-[color:var(--line-2)] bg-[var(--background-panel)] px-3 text-[13px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--transparency-block)] [&>svg:last-child]:opacity-70",
-          loading ? "animate-pulse" : null,
-          disabled
+          loading
+            ? "animate-pulse rounded-none border-transparent bg-transparent px-1 opacity-100 shadow-none hover:bg-transparent disabled:bg-transparent disabled:opacity-100"
+            : null,
+          disabled && !loading
             ? "cursor-not-allowed text-[var(--text-tertiary)] opacity-60 hover:bg-[var(--background-panel)]"
             : null,
           triggerClassName
@@ -1221,8 +1223,10 @@ function FactoryModelReasoningDropdown({
         aria-label={copy.t("factory.labels.modelReasoning")}
         className={cn(
           "h-9 max-w-full rounded-[999px] border border-[color:var(--line-2)] bg-[var(--background-panel)] px-3 text-[13px] font-medium text-[var(--text-primary)] shadow-none hover:bg-[var(--transparency-block)] [&>svg:last-child]:opacity-70",
-          loading ? "animate-pulse" : null,
-          disabled
+          loading
+            ? "animate-pulse rounded-none border-transparent bg-transparent px-1 opacity-100 shadow-none hover:bg-transparent disabled:bg-transparent disabled:opacity-100"
+            : null,
+          disabled && !loading
             ? "cursor-not-allowed text-[var(--text-tertiary)] opacity-60 hover:bg-[var(--background-panel)]"
             : null,
           triggerClassName
@@ -1402,14 +1406,17 @@ function AppCardGrid({
   }
 
   return (
-    <div
-      aria-label={title}
-      className="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-3 pb-6"
-      role="list"
-    >
-      {apps.map((app) => (
-        <AppCard actions={actions} app={app} copy={copy} key={app.id} />
-      ))}
+    <div className="flex min-w-0 shrink-0 flex-col">
+      <div
+        aria-label={title}
+        className="grid min-h-0 min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-3"
+        role="list"
+      >
+        {apps.map((app) => (
+          <AppCard actions={actions} app={app} copy={copy} key={app.id} />
+        ))}
+      </div>
+      <div aria-hidden="true" className="h-6 shrink-0" />
     </div>
   );
 }

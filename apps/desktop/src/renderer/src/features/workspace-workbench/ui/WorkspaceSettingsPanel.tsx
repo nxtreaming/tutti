@@ -7,7 +7,9 @@ import {
   useSyncExternalStore
 } from "react";
 import { createPortal } from "react-dom";
+import { useService } from "@tutti-os/infra/di";
 import type { WorkspaceSummary } from "@tutti-os/client-tuttid-ts";
+import { INotificationService } from "@tutti-os/ui-notifications";
 import type { DesktopComputerUseStatus } from "@shared/contracts/ipc";
 import {
   AddIcon,
@@ -17,10 +19,11 @@ import {
   CloseIcon,
   DeleteIcon,
   EyeIcon,
+  GitHubBrandIcon,
   ImportLinedIcon,
   Input,
-  LinkIcon,
   LoadingIcon,
+  OpenLinkLinedIcon,
   Select,
   SelectContent,
   SelectItem,
@@ -30,7 +33,8 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  UploadIcon
+  UploadIcon,
+  WebIcon
 } from "@tutti-os/ui-system";
 import { useAnalyticsDebugPreferenceService } from "@renderer/features/analytics-debug";
 import { useDesktopPreferencesService } from "@renderer/features/desktop-preferences/ui/useDesktopPreferencesService";
@@ -54,21 +58,20 @@ import {
 } from "../../../../../shared/i18n/index.ts";
 import {
   type DesktopAgentProvider,
+  desktopAppCatalogChannels,
   desktopBrowserUseConnectionModes,
   desktopDockPlacements,
   desktopFileDefaultOpeners,
   desktopSleepPreventionModes,
   normalizeDesktopFileExtension,
+  type DesktopAppCatalogChannel,
   type DesktopBrowserUseConnectionMode,
   type DesktopDockPlacement,
   type DesktopFileDefaultOpener,
   type DesktopFileDefaultOpenersByExtension,
   type DesktopSleepPreventionMode
 } from "../../../../../shared/preferences/index.ts";
-import {
-  resolveWorkspaceAgentGuiLabel,
-  workspaceAgentGuiProviders
-} from "../services/workspaceAgentProviderCatalog";
+import { resolveWorkspaceAgentGuiLabel } from "../services/workspaceAgentProviderCatalog";
 import {
   desktopThemeSources,
   type DesktopThemeAppearance,
@@ -97,9 +100,28 @@ const workspaceSettingsSelectContentClass =
   "w-[var(--radix-select-trigger-width)] rounded-[8px] border border-[var(--border-1)] bg-[var(--background-fronted)] px-1 text-[var(--text-primary)] shadow-[0_16px_40px_var(--shadow-elevated)] [--tutti-select-content-min-width:100%] !outline-none !ring-0";
 const workspaceSettingsInputClass =
   "h-8 w-full rounded-[6px] border border-[var(--border-1)] bg-[var(--transparency-block)] px-3 text-[13px] text-[var(--text-primary)] outline-none transition-colors duration-150 placeholder:text-[var(--text-tertiary)] hover:bg-[var(--transparency-hover)] focus-visible:border-[var(--border-focus)]";
+const workspaceManagedModelInputClass = `${workspaceSettingsInputClass} focus-visible:!border-[var(--border-1)]`;
+const workspaceManagedModelProviderPrefixClass =
+  "flex h-8 items-center justify-end px-2 text-[11px] text-[var(--text-secondary)]";
 
 const developerPanelUnlockTaps = 7;
 const computerUseOperationSettleMs = 280;
+const tuttiWebsiteUrl = "https://tutti.sh/";
+const tuttiGitHubUrl = "https://github.com/tutti-os/tutti";
+const tuttiDesktopIconUrl = new URL(
+  "../../../../../../build/icon.png",
+  import.meta.url
+).href;
+const workspaceSettingsDefaultAgentProviders = [
+  "codex",
+  "claude-code"
+] as const satisfies readonly DesktopAgentProvider[];
+
+function isWorkspaceSettingsDefaultAgentProvider(
+  provider: DesktopAgentProvider
+): boolean {
+  return provider === "codex" || provider === "claude-code";
+}
 
 export function WorkspaceSettingsPanel({
   onOpenExternalAgentImport,
@@ -119,6 +141,7 @@ export function WorkspaceSettingsPanel({
   workspace: WorkspaceSummary;
 }) {
   const { t } = useTranslation();
+  const notifications = useService(INotificationService);
   const {
     service: analyticsDebugPreferenceService,
     state: analyticsDebugPreferenceState
@@ -144,7 +167,9 @@ export function WorkspaceSettingsPanel({
     if (versionTapCountRef.current >= developerPanelUnlockTaps) {
       versionTapCountRef.current = 0;
       settingsService.setDeveloperPanelVisible(true);
-      settingsService.selectSection("developer");
+      notifications.success({
+        title: t("workspace.settings.about.developerModeEnabled")
+      });
     }
   };
 
@@ -205,6 +230,10 @@ export function WorkspaceSettingsPanel({
               id: "apps" as const,
               label: t("workspace.settings.nav.apps")
             },
+            {
+              id: "about" as const,
+              label: t("workspace.settings.nav.about")
+            },
             ...(settingsState.developerPanelVisible
               ? [
                   {
@@ -254,7 +283,6 @@ export function WorkspaceSettingsPanel({
                 browserUseConnectionMode={
                   desktopPreferencesState.browserUseConnectionMode
                 }
-                developerLogs={settingsState.developerLogs}
                 focusedAnchor={settingsState.generalFocusAnchor}
                 focusRequestID={settingsState.generalFocusRequestID}
                 locale={desktopPreferencesState.locale}
@@ -271,7 +299,6 @@ export function WorkspaceSettingsPanel({
                 onSleepPreventionModeChange={(mode) => {
                   void settingsService.changeSleepPreventionMode(mode);
                 }}
-                onVersionTap={handleVersionTap}
                 sleepPreventionMode={
                   desktopPreferencesState.sleepPreventionMode
                 }
@@ -340,17 +367,29 @@ export function WorkspaceSettingsPanel({
                   );
                 }}
               />
+            ) : settingsState.activeSection === "about" ? (
+              <WorkspaceAboutSettingsSection
+                developerLogs={settingsState.developerLogs}
+                onVersionTap={handleVersionTap}
+              />
             ) : (
               <WorkspaceDeveloperSettingsSection
                 analyticsDebugAvailable={
                   analyticsDebugPreferenceState.available
                 }
                 analyticsDebugEnabled={analyticsDebugPreferenceState.enabled}
+                appCatalogChannel={desktopPreferencesState.appCatalogChannel}
+                changingAppCatalogChannel={
+                  desktopPreferencesState.changingAppCatalogChannel
+                }
                 developerLogs={settingsState.developerLogs}
                 developerPanelVisible={settingsState.developerPanelVisible}
                 fileDefaultOpenersByExtension={
                   desktopPreferencesState.fileDefaultOpenersByExtension
                 }
+                onAppCatalogChannelChange={(channel) => {
+                  void settingsService.changeAppCatalogChannel(channel);
+                }}
                 onAnalyticsDebugEnabledChange={(enabled) => {
                   analyticsDebugPreferenceService.setEnabled(enabled);
                 }}
@@ -875,6 +914,10 @@ function ManagedModelProviderItem({
   onUpdate: (patch: Partial<WorkspaceManagedModelProviderDraft>) => void;
 }) {
   const { t } = useTranslation();
+  const { addModel, modelInputRefs, updateModels } = useManagedModelRows(
+    provider,
+    onUpdate
+  );
   const label = managedModelProviderLabels[provider.provider];
   const status = provider.hasApiKey
     ? `${t("workspace.settings.apps.managedModels.keyConfigured")} · ${t(
@@ -921,6 +964,35 @@ function ManagedModelProviderItem({
           </div>
         ) : (
           <div className="flex shrink-0 items-center gap-1">
+            <Button
+              aria-expanded={expanded}
+              aria-label={t(
+                expanded
+                  ? "workspace.settings.apps.managedModels.collapse"
+                  : "workspace.settings.apps.managedModels.expand"
+              )}
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              size="icon"
+              type="button"
+              variant="ghost"
+              onClick={onToggleExpand}
+            >
+              {expanded ? (
+                <ChevronUpIcon aria-hidden="true" size={16} />
+              ) : (
+                <ChevronDownIcon aria-hidden="true" size={16} />
+              )}
+            </Button>
+            <Button
+              aria-label={t("workspace.settings.apps.managedModels.delete")}
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              size="icon"
+              type="button"
+              variant="ghost"
+              onClick={onRequestDelete}
+            >
+              <DeleteIcon aria-hidden="true" size={15} />
+            </Button>
             <Switch
               aria-label={t("workspace.settings.apps.managedModels.enabled", {
                 provider: label
@@ -929,31 +1001,6 @@ function ManagedModelProviderItem({
               disabled={saving}
               onCheckedChange={onSetEnabled}
             />
-            <button
-              aria-expanded={expanded}
-              aria-label={t(
-                expanded
-                  ? "workspace.settings.apps.managedModels.collapse"
-                  : "workspace.settings.apps.managedModels.expand"
-              )}
-              className="flex size-8 items-center justify-center rounded-[6px] text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--transparency-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]"
-              type="button"
-              onClick={onToggleExpand}
-            >
-              {expanded ? (
-                <ChevronUpIcon aria-hidden="true" size={16} />
-              ) : (
-                <ChevronDownIcon aria-hidden="true" size={16} />
-              )}
-            </button>
-            <button
-              aria-label={t("workspace.settings.apps.managedModels.delete")}
-              className="flex size-8 items-center justify-center rounded-[6px] text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--transparency-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]"
-              type="button"
-              onClick={onRequestDelete}
-            >
-              <DeleteIcon aria-hidden="true" size={15} />
-            </button>
           </div>
         )}
       </div>
@@ -965,26 +1012,40 @@ function ManagedModelProviderItem({
           <ManagedModelProviderFields
             detecting={detecting}
             draft={provider}
+            modelInputRefs={modelInputRefs}
             onDetect={onDetect}
             onUpdate={onUpdate}
+            updateModels={updateModels}
           />
           <ManagedModelFeedbackLine feedback={feedback} />
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
-              disabled={testing}
+              className="h-auto px-0 text-[12px] font-medium text-[var(--text-primary)] hover:bg-transparent hover:text-[var(--text-primary)]"
+              size="sm"
               type="button"
-              variant="secondary"
-              onClick={onTest}
+              variant="ghost"
+              onClick={addModel}
             >
-              {testing
-                ? t("workspace.settings.apps.managedModels.testing")
-                : t("workspace.settings.apps.managedModels.test")}
+              <AddIcon className="size-3.5" />
+              {t("workspace.settings.apps.managedModels.addModel")}
             </Button>
-            <Button disabled={saving} type="button" onClick={onSave}>
-              {saving
-                ? t("workspace.settings.apps.managedModels.saving")
-                : t("workspace.settings.apps.managedModels.save")}
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                disabled={testing}
+                type="button"
+                variant="secondary"
+                onClick={onTest}
+              >
+                {testing
+                  ? t("workspace.settings.apps.managedModels.testing")
+                  : t("workspace.settings.apps.managedModels.test")}
+              </Button>
+              <Button disabled={saving} type="button" onClick={onSave}>
+                {saving
+                  ? t("workspace.settings.apps.managedModels.saving")
+                  : t("workspace.settings.apps.managedModels.save")}
+              </Button>
+            </div>
           </div>
         </>
       ) : null}
@@ -1008,9 +1069,13 @@ function ManagedModelDraftItem({
   onUpdate: (patch: Partial<WorkspaceManagedModelProviderDraft>) => void;
 }) {
   const { t } = useTranslation();
+  const { addModel, modelInputRefs, updateModels } = useManagedModelRows(
+    draft,
+    onUpdate
+  );
 
   return (
-    <section className="flex w-full flex-col gap-4 rounded-[10px] border border-[var(--border-focus)] bg-[var(--transparency-block)] p-4">
+    <section className="flex w-full flex-col gap-4 rounded-[10px] border border-[var(--border-1)] bg-[var(--transparency-block)] p-4">
       <div className="flex items-center justify-between gap-3">
         <strong className="text-[13px] font-semibold text-[var(--text-primary)]">
           {managedModelProviderLabels[draft.provider]}
@@ -1028,41 +1093,103 @@ function ManagedModelDraftItem({
       <ManagedModelProviderFields
         detecting={false}
         draft={draft}
+        modelInputRefs={modelInputRefs}
         onDetect={null}
         onUpdate={onUpdate}
+        updateModels={updateModels}
       />
 
       <ManagedModelFeedbackLine feedback={feedback} />
 
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          {t("common.cancel")}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Button
+          className="h-auto px-0 text-[12px] font-medium text-[var(--text-primary)] hover:bg-transparent hover:text-[var(--text-primary)]"
+          size="sm"
+          type="button"
+          variant="ghost"
+          onClick={addModel}
+        >
+          <AddIcon className="size-3.5" />
+          {t("workspace.settings.apps.managedModels.addModel")}
         </Button>
-        <Button disabled={saving} type="button" onClick={onSave}>
-          {saving
-            ? t("workspace.settings.apps.managedModels.saving")
-            : t("workspace.settings.apps.managedModels.save")}
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            {t("common.cancel")}
+          </Button>
+          <Button disabled={saving} type="button" onClick={onSave}>
+            {saving
+              ? t("workspace.settings.apps.managedModels.saving")
+              : t("workspace.settings.apps.managedModels.save")}
+          </Button>
+        </div>
       </div>
     </section>
   );
 }
 
+function useManagedModelRows(
+  draft: WorkspaceManagedModelProviderDraft,
+  onUpdate: (patch: Partial<WorkspaceManagedModelProviderDraft>) => void
+): {
+  addModel: () => void;
+  modelInputRefs: React.MutableRefObject<Map<number, HTMLInputElement>>;
+  updateModels: (models: readonly WorkspaceManagedModel[]) => void;
+} {
+  const modelInputRefs = useRef(new Map<number, HTMLInputElement>());
+  const [pendingFocusModelIndex, setPendingFocusModelIndex] = useState<
+    number | null
+  >(null);
+
+  const updateModels = useCallback(
+    (models: readonly WorkspaceManagedModel[]) => {
+      onUpdate({
+        models: normalizeWorkspaceManagedModelRows(draft.provider, models)
+      });
+    },
+    [draft.provider, onUpdate]
+  );
+
+  const addModel = useCallback(() => {
+    const nextIndex = draft.models.length;
+    setPendingFocusModelIndex(nextIndex);
+    onUpdate({
+      models: [...draft.models, { id: "", name: "", provider: draft.provider }]
+    });
+  }, [draft.models, draft.provider, onUpdate]);
+
+  useEffect(() => {
+    if (pendingFocusModelIndex === null) {
+      return;
+    }
+    const input = modelInputRefs.current.get(pendingFocusModelIndex);
+    if (!input) {
+      return;
+    }
+    input.focus();
+    setPendingFocusModelIndex(null);
+  }, [draft.models.length, pendingFocusModelIndex]);
+
+  return { addModel, modelInputRefs, updateModels };
+}
+
 function ManagedModelProviderFields({
   detecting,
   draft,
+  modelInputRefs,
   onDetect,
-  onUpdate
+  onUpdate,
+  updateModels
 }: {
   detecting: boolean;
   draft: WorkspaceManagedModelProviderDraft;
+  modelInputRefs: React.MutableRefObject<Map<number, HTMLInputElement>>;
   onDetect: (() => void) | null;
   onUpdate: (patch: Partial<WorkspaceManagedModelProviderDraft>) => void;
+  updateModels: (models: readonly WorkspaceManagedModel[]) => void;
 }) {
   const { t } = useTranslation();
   const [visibleAPIKeyProviderID, setVisibleAPIKeyProviderID] =
     useState<WorkspaceManagedModelProviderID | null>(null);
-  const [newModelID, setNewModelID] = useState("");
 
   const apiKeyVisible = visibleAPIKeyProviderID === draft.provider;
   const presets = getManagedModelProviderPresets(draft.provider);
@@ -1074,20 +1201,6 @@ function ManagedModelProviderFields({
     selectedPreset?.baseUrl ?? CUSTOM_MANAGED_MODEL_PROVIDER_PRESET;
   const apiKeyPreset = presets.length === 1 ? presets[0] : selectedPreset;
   const apiKeyUrl = apiKeyPreset?.apiKeyUrl ?? "";
-
-  const updateModels = (models: readonly WorkspaceManagedModel[]) => {
-    onUpdate({
-      models: normalizeWorkspaceManagedModelRows(draft.provider, models)
-    });
-  };
-  const addModel = () => {
-    const id = newModelID.trim();
-    if (!id) {
-      return;
-    }
-    updateModels([...draft.models, { id, name: id, provider: draft.provider }]);
-    setNewModelID("");
-  };
 
   return (
     <>
@@ -1202,22 +1315,25 @@ function ManagedModelProviderFields({
         </label>
       </div>
 
-      {apiKeyUrl ? (
-        <button
-          className="inline-flex w-fit items-center gap-1.5 rounded-[5px] text-left text-[12px] font-medium text-[var(--text-primary)] underline underline-offset-4 transition-opacity duration-150 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]"
-          type="button"
-          onClick={() => {
-            window.open(apiKeyUrl, "_blank", "noopener,noreferrer");
-          }}
-        >
-          {t("workspace.settings.apps.managedModels.getApiKey", {
-            provider:
-              (apiKeyPreset ? t(apiKeyPreset.labelKey) : null) ??
-              managedModelProviderLabels[draft.provider]
-          })}
-          <LinkIcon aria-hidden="true" size={13} />
-        </button>
-      ) : null}
+      <div className="flex flex-col gap-3">
+        {apiKeyUrl ? (
+          <button
+            className="inline-flex w-fit items-center gap-1.5 rounded-[5px] text-left text-[12px] font-medium text-[var(--text-primary)] transition-opacity duration-150 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-focus)]"
+            type="button"
+            onClick={() => {
+              window.open(apiKeyUrl, "_blank", "noopener,noreferrer");
+            }}
+          >
+            {t("workspace.settings.apps.managedModels.getApiKey", {
+              provider:
+                (apiKeyPreset ? t(apiKeyPreset.labelKey) : null) ??
+                managedModelProviderLabels[draft.provider]
+            })}
+            <OpenLinkLinedIcon aria-hidden="true" size={13} />
+          </button>
+        ) : null}
+        <div aria-hidden="true" className="h-px w-full bg-[var(--border-1)]" />
+      </div>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
@@ -1226,10 +1342,11 @@ function ManagedModelProviderFields({
           </span>
           {onDetect ? (
             <Button
+              className="h-auto px-0 text-[12px] font-medium text-[var(--text-primary)] hover:bg-transparent hover:text-[var(--text-primary)]"
               disabled={detecting}
               size="sm"
               type="button"
-              variant="secondary"
+              variant="ghost"
               onClick={onDetect}
             >
               {detecting
@@ -1242,15 +1359,28 @@ function ManagedModelProviderFields({
           {draft.models.map((model, index) => (
             <div
               key={`${model.provider}:${model.id}:${index}`}
-              className="grid grid-cols-[72px_minmax(0,1fr)_32px] items-center gap-1.5"
+              className="grid grid-cols-[max-content_minmax(0,1fr)_32px] items-center gap-1.5"
             >
-              <span className="flex h-8 items-center justify-center rounded-[6px] border border-[var(--border-1)] bg-[var(--transparency-block)] px-2 text-[11px] text-[var(--text-secondary)]">
+              <span className={workspaceManagedModelProviderPrefixClass}>
                 {draft.provider}:
               </span>
               <input
                 aria-label={t("workspace.settings.apps.managedModels.modelId")}
-                className={workspaceSettingsInputClass}
-                placeholder={defaultManagedProviderModel(draft.provider)}
+                className={workspaceManagedModelInputClass}
+                placeholder={
+                  model.id
+                    ? defaultManagedProviderModel(draft.provider)
+                    : t(
+                        "workspace.settings.apps.managedModels.modelIdPlaceholder"
+                      )
+                }
+                ref={(input) => {
+                  if (input) {
+                    modelInputRefs.current.set(index, input);
+                    return;
+                  }
+                  modelInputRefs.current.delete(index);
+                }}
                 value={model.id}
                 onChange={(event) => {
                   const id = event.currentTarget.value;
@@ -1279,36 +1409,6 @@ function ManagedModelProviderFields({
               </button>
             </div>
           ))}
-          <div className="grid grid-cols-[72px_minmax(0,1fr)_72px] items-center gap-1.5">
-            <span className="flex h-8 items-center justify-center rounded-[6px] border border-[var(--border-1)] bg-[var(--transparency-block)] px-2 text-[11px] text-[var(--text-secondary)]">
-              {draft.provider}:
-            </span>
-            <input
-              aria-label={t("workspace.settings.apps.managedModels.modelId")}
-              className={workspaceSettingsInputClass}
-              placeholder={t(
-                "workspace.settings.apps.managedModels.modelIdPlaceholder"
-              )}
-              value={newModelID}
-              onChange={(event) => setNewModelID(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addModel();
-                }
-              }}
-            />
-            <Button
-              disabled={!newModelID.trim()}
-              size="sm"
-              type="button"
-              variant="secondary"
-              onClick={addModel}
-            >
-              <AddIcon className="size-3.5" />
-              {t("workspace.settings.apps.managedModels.addModel")}
-            </Button>
-          </div>
         </div>
       </div>
     </>
@@ -1318,10 +1418,13 @@ function ManagedModelProviderFields({
 function WorkspaceDeveloperSettingsSection({
   analyticsDebugAvailable,
   analyticsDebugEnabled,
+  appCatalogChannel,
+  changingAppCatalogChannel,
   developerLogs,
   developerPanelVisible,
   fileDefaultOpenersByExtension,
   onAnalyticsDebugEnabledChange,
+  onAppCatalogChannelChange,
   onClearConversationHistory,
   onClearLogs,
   onDeveloperPanelVisibleChange,
@@ -1330,10 +1433,13 @@ function WorkspaceDeveloperSettingsSection({
 }: {
   analyticsDebugAvailable: boolean;
   analyticsDebugEnabled: boolean;
+  appCatalogChannel: DesktopAppCatalogChannel;
+  changingAppCatalogChannel: DesktopAppCatalogChannel | null;
   developerLogs: WorkspaceSettingsDeveloperLogsSnapshotState;
   developerPanelVisible: boolean;
   fileDefaultOpenersByExtension: DesktopFileDefaultOpenersByExtension;
   onAnalyticsDebugEnabledChange: (enabled: boolean) => void;
+  onAppCatalogChannelChange: (channel: DesktopAppCatalogChannel) => void;
   onClearConversationHistory: () => void;
   onClearLogs: () => void;
   onDeveloperPanelVisibleChange: (visible: boolean) => void;
@@ -1372,6 +1478,12 @@ function WorkspaceDeveloperSettingsSection({
           onCheckedChange={onDeveloperPanelVisibleChange}
         />
       </div>
+
+      <AppCatalogChannelControl
+        appCatalogChannel={appCatalogChannel}
+        changingAppCatalogChannel={changingAppCatalogChannel}
+        onAppCatalogChannelChange={onAppCatalogChannelChange}
+      />
 
       {analyticsDebugAvailable ? (
         <div className="flex w-full items-center justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
@@ -1564,6 +1676,70 @@ function WorkspaceDeveloperSettingsSection({
       </SettingsRow>
     </SettingsRows>
   );
+}
+
+function AppCatalogChannelControl({
+  appCatalogChannel,
+  changingAppCatalogChannel,
+  onAppCatalogChannelChange
+}: {
+  appCatalogChannel: DesktopAppCatalogChannel;
+  changingAppCatalogChannel: DesktopAppCatalogChannel | null;
+  onAppCatalogChannelChange: (channel: DesktopAppCatalogChannel) => void;
+}) {
+  const { t } = useTranslation();
+  const effectiveAppCatalogChannel =
+    changingAppCatalogChannel ?? appCatalogChannel;
+
+  return (
+    <div className="flex w-full items-center justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
+      <div className="flex min-w-0 flex-1 flex-col gap-1 max-[560px]:w-full">
+        <strong className="text-[13px] font-semibold text-[var(--text-primary)]">
+          {t("workspace.settings.apps.appCatalogChannelLabel")}
+        </strong>
+        <p className="m-0 text-[13px] leading-[1.3] text-[var(--text-secondary)]">
+          {t("workspace.settings.apps.appCatalogChannelDescription")}
+        </p>
+      </div>
+      <div
+        aria-label={t("workspace.settings.apps.appCatalogChannelLabel")}
+        className="grid h-8 shrink-0 grid-cols-2 overflow-hidden rounded-[6px] bg-[var(--transparency-block)] p-0.5"
+        role="group"
+      >
+        {desktopAppCatalogChannels.map((channel) => {
+          const selected = effectiveAppCatalogChannel === channel;
+          return (
+            <button
+              key={channel}
+              aria-pressed={selected}
+              className={cn(
+                "min-w-[92px] rounded-[5px] border-0 px-3 text-[13px] font-semibold leading-none outline-none transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+                selected
+                  ? "bg-[var(--background-fronted)] text-[var(--text-primary)] shadow-sm"
+                  : "bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              )}
+              disabled={changingAppCatalogChannel !== null}
+              type="button"
+              onClick={() => onAppCatalogChannelChange(channel)}
+            >
+              {t(workspaceSettingsAppCatalogChannelOptionLabelKey(channel))}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function workspaceSettingsAppCatalogChannelOptionLabelKey(
+  channel: DesktopAppCatalogChannel
+): DesktopI18nKey {
+  switch (channel) {
+    case "production":
+      return "workspace.settings.apps.appCatalogChannelOptions.production";
+    case "staging":
+      return "workspace.settings.apps.appCatalogChannelOptions.staging";
+  }
 }
 
 function workspaceSettingsFileDefaultOpenerLabelKey(
@@ -2026,7 +2202,6 @@ function WorkspaceGeneralSettingsSection({
   changingLocale,
   changingSleepPreventionMode,
   defaultAgentProvider,
-  developerLogs,
   focusedAnchor,
   focusRequestID,
   locale,
@@ -2035,7 +2210,6 @@ function WorkspaceGeneralSettingsSection({
   onLocaleChange,
   onOpenExternalAgentImport,
   onSleepPreventionModeChange,
-  onVersionTap,
   sleepPreventionMode
 }: {
   browserUseConnectionMode: DesktopBrowserUseConnectionMode;
@@ -2044,7 +2218,6 @@ function WorkspaceGeneralSettingsSection({
   changingLocale: DesktopLocale | null;
   changingSleepPreventionMode: DesktopSleepPreventionMode | null;
   defaultAgentProvider: DesktopAgentProvider;
-  developerLogs: WorkspaceSettingsDeveloperLogsSnapshotState;
   focusedAnchor: WorkspaceSettingsGeneralFocusAnchor | null;
   focusRequestID: number;
   locale: DesktopLocale;
@@ -2055,7 +2228,6 @@ function WorkspaceGeneralSettingsSection({
   onLocaleChange: (locale: DesktopLocale) => void;
   onOpenExternalAgentImport: () => void;
   onSleepPreventionModeChange: (mode: DesktopSleepPreventionMode) => void;
-  onVersionTap: () => void;
   sleepPreventionMode: DesktopSleepPreventionMode;
 }) {
   const { t } = useTranslation();
@@ -2064,8 +2236,13 @@ function WorkspaceGeneralSettingsSection({
   const isUpdatingLocale = changingLocale !== null;
   const pendingLocale = changingLocale ?? locale;
   const isUpdatingDefaultAgentProvider = changingDefaultAgentProvider !== null;
-  const pendingDefaultAgentProvider =
+  const rawPendingDefaultAgentProvider =
     changingDefaultAgentProvider ?? defaultAgentProvider;
+  const pendingDefaultAgentProvider = isWorkspaceSettingsDefaultAgentProvider(
+    rawPendingDefaultAgentProvider
+  )
+    ? rawPendingDefaultAgentProvider
+    : "codex";
   const isUpdatingBrowserUseConnectionMode =
     changingBrowserUseConnectionMode !== null;
   const pendingBrowserUseConnectionMode =
@@ -2073,7 +2250,6 @@ function WorkspaceGeneralSettingsSection({
   const isUpdatingSleepPrevention = changingSleepPreventionMode !== null;
   const pendingSleepPreventionMode =
     changingSleepPreventionMode ?? sleepPreventionMode;
-  const logs = developerLogs.logs;
 
   useEffect(() => {
     if (!focusedAnchor || focusRequestID === 0) {
@@ -2142,7 +2318,7 @@ function WorkspaceGeneralSettingsSection({
               className={workspaceSettingsSelectContentClass}
               style={{ zIndex: "var(--z-panel-popover)" }}
             >
-              {workspaceAgentGuiProviders.map((provider) => (
+              {workspaceSettingsDefaultAgentProviders.map((provider) => (
                 <SelectItem key={provider} value={provider}>
                   {resolveWorkspaceAgentGuiLabel(provider)}
                 </SelectItem>
@@ -2307,24 +2483,94 @@ function WorkspaceGeneralSettingsSection({
           </Select>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="flex w-full items-center justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
-        <div className="min-w-0">
-          <strong className="text-[13px] font-semibold text-[var(--text-primary)]">
-            {t("workspace.settings.general.versionLabel")}
-          </strong>
+function WorkspaceAboutSettingsSection({
+  developerLogs,
+  onVersionTap
+}: {
+  developerLogs: WorkspaceSettingsDeveloperLogsSnapshotState;
+  onVersionTap: () => void;
+}) {
+  const { t } = useTranslation();
+  const hostService = useWorkspaceWorkbenchHostService();
+  const logs = developerLogs.logs;
+  const desktopVersion =
+    developerLogs.loading && logs === null
+      ? t("common.loading")
+      : (logs?.desktopVersion ?? "0.0.0");
+
+  const openExternal = useCallback(
+    (url: string) => {
+      void hostService.openExternal(url);
+    },
+    [hostService]
+  );
+
+  return (
+    <div className="flex w-full flex-col gap-4 px-5 pb-5 pt-7">
+      <div className="flex min-w-0 items-center justify-between gap-4 max-[560px]:flex-col max-[560px]:items-start">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <img
+            alt=""
+            className="size-14 shrink-0 object-contain"
+            draggable={false}
+            src={tuttiDesktopIconUrl}
+          />
+          <div className="min-w-0">
+            <strong className="block truncate text-[18px] font-semibold leading-7 text-[var(--text-primary)]">
+              {t("workspace.settings.about.appName")}
+            </strong>
+          </div>
         </div>
         <button
-          className="m-0 inline-flex h-5 cursor-default select-none items-center justify-end rounded-[5px] border-0 bg-transparent p-0 text-right font-mono text-[13px] leading-5 text-[var(--text-secondary)] outline-none focus-visible:outline-none max-[560px]:justify-start max-[560px]:text-left"
+          className="inline-flex h-7 shrink-0 cursor-default select-none items-center gap-1 rounded-full border border-[var(--border-1)] bg-[var(--background-fronted)] px-3 text-[12px] leading-5 text-[var(--text-secondary)] outline-none focus-visible:border-[var(--border-focus)] max-[560px]:ml-[70px]"
           type="button"
           onClick={onVersionTap}
         >
-          {developerLogs.loading && logs === null
-            ? t("common.loading")
-            : (logs?.desktopVersion ?? "0.0.0")}
+          <span>{t("workspace.settings.about.versionLabel")}</span>
+          <span className="font-mono text-[13px] leading-5 text-[var(--text-primary)]">
+            {desktopVersion}
+          </span>
         </button>
       </div>
+
+      <div className="flex flex-wrap gap-2 border-t border-[var(--border-1)] pt-4">
+        <AboutActionButton
+          icon={<WebIcon className="size-3.5" />}
+          label={t("workspace.settings.about.websiteAction")}
+          onClick={() => openExternal(tuttiWebsiteUrl)}
+        />
+        <AboutActionButton
+          icon={<GitHubBrandIcon className="size-3.5" />}
+          label={t("workspace.settings.about.githubAction")}
+          onClick={() => openExternal(tuttiGitHubUrl)}
+        />
+      </div>
     </div>
+  );
+}
+
+function AboutActionButton({
+  icon,
+  label,
+  onClick
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[var(--border-1)] bg-[var(--background-fronted)] px-3 text-[13px] font-semibold text-[var(--text-secondary)] outline-none transition-colors duration-150 hover:bg-[var(--transparency-hover)] hover:text-[var(--text-primary)] focus-visible:border-[var(--border-focus)]"
+      type="button"
+      onClick={onClick}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }
 

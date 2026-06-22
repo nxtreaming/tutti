@@ -45,6 +45,14 @@ App Center opening should call `POST /v1/workspaces/{workspaceID}/apps/catalog/r
   "schemaVersion": "tutti.app.catalog.v1",
   "apps": [
     {
+      "localizations": [
+        {
+          "locale": "zh-CN",
+          "name": "产品原型设计",
+          "description": "创建并迭代产品原型设计",
+          "tags": ["设计", "原型"]
+        }
+      ],
       "manifest": {
         "schemaVersion": "tutti.app.manifest.v1",
         "appId": "vibe-design",
@@ -73,7 +81,13 @@ App Center opening should call `POST /v1/workspaces/{workspaceID}/apps/catalog/r
 
 Remote catalog entries must include `distribution.iconUrl`, `distribution.artifactUrl`, `distribution.artifactSha256`, and a manifest icon asset. The zip package must contain a complete app package with `tutti.app.json`, `bootstrap.sh`, `AGENTS.md`, and the manifest icon asset.
 
-Workspace app packages do not declare runtime kind or bundle Python/Node. Managed runtime release and download rules belong to [Workspace App Runtime](./workspace-app-runtime.md).
+When a package manifest declares `localizationInfo`, release tooling reads the
+referenced package-local manifest locale files and writes their `name`,
+`description`, and `tags` into the catalog entry `localizations` field. App
+Center uses this catalog metadata for uninstalled remote apps, because it must
+not download or unzip the app package just to render localized catalog cards.
+
+Workspace app packages do not declare arbitrary runtime kinds or bundle Python/Node. Packages that only need the managed Node/static runtime may declare `runtime.profile: "node-static"`; all other managed runtime release and download rules belong to [Workspace App Runtime](./workspace-app-runtime.md).
 
 ## Release Flow
 
@@ -103,6 +117,12 @@ verifies the artifact, then creates an annotated release tag such as
 Staging app releases do not create release tags. When `release_bump` is empty,
 the reusable workflow publishes `manifest.version+<short git sha>` from the
 packaged manifest.
+
+Staging caller workflows should run automatically on `push` to `main`, which is
+the event produced after a pull request is merged. Push-triggered staging runs
+should publish the staging catalog by default so App Center sees the merged app
+without a second manual dispatch. Manual staging dispatch remains useful for
+catalog repair, reruns, and targeted validation.
 
 When `publish_catalog` is enabled, releases targeting the same S3 bucket and
 prefix are serialized so concurrent app releases cannot overwrite each other's
@@ -181,6 +201,14 @@ tutti-app-releases/catalog.json
 tutti-app-releases-staging/apps/<appId>/latest.json
 tutti-app-releases-staging/catalog.json
 ```
+
+The staging asset base URL must also point at the staging prefix, for example
+`https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-releases-staging`. Do not
+reuse the production `TUTTI_APP_RELEASES_BASE_URL` for staging, because the
+published `latest.json` and `catalog.json` would then reference production
+artifact URLs. For private app repositories that cannot read organization
+variables, set the Tutti release variables as repository variables on each app
+repository.
 
 Use `.github/workflows/publish-tutti-app-catalog-staging.yml` to publish a
 staging catalog. Use `.github/workflows/publish-tutti-app-catalog.yml` to

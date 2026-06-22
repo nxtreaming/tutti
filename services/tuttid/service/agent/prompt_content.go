@@ -69,6 +69,17 @@ func normalizePromptContent(content []PromptContentBlock) ([]PromptContentBlock,
 				AttachmentID: strings.TrimSpace(block.AttachmentID),
 				Name:         strings.TrimSpace(block.Name),
 			})
+		case "skill", "mention":
+			name := strings.TrimSpace(block.Name)
+			path := strings.TrimSpace(block.Path)
+			if name == "" || path == "" {
+				return nil, "", ErrInvalidArgument
+			}
+			normalized = append(normalized, PromptContentBlock{
+				Type: strings.TrimSpace(block.Type),
+				Name: name,
+				Path: path,
+			})
 		default:
 			return nil, "", ErrInvalidArgument
 		}
@@ -206,10 +217,6 @@ func (s PromptAttachmentStore) attachmentPath(workspaceID, agentSessionID, attac
 	if ext == "" {
 		return "", ErrInvalidArgument
 	}
-	workspaceSegment, err := sanitizePathSegment(workspaceID)
-	if err != nil {
-		return "", err
-	}
 	sessionSegment, err := sanitizePathSegment(agentSessionID)
 	if err != nil {
 		return "", err
@@ -218,8 +225,8 @@ func (s PromptAttachmentStore) attachmentPath(workspaceID, agentSessionID, attac
 	if err != nil {
 		return "", err
 	}
-	base := filepath.Join(root, "agent-session-attachments")
-	path := filepath.Join(base, workspaceSegment, sessionSegment, attachmentSegment+ext)
+	base := filepath.Join(root, "agent", "attachments")
+	path := filepath.Join(base, sessionSegment, attachmentSegment+ext)
 	rel, err := filepath.Rel(base, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", ErrInvalidArgument

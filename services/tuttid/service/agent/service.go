@@ -24,8 +24,10 @@ func NewService(runtime RuntimeController) *Service {
 		panic("agent service requires a runtime")
 	}
 	return &Service{
-		Runtime:           runtime,
-		skillOptionsCache: newComposerSkillOptionsCache(),
+		Runtime:                   runtime,
+		skillOptionsCache:         newComposerSkillOptionsCache(),
+		providerAvailabilityCache: newProviderAvailabilityCache(),
+		capabilityCatalogCache:    newComposerCapabilityCatalogCache(),
 	}
 }
 
@@ -106,6 +108,9 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateSe
 		if err != nil {
 			return Session{}, err
 		}
+	}
+	if err := s.ensureProviderRuntimeInstalled(ctx, provider); err != nil {
+		return Session{}, err
 	}
 	cwd, err := s.resolveCwd(ctx, input.Cwd)
 	if err != nil {

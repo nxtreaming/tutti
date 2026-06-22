@@ -50,6 +50,7 @@ const mockCancelDeleteConversation = vi.fn();
 const mockConfirmDeleteConversation = vi.fn();
 const mockSearchWorkspaceFileManagerEntries = vi.fn();
 const mockListWorkspaceIssues = vi.fn();
+const mockListWorkspaceApps = vi.fn();
 const mockListWorkspaceAgents = vi.fn();
 const mockListWorkspaceAgentSessionMessages = vi.fn();
 const mockGetWorkspaceAgentSessionSummary = vi.fn();
@@ -58,6 +59,7 @@ const mockBatchGetUserInfo = vi.fn();
 const {
   agentSession: AGENT_SESSION_PROVIDER_ID,
   file: FILE_PROVIDER_ID,
+  workspaceApp: WORKSPACE_APP_PROVIDER_ID,
   workspaceIssue: WORKSPACE_ISSUE_PROVIDER_ID
 } = AGENT_CONTEXT_MENTION_PROVIDER_IDS;
 const mockSelectFiles = vi.fn();
@@ -175,6 +177,34 @@ function createAgentGUITestContextMentionProviders(): readonly AgentContextMenti
           presentation: {
             description: extractAgentGUITestIssuePreview(item),
             status: item.status
+          }
+        }
+      })
+    },
+    {
+      id: WORKSPACE_APP_PROVIDER_ID,
+      trigger: "@",
+      async query({ context, keyword, maxResults }) {
+        const workspaceId = String(context.metadata?.workspaceId ?? "");
+        const result = await mockListWorkspaceApps({
+          workspaceId,
+          query: keyword,
+          limit: maxResults
+        });
+        return result.apps ?? [];
+      },
+      getItemKey: (item: any) => item.appId,
+      getItemLabel: (item: any) => item.name,
+      getItemSubtitle: (item: any) => item.description ?? "",
+      toInsertResult: (item: any) => ({
+        kind: "mention",
+        mention: {
+          entityId: item.appId,
+          label: item.name,
+          scope: { workspaceId: item.workspaceId },
+          presentation: {
+            description: item.description ?? "",
+            iconUrl: item.iconUrl ?? ""
           }
         }
       })
@@ -408,7 +438,6 @@ vi.mock("../../i18n/index", () => ({
       "agentHost.roomIssueNode.issueStatusCompleted": "已完成",
       "agentHost.roomIssueNode.issueStatusFailed": "失败",
       "agentHost.roomIssueNode.issueStatusCanceled": "已取消",
-      "agentHost.agentGui.mentionFilterAll": "全部",
       "agentHost.agentGui.mentionFilterApp": "App",
       "agentHost.agentGui.mentionFilterFile": "文件",
       "agentHost.agentGui.mentionFilterSession": "会话",
@@ -453,10 +482,13 @@ vi.mock("../../i18n/index", () => ({
         "No, and don't ask again",
       "agentHost.agentGui.approvalOptions.rejectWithFollowUp":
         "No, then send new instructions",
-      "agentHost.agentGui.contextPickerBrowseAllHint":
-        "根据你输入的内容搜索工作区文件",
       "agentHost.agentGui.contextPickerBrowseFileHint":
         "根据你输入的内容搜索工作区文件",
+      "agentHost.agentGui.contextPickerBrowseSessionHint":
+        "输入内容以搜索我发起的 Agent 会话",
+      "agentHost.agentGui.contextPickerBrowseAppHint": "输入内容以搜索应用",
+      "agentHost.agentGui.contextPickerBrowseIssueHint":
+        "输入内容以搜索当前房间内的 Issue",
       "agentHost.agentGui.fileMentionSwitchCategory": "切换分类",
       "agentHost.agentGui.fileMentionSwitchSelection": "切换选中"
     };
@@ -653,6 +685,7 @@ describe("AgentGUINode", () => {
     mockConfirmDeleteConversation.mockClear();
     mockSearchWorkspaceFileManagerEntries.mockReset();
     mockListWorkspaceIssues.mockReset();
+    mockListWorkspaceApps.mockReset();
     mockListWorkspaceAgents.mockReset();
     mockListWorkspaceAgentSessionMessages.mockReset();
     mockGetWorkspaceAgentSessionSummary.mockReset();
@@ -672,6 +705,9 @@ describe("AgentGUINode", () => {
       issues: [],
       totalCount: 0,
       statusCounts: undefined
+    });
+    mockListWorkspaceApps.mockResolvedValue({
+      apps: []
     });
     mockListWorkspaceAgents.mockResolvedValue({
       presences: [],
@@ -1918,6 +1954,38 @@ describe("AgentGUINode", () => {
     );
 
     expect(mockRequestDeleteConversation).toHaveBeenCalledWith("session-1");
+    expect(mockSelectConversation).not.toHaveBeenCalled();
+  });
+
+  it("opens a conversation in a new window from the rail action without selecting", () => {
+    const onOpenConversationWindow =
+      vi.fn<
+        NonNullable<
+          React.ComponentProps<typeof AgentGUINode>["onOpenConversationWindow"]
+        >
+      >();
+    mockViewModel = createViewModel({
+      conversations: [
+        {
+          id: "session-1",
+          provider: "codex",
+          title: "Session 1",
+          status: "ready",
+          cwd: "/workspace",
+          updatedAtUnixMs: 1
+        }
+      ],
+      activeConversationId: "session-1"
+    });
+    renderAgentGUINode({ onOpenConversationWindow });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "agentHost.agentGui.openConversationWindow"
+      })
+    );
+
+    expect(onOpenConversationWindow).toHaveBeenCalledWith("session-1");
     expect(mockSelectConversation).not.toHaveBeenCalled();
   });
 
@@ -4009,6 +4077,41 @@ describe("AgentGUINode", () => {
     ).toBeTruthy();
   });
 
+  it("groups slash palette plugin and connector entries into separate sections", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      draftPrompt: "/",
+      availableCommands: [],
+      availableSkills: [
+        {
+          name: "frontend-design",
+          trigger: "$frontend-design",
+          sourceKind: "plugin",
+          pluginName: "product-design",
+          description: "Design product UI"
+        },
+        {
+          name: "Google Drive",
+          trigger: "$google-drive",
+          sourceKind: "connector",
+          kind: "connector",
+          description: "Reference files from Drive"
+        }
+      ]
+    });
+    renderAgentGUINode();
+
+    expect(
+      screen.getByText("agentHost.agentGui.slashPalettePluginsGroup")
+    ).toBeTruthy();
+    expect(
+      screen.getByText("agentHost.agentGui.slashPaletteConnectorsGroup")
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("agentHost.agentGui.slashPaletteSkillsGroup")
+    ).toBeNull();
+  });
+
   it("hides slash palette group headers when only one section is present", () => {
     mockViewModel = createViewModel({
       activeConversationId: "session-1",
@@ -4213,6 +4316,10 @@ describe("AgentGUINode", () => {
     renderAgentGUINode();
 
     pasteComposerText("@read");
+    const palette = await screen.findByRole("listbox", {
+      name: "agentHost.agentGui.fileMentionPalette"
+    });
+    fireEvent.click(within(palette).getByRole("tab", { name: "文件" }));
 
     await waitFor(() =>
       expect(mockSearchWorkspaceFileManagerEntries).toHaveBeenCalledWith({
@@ -4222,14 +4329,13 @@ describe("AgentGUINode", () => {
         includeKinds: ["file", "directory"]
       })
     );
-    await waitFor(() =>
-      expect(
-        screen.getByRole("listbox", {
-          name: "agentHost.agentGui.fileMentionPalette"
-        })
-      ).toBeTruthy()
+    const fileOption = (await within(palette).findByText("README.md")).closest(
+      "button"
     );
-    await screen.findByText("README.md");
+    expect(fileOption).not.toBeNull();
+    await waitFor(() =>
+      expect(fileOption).toHaveAttribute("aria-selected", "true")
+    );
 
     fireEvent.keyDown(getComposerEditor(), { key: "Enter" });
 
@@ -4418,12 +4524,22 @@ describe("AgentGUINode", () => {
     const pendingFileSearch = new Promise<PendingFileSearch>((resolve) => {
       resolveFileSearch = resolve;
     });
-    mockSearchWorkspaceFileManagerEntries.mockImplementationOnce(
-      () => pendingFileSearch
+    mockSearchWorkspaceFileManagerEntries.mockImplementation((input) =>
+      input.query === "read"
+        ? pendingFileSearch
+        : Promise.resolve({
+            workspaceId: "room-1",
+            root: "/workspace",
+            entries: []
+          })
     );
     renderAgentGUINode();
 
     pasteComposerText("@read");
+    const palette = await screen.findByRole("listbox", {
+      name: "agentHost.agentGui.fileMentionPalette"
+    });
+    fireEvent.click(within(palette).getByRole("tab", { name: "文件" }));
 
     await waitFor(() =>
       expect(mockSearchWorkspaceFileManagerEntries).toHaveBeenCalledWith({
@@ -4433,10 +4549,6 @@ describe("AgentGUINode", () => {
         includeKinds: ["file", "directory"]
       })
     );
-    const palette = await screen.findByRole("listbox", {
-      name: "agentHost.agentGui.fileMentionPalette"
-    });
-
     expect(
       within(palette).getByText("agentHost.agentGui.fileMentionLoading")
     ).toBeVisible();
@@ -4487,7 +4599,10 @@ describe("AgentGUINode", () => {
     const palette = await screen.findByRole("listbox", {
       name: "agentHost.agentGui.fileMentionPalette"
     });
-    const fileOption = (await screen.findByText("README.md")).closest("button");
+    fireEvent.click(within(palette).getByRole("tab", { name: "文件" }));
+    const fileOption = (await within(palette).findByText("README.md")).closest(
+      "button"
+    );
 
     expect(fileOption).toHaveClass("py-2");
     expect(within(fileOption!).getByText("README.md")).toBeTruthy();
@@ -4514,11 +4629,12 @@ describe("AgentGUINode", () => {
     );
     renderAgentGUINode();
 
-    pasteComposerText("@issue");
+    pasteComposerText("@read");
 
     const palette = await screen.findByRole("listbox", {
       name: "agentHost.agentGui.fileMentionPalette"
     });
+    fireEvent.click(within(palette).getByRole("tab", { name: "文件" }));
     const errorText = await within(palette).findByText(
       "agentHost.agentGui.fileMentionError"
     );
@@ -4542,7 +4658,7 @@ describe("AgentGUINode", () => {
     expect(errorText).toHaveClass("text-[var(--text-tertiary)]");
   });
 
-  it("supports arrow navigation in the empty-state file mention palette", async () => {
+  it("supports arrow navigation in the empty-state session mention palette", async () => {
     mockViewModel = createViewModel({
       activeConversationId: "session-1",
       draftPrompt: ""
@@ -4554,22 +4670,23 @@ describe("AgentGUINode", () => {
     const palette = await screen.findByRole("listbox", {
       name: "agentHost.agentGui.fileMentionPalette"
     });
-    const allOption = within(palette).getByRole("tab", { name: "全部" });
+    const sessionOption = within(palette).getByRole("tab", { name: "会话" });
     const fileOption = within(palette).getByRole("tab", { name: "文件" });
 
-    expect(allOption).toHaveAttribute("aria-selected", "true");
+    expect(within(palette).queryByRole("tab", { name: "全部" })).toBeNull();
+    expect(sessionOption).toHaveAttribute("aria-selected", "true");
     expect(fileOption).toHaveAttribute("aria-selected", "false");
     expect(
       within(palette).queryByText("根据你输入的内容搜索工作区文件")
     ).toBeNull();
-    expect(within(palette).queryByText("暂无会话")).toBeNull();
+    expect(await within(palette).findByText("暂无会话")).toBeVisible();
     expect(within(palette).queryByText("暂无协作会话")).toBeNull();
     expect(within(palette).queryByRole("tab", { name: "协作" })).toBeNull();
     expect(within(palette).queryByText("No tasks yet")).toBeNull();
 
     fireEvent.keyDown(getComposerEditor(), { key: "ArrowDown" });
 
-    expect(allOption).toHaveAttribute("aria-selected", "true");
+    expect(sessionOption).toHaveAttribute("aria-selected", "true");
     expect(fileOption).toHaveAttribute("aria-selected", "false");
     expect(
       within(palette).queryByText("根据你输入的内容搜索工作区文件")
@@ -4588,19 +4705,101 @@ describe("AgentGUINode", () => {
     const palette = await screen.findByRole("listbox", {
       name: "agentHost.agentGui.fileMentionPalette"
     });
-    const allOption = await within(palette).findByRole("tab", { name: "全部" });
+    const sessionOption = await within(palette).findByRole("tab", {
+      name: "会话"
+    });
     const fileOption = within(palette).getByRole("tab", { name: "文件" });
 
     fireEvent.mouseEnter(fileOption);
 
-    expect(allOption).toHaveAttribute("aria-selected", "true");
+    expect(within(palette).queryByRole("tab", { name: "全部" })).toBeNull();
+    expect(sessionOption).toHaveAttribute("aria-selected", "true");
     expect(fileOption).toHaveAttribute("aria-selected", "false");
     expect(
       within(palette).queryByText("根据你输入的内容搜索工作区文件")
     ).toBeNull();
   });
 
-  it("keeps empty non-file groups compact in the all browse tab", async () => {
+  it("cycles mention tabs from session through file, issue, and app", async () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      draftPrompt: ""
+    });
+    renderAgentGUINode();
+
+    pasteComposerText("@");
+
+    const palette = await screen.findByRole("listbox", {
+      name: "agentHost.agentGui.fileMentionPalette"
+    });
+    const expectSelectedTab = async (name: string) => {
+      await waitFor(() =>
+        expect(within(palette).getByRole("tab", { name })).toHaveAttribute(
+          "aria-selected",
+          "true"
+        )
+      );
+    };
+
+    expect(within(palette).queryByRole("tab", { name: "全部" })).toBeNull();
+    await expectSelectedTab("会话");
+
+    fireEvent.keyDown(getComposerEditor(), { key: "Tab" });
+    await expectSelectedTab("文件");
+
+    fireEvent.keyDown(getComposerEditor(), { key: "Tab" });
+    await expectSelectedTab("Tasks");
+
+    fireEvent.keyDown(getComposerEditor(), { key: "Tab" });
+    await expectSelectedTab("App");
+
+    fireEvent.keyDown(getComposerEditor(), { key: "Tab" });
+    await expectSelectedTab("会话");
+  });
+
+  it("loads app mentions when selecting the app tab with an empty query", async () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      draftPrompt: ""
+    });
+    mockListWorkspaceApps.mockResolvedValue({
+      apps: [
+        {
+          appId: "vibe-design",
+          description: "Design prototypes in Tutti.",
+          iconUrl: "tutti://workspace-apps/vibe-design/icon.png",
+          name: "Vibe Design",
+          workspaceId: "room-1"
+        }
+      ]
+    });
+    renderAgentGUINode();
+
+    pasteComposerText("@");
+
+    const palette = await screen.findByRole("listbox", {
+      name: "agentHost.agentGui.fileMentionPalette"
+    });
+    await within(palette).findByText("暂无会话");
+    fireEvent.click(within(palette).getByRole("tab", { name: "App" }));
+
+    await waitFor(() =>
+      expect(mockListWorkspaceApps).toHaveBeenCalledWith({
+        workspaceId: "room-1",
+        query: "",
+        limit: 10
+      })
+    );
+    expect(within(palette).getByRole("tab", { name: "App" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(await within(palette).findByText("Vibe Design")).toBeVisible();
+    expect(mockSearchWorkspaceFileManagerEntries).not.toHaveBeenCalled();
+    expect(mockListWorkspaceIssues).not.toHaveBeenCalled();
+  });
+
+  it("keeps the default browse tab scoped to sessions", async () => {
     mockListWorkspaceIssues.mockResolvedValue({
       issues: [],
       totalCount: 0,
@@ -4619,48 +4818,46 @@ describe("AgentGUINode", () => {
       name: "agentHost.agentGui.fileMentionPalette"
     });
 
-    expect(within(palette).getAllByText("文件").length).toBeGreaterThan(0);
+    expect(within(palette).getByRole("tab", { name: "会话" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(within(palette).queryByRole("tab", { name: "全部" })).toBeNull();
+    expect(await within(palette).findByText("暂无会话")).toBeVisible();
     expect(
       within(palette).queryByText("根据你输入的内容搜索工作区文件")
     ).toBeNull();
-    expect(within(palette).queryByText("我的会话")).toBeNull();
-    expect(within(palette).queryByText("暂无会话")).toBeNull();
+    expect(within(palette).getByText("我的会话")).toBeVisible();
     expect(within(palette).queryByText("协作会话")).toBeNull();
     expect(within(palette).queryByText("暂无协作会话")).toBeNull();
-    expect(within(palette).getAllByText("Tasks").length).toBeGreaterThan(0);
+    expect(within(palette).getByRole("tab", { name: "Tasks" })).toHaveAttribute(
+      "aria-selected",
+      "false"
+    );
     expect(within(palette).queryByText("No tasks yet")).toBeNull();
+    expect(mockListWorkspaceAgents).toHaveBeenCalledTimes(1);
+    expect(mockSearchWorkspaceFileManagerEntries).not.toHaveBeenCalled();
+    expect(mockListWorkspaceIssues).not.toHaveBeenCalled();
   });
 
   it("shows the loading label when opening @ mentions before any browse data is ready", async () => {
-    type EmptyIssueLoad = {
-      issues: [];
-      totalCount: number;
-      statusCounts: undefined;
-    };
     type EmptyAgentLoad = {
       presences: [];
       sessions: [];
     };
-    let resolveIssueLoad!: (value: EmptyIssueLoad) => void;
     let resolveAgentLoad!: (value: EmptyAgentLoad) => void;
-    const pendingIssueLoad = new Promise<EmptyIssueLoad>((resolve) => {
-      resolveIssueLoad = resolve;
-    });
     const pendingAgentLoad = new Promise<EmptyAgentLoad>((resolve) => {
       resolveAgentLoad = resolve;
     });
-    mockListWorkspaceIssues.mockImplementationOnce(() => pendingIssueLoad);
     mockListWorkspaceAgents.mockImplementationOnce(() => pendingAgentLoad);
     renderAgentGUINode();
 
     pasteComposerText("@");
 
     await waitFor(() =>
-      expect(mockListWorkspaceIssues).toHaveBeenCalledTimes(1)
-    );
-    await waitFor(() =>
       expect(mockListWorkspaceAgents).toHaveBeenCalledTimes(1)
     );
+    expect(mockListWorkspaceIssues).not.toHaveBeenCalled();
 
     const palette = await screen.findByRole("listbox", {
       name: "agentHost.agentGui.fileMentionPalette"
@@ -4676,34 +4873,18 @@ describe("AgentGUINode", () => {
       within(palette).queryByText("根据你输入的内容搜索工作区文件")
     ).toBeNull();
 
-    resolveIssueLoad({
-      issues: [],
-      totalCount: 0,
-      statusCounts: undefined
-    });
     resolveAgentLoad({
       presences: [],
       sessions: []
     });
   });
 
-  it("keeps mention category tabs and palette height stable while a selected tab loads", async () => {
-    type EmptyIssueLoad = {
-      issues: [];
-      totalCount: number;
-      statusCounts: undefined;
-    };
-    let resolveIssueLoad!: (value: EmptyIssueLoad) => void;
-    const pendingIssueLoad = new Promise<EmptyIssueLoad>((resolve) => {
-      resolveIssueLoad = resolve;
+  it("keeps mention category tabs and palette height stable when switching tabs", async () => {
+    mockListWorkspaceIssues.mockResolvedValueOnce({
+      issues: [],
+      totalCount: 0,
+      statusCounts: undefined
     });
-    mockListWorkspaceIssues
-      .mockResolvedValueOnce({
-        issues: [],
-        totalCount: 0,
-        statusCounts: undefined
-      })
-      .mockImplementationOnce(() => pendingIssueLoad);
     renderAgentGUINode();
 
     pasteComposerText("@");
@@ -4711,7 +4892,7 @@ describe("AgentGUINode", () => {
     const palette = await screen.findByRole("listbox", {
       name: "agentHost.agentGui.fileMentionPalette"
     });
-    expect(await within(palette).findByText("No tasks yet")).toBeTruthy();
+    expect(await within(palette).findByText("暂无会话")).toBeTruthy();
     const surface = screen.getByTestId("agent-gui-mention-palette-surface");
     const initialSurfaceStyle = surface.getAttribute("style") ?? "";
     const initialSurfaceHeight =
@@ -4721,7 +4902,7 @@ describe("AgentGUINode", () => {
     fireEvent.click(within(palette).getByRole("tab", { name: "Tasks" }));
 
     await waitFor(() =>
-      expect(mockListWorkspaceIssues).toHaveBeenCalledTimes(2)
+      expect(mockListWorkspaceIssues).toHaveBeenCalledTimes(1)
     );
     expect(within(palette).getByRole("tab", { name: "Tasks" })).toHaveAttribute(
       "aria-selected",
@@ -4729,22 +4910,12 @@ describe("AgentGUINode", () => {
     );
     expect(within(palette).getByRole("tab", { name: "会话" })).toBeVisible();
     expect(
-      within(palette).getByText("agentHost.agentGui.fileMentionLoading")
-    ).toBeVisible();
-    expect(
       within(palette).queryByTestId("agent-mention-loading-banner")
     ).toBeNull();
-    const loadingSpinner = within(palette).getByTestId(
-      "agent-mention-loading-spinner"
-    );
-    expect(loadingSpinner.querySelectorAll("circle")).toHaveLength(2);
-    expect(loadingSpinner.querySelectorAll("circle")[0]).toHaveAttribute(
-      "stroke-width",
-      "2"
-    );
-    expect(loadingSpinner.querySelectorAll("circle")[1]).toHaveAttribute(
-      "stroke-width",
-      "2"
+    await waitFor(() =>
+      expect(
+        within(palette).queryByTestId("agent-mention-loading-spinner")
+      ).toBeNull()
     );
     expect(within(palette).getByText("Tab")).toBeVisible();
     expect(within(palette).getByText("↑")).toBeVisible();
@@ -4752,12 +4923,6 @@ describe("AgentGUINode", () => {
     expect(
       (surface.getAttribute("style") ?? "").match(/height:[^;]+/)?.[0]
     ).toBe(initialSurfaceHeight);
-
-    resolveIssueLoad({
-      issues: [],
-      totalCount: 0,
-      statusCounts: undefined
-    });
   });
 
   it("renders the file mention palette as a floating scrollable surface", async () => {
@@ -4996,7 +5161,7 @@ describe("AgentGUINode", () => {
       await screen.findByText("整理 agent 输入")
     ).closest("button");
     const taskOption = within(palette).getByRole("tab", { name: "Tasks" });
-    const allOption = within(palette).getByRole("tab", { name: "全部" });
+    const sessionOption = within(palette).getByRole("tab", { name: "会话" });
     const appOption = within(palette).getByRole("tab", { name: "App" });
 
     expect(
@@ -5014,7 +5179,8 @@ describe("AgentGUINode", () => {
     expect(firstTaskOption).toHaveAttribute("aria-selected", "false");
     expect(secondTaskOption).toHaveAttribute("aria-selected", "true");
     expect(taskOption).toHaveAttribute("aria-selected", "true");
-    expect(allOption).toHaveAttribute("aria-selected", "false");
+    expect(sessionOption).toHaveAttribute("aria-selected", "false");
+    expect(within(palette).queryByRole("tab", { name: "全部" })).toBeNull();
 
     fireEvent.keyDown(getComposerEditor(), { key: "Tab" });
 
@@ -5027,7 +5193,7 @@ describe("AgentGUINode", () => {
         "true"
       );
       expect(
-        within(palette).getByRole("tab", { name: "全部" })
+        within(palette).getByRole("tab", { name: "会话" })
       ).toHaveAttribute("aria-selected", "false");
     });
     expect(appOption).toHaveAttribute("aria-selected", "true");
@@ -5136,7 +5302,9 @@ describe("AgentGUINode", () => {
         sessionOrigin: "WORKSPACE_AGENT_SESSION_ORIGIN_RUNTIME"
       })
     );
-    const allOption = await within(palette).findByRole("tab", { name: "全部" });
+    const sessionOption = await within(palette).findByRole("tab", {
+      name: "会话"
+    });
 
     const taskOption = (await screen.findByText("修复 room status")).closest(
       "button"
@@ -5158,7 +5326,7 @@ describe("AgentGUINode", () => {
     );
     expect(mySessionStatusTag).not.toBeNull();
     expect(mySessionStatusTag).toHaveAttribute("data-status", "idle");
-    expect(allOption).toHaveAttribute("aria-selected", "true");
+    expect(sessionOption).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(getComposerEditor(), { key: "ArrowDown" });
     expect(mySessionOption).toHaveAttribute("aria-selected", "false");
@@ -5293,6 +5461,7 @@ describe("AgentGUINode", () => {
     const palette = await screen.findByRole("listbox", {
       name: "agentHost.agentGui.fileMentionPalette"
     });
+    fireEvent.click(within(palette).getByRole("tab", { name: "Tasks" }));
     const scrollRegion = palette.querySelector(
       ".agent-gui-node__mention-palette-scroll-region"
     );
@@ -5508,7 +5677,11 @@ describe("AgentGUINode", () => {
     await waitFor(() =>
       expect(getComposerEditor()).toHaveTextContent("a@b.com")
     );
-    expect(mockSearchWorkspaceFileManagerEntries).not.toHaveBeenCalled();
+    expect(mockSearchWorkspaceFileManagerEntries).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "b.com"
+      })
+    );
     expect(
       screen.queryByRole("listbox", {
         name: "agentHost.agentGui.fileMentionPalette"
@@ -6715,6 +6888,7 @@ function renderAgentGUINode({
   onLinkAction,
   onAgentProviderLogin,
   onWorkspaceFileReferencesAdded,
+  onOpenConversationWindow,
   state = {
     provider: "codex",
     lastActiveAgentSessionId: null,
@@ -6748,6 +6922,9 @@ function renderAgentGUINode({
   onWorkspaceFileReferencesAdded?: React.ComponentProps<
     typeof AgentGUINode
   >["onWorkspaceFileReferencesAdded"];
+  onOpenConversationWindow?: React.ComponentProps<
+    typeof AgentGUINode
+  >["onOpenConversationWindow"];
   state?: AgentGUINodeData;
   onUpdateNode?: (
     updater: (current: AgentGUINodeData) => AgentGUINodeData
@@ -6795,6 +6972,7 @@ function renderAgentGUINode({
       onLinkAction={onLinkAction}
       onAgentProviderLogin={onAgentProviderLogin}
       onWorkspaceFileReferencesAdded={onWorkspaceFileReferencesAdded}
+      onOpenConversationWindow={onOpenConversationWindow}
       onClose={vi.fn()}
       onResize={onResize}
       onUpdateNode={onUpdateNode}

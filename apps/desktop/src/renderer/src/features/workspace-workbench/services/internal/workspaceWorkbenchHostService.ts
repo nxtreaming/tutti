@@ -14,6 +14,7 @@ import type {
 import { resolveWorkbenchHostPrepareClose } from "@tutti-os/workbench-surface";
 import type {
   IWorkspaceWorkbenchHostService,
+  WorkspaceOnboardingAutoOpenDiagnostic,
   WorkspaceCustomWallpaperSnapshot,
   WorkspaceCustomWallpaperStatus,
   WorkspaceWorkbenchBodyRendererContext,
@@ -111,6 +112,7 @@ import type {
   TuttiExternalAtQueryResult
 } from "@tutti-os/workspace-external-core/contracts";
 import type { WorkspaceFileReferenceAdapter } from "@tutti-os/workspace-file-reference/contracts";
+import type { WorkspaceUserProjectApi } from "@tutti-os/workspace-user-project/contracts";
 import { serializeWorkspaceAppExternalAtMatch } from "./workspaceAppExternalAtSerialization.ts";
 
 const workspaceDockNativePreviewMaxWidthPx = 260;
@@ -129,7 +131,7 @@ export interface WorkspaceWorkbenchHostServiceDependencies {
   hostWindowApi: DesktopHostWindowApi;
   hostWorkspaceApi: Pick<
     DesktopHostWorkspaceApi,
-    "onOpenFeatureRequest" | "onOpenFileRequest"
+    "broadcastAgentStatus" | "onOpenFeatureRequest" | "onOpenFileRequest"
   >;
   workspaceFileManagerService: IWorkspaceFileManagerService;
   workspaceUserProjectService: IWorkspaceUserProjectService;
@@ -158,7 +160,7 @@ export interface WorkspaceWorkbenchHostExternalDependencies {
   hostWindowApi: DesktopHostWindowApi;
   hostWorkspaceApi: Pick<
     DesktopHostWorkspaceApi,
-    "onOpenFeatureRequest" | "onOpenFileRequest"
+    "broadcastAgentStatus" | "onOpenFeatureRequest" | "onOpenFileRequest"
   >;
   tuttidClient: TuttidClient;
   platformApi: Pick<
@@ -275,6 +277,16 @@ export class WorkspaceWorkbenchHostService implements IWorkspaceWorkbenchHostSer
     });
   }
 
+  createWorkspaceAppExternalUserProjectApi(): WorkspaceUserProjectApi {
+    return createWorkspaceAppExternalUserProjectApi(
+      this.dependencies.workspaceUserProjectService
+    );
+  }
+
+  openExternal(url: string): Promise<void> {
+    return this.dependencies.hostFilesApi.openExternal(url);
+  }
+
   async queryWorkspaceAppExternalAt(input: {
     query: TuttiExternalAtQueryInput;
     workspaceId: string;
@@ -338,6 +350,20 @@ export class WorkspaceWorkbenchHostService implements IWorkspaceWorkbenchHostSer
       ? cachedSnapshot
       : await this.dependencies.repository.load(workspaceId);
     return hasWorkspaceOnboardingAutoOpened(snapshot);
+  }
+
+  logWorkspaceOnboardingAutoOpenDiagnostic(
+    diagnostic: WorkspaceOnboardingAutoOpenDiagnostic
+  ): void {
+    void this.dependencies.runtimeApi
+      .logRendererDiagnostic({
+        details: diagnostic.details ?? {},
+        event: diagnostic.event,
+        level: diagnostic.level,
+        source: "workspace-workbench",
+        workspaceId: diagnostic.workspaceId
+      })
+      .catch(() => undefined);
   }
 
   async markWorkspaceOnboardingAutoOpened(workspaceId: string): Promise<void> {
@@ -564,6 +590,10 @@ export class WorkspaceWorkbenchHostService implements IWorkspaceWorkbenchHostSer
     return () => {
       this.wallpaperListeners.delete(listener);
     };
+  }
+
+  broadcastAgentStatus(payload: { agentBound: boolean }): void {
+    this.dependencies.hostWorkspaceApi.broadcastAgentStatus(payload);
   }
 
   private async persistPendingWallpaperSettings(
@@ -1128,6 +1158,47 @@ IWorkspaceAgentPromptSessionService(
 IWorkspaceAppCenterService(WorkspaceWorkbenchHostService, undefined, 5);
 IWorkspaceFileManagerService(WorkspaceWorkbenchHostService, undefined, 6);
 IWorkspaceUserProjectService(WorkspaceWorkbenchHostService, undefined, 7);
+
+export function createWorkspaceAppExternalUserProjectApi(
+  service: IWorkspaceUserProjectService
+): WorkspaceUserProjectApi {
+  return {
+    checkPath: (input) => service.checkProjectPath(input.path),
+    create: (input) => service.createProject(input.name),
+    getDefaultSelection: () => service.getDefaultSelection(),
+    getSnapshot: () =>
+      Promise.resolve(cloneWorkspaceUserProjectServiceSnapshot(service)),
+    list: async () => {
+      await service.ensureLoaded();
+      return {
+        projects: service.store.projects.map((project) => ({ ...project }))
+      };
+    },
+    prepareSelection: (input) => service.prepareSelection(input),
+    refresh: async () => {
+      await service.refresh();
+      return cloneWorkspaceUserProjectServiceSnapshot(service);
+    },
+    rememberDefaultSelection: (input) =>
+      service.rememberDefaultSelection(input),
+    selectDirectory: () => service.selectDirectory(),
+    subscribe: (listener) =>
+      service.subscribe(() => {
+        listener(cloneWorkspaceUserProjectServiceSnapshot(service));
+      }),
+    use: (input) => service.registerProjectPath(input.path)
+  };
+}
+
+function cloneWorkspaceUserProjectServiceSnapshot(
+  service: IWorkspaceUserProjectService
+): ReturnType<IWorkspaceUserProjectService["getSnapshot"]> {
+  const snapshot = service.getSnapshot();
+  return {
+    ...snapshot,
+    projects: snapshot.projects.map((project) => ({ ...project }))
+  };
+}
 
 interface CachedWorkspaceWorkbenchHostInput {
   appI18n: I18nRuntime<string>;

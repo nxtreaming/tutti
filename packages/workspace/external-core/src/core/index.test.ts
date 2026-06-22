@@ -5,9 +5,14 @@ import {
   normalizeTuttiExternalFileOpenInput,
   normalizeTuttiExternalFileSelectInput,
   normalizeTuttiExternalLogInput,
+  normalizeTuttiExternalPdfPrintHtmlInput,
   normalizeTuttiExternalPermissionRequestInput,
   normalizeTuttiExternalReferenceOpenInput,
   normalizeTuttiExternalSettingsOpenInput,
+  normalizeTuttiExternalUserProjectCreateInput,
+  normalizeTuttiExternalUserProjectPathInput,
+  normalizeTuttiExternalUserProjectRememberDefaultSelectionInput,
+  normalizeTuttiExternalUserProjectSelectionPreparationInput,
   normalizeTuttiExternalWorkspaceOpenFeatureInput,
   tuttiExternalAtDefaultMaxResults,
   tuttiExternalAtMaxResultsLimit,
@@ -178,6 +183,60 @@ test("rejects invalid settings open input", () => {
   );
 });
 
+test("normalizes PDF print HTML input", () => {
+  assert.deepEqual(
+    normalizeTuttiExternalPdfPrintHtmlInput({
+      baseUrl: " http://127.0.0.1:8790/project/ ",
+      html: " <h1>Doc</h1> ",
+      margin: {
+        bottom: "14mm",
+        left: " 10mm ",
+        right: "10mm",
+        top: "12mm"
+      },
+      pageSize: "A4",
+      printBackground: false,
+      title: " Report "
+    }),
+    {
+      baseUrl: "http://127.0.0.1:8790/project/",
+      html: "<h1>Doc</h1>",
+      margin: {
+        bottom: "14mm",
+        left: "10mm",
+        right: "10mm",
+        top: "12mm"
+      },
+      pageSize: "A4",
+      printBackground: false,
+      title: "Report"
+    }
+  );
+});
+
+test("rejects invalid PDF print HTML input", () => {
+  assert.throws(
+    () => normalizeTuttiExternalPdfPrintHtmlInput({ html: "" }),
+    /html is required/
+  );
+  assert.throws(
+    () =>
+      normalizeTuttiExternalPdfPrintHtmlInput({
+        baseUrl: "file:///tmp/doc.html",
+        html: "<h1>Doc</h1>"
+      }),
+    /baseUrl protocol is unsupported/
+  );
+  assert.throws(
+    () =>
+      normalizeTuttiExternalPdfPrintHtmlInput({
+        html: "<h1>Doc</h1>",
+        margin: { top: "12pt" }
+      }),
+    /margin top unit is unsupported/
+  );
+});
+
 test("normalizes workspace feature open input", () => {
   assert.deepEqual(
     normalizeTuttiExternalWorkspaceOpenFeatureInput({
@@ -240,6 +299,50 @@ test("rejects invalid reference open input", () => {
     () =>
       normalizeTuttiExternalReferenceOpenInput({ href: "https://example.com" }),
     /mention URL/
+  );
+});
+
+test("normalizes user project inputs", () => {
+  assert.deepEqual(
+    normalizeTuttiExternalUserProjectCreateInput({ name: " Project " }),
+    {
+      name: "Project"
+    }
+  );
+  assert.deepEqual(
+    normalizeTuttiExternalUserProjectPathInput({ path: " /repo " }, "use"),
+    {
+      path: "/repo"
+    }
+  );
+  assert.deepEqual(
+    normalizeTuttiExternalUserProjectRememberDefaultSelectionInput({
+      path: "   "
+    }),
+    {
+      path: null
+    }
+  );
+  assert.deepEqual(
+    normalizeTuttiExternalUserProjectSelectionPreparationInput({
+      projectLocked: true,
+      selectedPath: " /repo "
+    }),
+    {
+      projectLocked: true,
+      selectedPath: "/repo"
+    }
+  );
+});
+
+test("rejects invalid user project inputs", () => {
+  assert.throws(
+    () => normalizeTuttiExternalUserProjectCreateInput({ name: "" }),
+    /name is required/
+  );
+  assert.throws(
+    () => normalizeTuttiExternalUserProjectPathInput({ path: "" }, "checkPath"),
+    /path is required/
   );
 });
 

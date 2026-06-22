@@ -293,7 +293,7 @@ export const zhCN = {
         defaultAgentProviderSaveFailed: "暂时无法更新默认 Provider。",
         computerUseLabel: "电脑控制",
         computerUseDescription:
-          "让 Agent 控制你的 Mac 桌面——截图、点击、键盘输入等。",
+          "让 Agent 控制你的 Mac 桌面——截图、点击、键盘输入等",
         computerUseInstallButton: "安装",
         computerUseInstalling: "正在安装…",
         computerUseInstallSuccess: "cua-driver 安装成功。",
@@ -321,7 +321,7 @@ export const zhCN = {
         computerUseStatusNotInstalled: "未安装",
         computerUseStatusCheckAgain: "重新检查",
         browserUseConnectionModeDescription:
-          "选择 Agent 执行网页任务时控制哪个浏览器：你电脑上的 Chrome，或由 Tutti 单独启动的浏览器。",
+          "选择 Agent 执行网页任务时控制哪个浏览器：你电脑上的 Chrome，或由 Tutti 单独启动的浏览器",
         browserUseConnectionModeLabel: "浏览器连接",
         browserUseConnectionModeOptions: {
           autoConnect: "复用我的 Chrome",
@@ -354,13 +354,29 @@ export const zhCN = {
         versionLabel: "桌面版本"
       },
       nav: {
+        about: "关于",
         apps: "应用",
         sectionsLabel: "设置分区",
         appearance: "外观",
         developer: "开发者",
         general: "通用"
       },
+      about: {
+        appName: "Tutti",
+        developerModeEnabled: "开发者模式已打开",
+        githubAction: "GitHub",
+        versionLabel: "版本",
+        websiteAction: "官方网站"
+      },
       apps: {
+        appCatalogChannelDescription:
+          "选择应用中心显示已正式发布的应用，还是用于试用的新版本。",
+        appCatalogChannelLabel: "应用来源",
+        appCatalogChannelOptions: {
+          production: "正式应用",
+          staging: "测试应用"
+        },
+        appCatalogChannelSaveFailed: "暂时无法切换应用来源。",
         managedModels: {
           apiKey: "API 密钥",
           addModel: "添加",
@@ -466,7 +482,7 @@ export const zhCN = {
         addFileDefaultOpener: "添加",
         removeFileDefaultOpener: "移除 .{{extension}}",
         visibilityDescription:
-          "在设置中隐藏此面板。在「通用」里连续点击版本号七次即可重新显示",
+          "在设置中隐藏此面板。在「关于」里连续点击版本号七次即可重新显示",
         visibilityLabel: "显示开发者面板"
       },
       title: "设置",

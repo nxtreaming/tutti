@@ -32,7 +32,10 @@ import {
   getAgentSessionView,
   resetAgentSessionViewStoreForTests
 } from "../../../contexts/workspace/presentation/renderer/agentSessions/agentSessionViewStore";
-import { resetAgentGUIConversationListStoreForTests } from "../../../contexts/workspace/presentation/renderer/agentGuiConversationList/agentGuiConversationListStore";
+import {
+  getAgentGUIConversationListStoreSnapshot,
+  resetAgentGUIConversationListStoreForTests
+} from "../../../contexts/workspace/presentation/renderer/agentGuiConversationList/agentGuiConversationListStore";
 import { createAppError } from "../../../shared/errors/appError";
 import type { AgentGUINodeData } from "../../../types";
 import { AGENT_GUI_RUNTIME_SESSION_ORIGIN } from "../model/agentGuiConversationModel";
@@ -199,6 +202,20 @@ describe("useAgentGUINodeController", () => {
     });
     expect(listUserProjects).toHaveBeenCalled();
     expect(subscribeUserProjects).toHaveBeenCalled();
+
+    // Storm guard: `project` is a per-window JOIN derived in the view-model
+    // layer only. Writing it back into the shared conversation store caused
+    // cross-window update storms, so the canonical store must stay project-free
+    // even though the view model exposes a resolved project above.
+    const storedConversation = Object.values(
+      getAgentGUIConversationListStoreSnapshot().statesByQueryKey
+    )
+      .flatMap((state) => state.conversations)
+      .find((candidate) => candidate.id === "session-1");
+    expect(storedConversation).toBeDefined();
+    // The store may carry null (loader) or undefined, but never a resolved
+    // project object — that only lives in the view-model layer.
+    expect(storedConversation?.project ?? null).toBeNull();
 
     userProjects = [
       ...userProjects,
@@ -5273,6 +5290,55 @@ describe("useAgentGUINodeController", () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  it("clears the per-session messages-loading flag when a new conversation activation fails", async () => {
+    const activate = vi.fn(
+      async (_input: AgentHostActivateAgentSessionInput) => {
+        throw new Error("runtime not connected");
+      }
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => ({ presences: [], sessions: [] })),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      activate
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData(null),
+        onDataChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      result.current.actions.submitPrompt(promptBlocks("create one"));
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.isCreatingConversation).toBe(false);
+    });
+
+    const failedId = activate.mock.calls.at(-1)?.[0]?.agentSessionId;
+    expect(failedId).toBeTruthy();
+    // The failure is surfaced and the global loading flag is cleared today.
+    expect(result.current.viewModel.detailError).toBe("runtime not connected");
+    expect(result.current.viewModel.isLoadingMessages).toBe(false);
+    // The per-session messages-loading flag opened before submit must also be
+    // released on failure; otherwise the conversation view spins forever.
+    await waitFor(() => {
+      expect(
+        getAgentSessionView({
+          workspaceId: "room-1",
+          agentSessionId: failedId as string
+        })?.isLoadingMessages
+      ).toBe(false);
+    });
+  });
+
   it("keeps durable history visible and retries attach when explicitly requested again", async () => {
     const activate = vi.fn(
       async (_input: AgentHostActivateAgentSessionInput) => {
@@ -8779,12 +8845,12 @@ describe("useAgentGUINodeController", () => {
         {
           value: "read-only",
           label: "请求批准",
-          description: "编辑外部文件或使用互联网前始终询问你"
+          description: "编辑外部文件和使用互联网时始终询问"
         },
         {
           value: "auto",
           label: "替我审批",
-          description: "仅在检测到可能不安全的操作时询问你"
+          description: "仅对检测到的风险操作请求批准"
         },
         {
           value: "custom-safe",

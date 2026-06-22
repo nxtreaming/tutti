@@ -1,4 +1,6 @@
 import { resolveAgentMentionFileThumbnailUrl } from "../shared/mentionFilePresentation";
+import { getOptionalAgentHostApi } from "../../agentActivityHost";
+import type { RuntimeDiagnosticsDetailValue } from "../../shared/contracts/dto/debug";
 import { presentAgentGeneratedFileMentionItems } from "./agentMentionAgentGeneratedFilesPresentation";
 import {
   emitAgentMentionSearchDiagnostic,
@@ -11,14 +13,13 @@ import {
   AGENT_MENTION_FILTER_TAB_ORDER,
   buildEmptyGroup,
   compactText,
-  filterForGroup,
+  DEFAULT_AGENT_MENTION_FILTER,
   DEFAULT_MENTION_GROUP_PAGE_SIZE,
   groupIdsForFilter,
   mentionGroupPageSize,
   normalizeQuery,
   resolveMentionGroupItems,
   resolveMentionGroupTotalCount,
-  shouldPrefetchBrowseFilter,
   shouldShowEmptyGroup
 } from "./agentMentionSearchHelpers";
 import { agentMentionFilterLabel } from "./AgentMentionLabels";
@@ -40,7 +41,7 @@ import type {
   MentionPaletteState
 } from "@tutti-os/ui-rich-text/at-panel";
 
-export type AgentMentionFilterId = "all" | "app" | "file" | "session" | "issue";
+export type AgentMentionFilterId = "session" | "file" | "issue" | "app";
 export type AgentMentionGroupId =
   | "apps"
   | "files"
@@ -51,6 +52,11 @@ export type AgentMentionGroupId =
   | "issues";
 
 type AgentMentionRawGroupId = Exclude<AgentMentionGroupId, "files">;
+type AgentMentionRawGroups = Record<
+  AgentMentionRawGroupId,
+  AgentContextMentionItem[]
+>;
+type AgentMentionTotalCounts = Partial<Record<AgentMentionGroupId, number>>;
 
 export interface AgentMentionBrowseCategory {
   id: AgentMentionFilterId;
@@ -67,6 +73,7 @@ interface AgentMentionSearchControllerOptions {
   debounceMs?: number;
   fileLimit?: number;
   issueLimit?: number;
+  browseCacheTtlMs?: number;
   providerTimeoutMs?: number;
   diagnosticInfoLogger?: (payload: AgentMentionSearchDiagnosticLog) => void;
   diagnosticNow?: () => number;
@@ -81,6 +88,98 @@ const DEFAULT_ISSUE_LIMIT = 25;
 const DEFAULT_SESSION_LIMIT = 30;
 const DEFAULT_PROVIDER_TIMEOUT_MS = 3500;
 const DEFAULT_DIAGNOSTIC_SLOW_THRESHOLD_MS = 250;
+const DEFAULT_BROWSE_CACHE_TTL_MS = 30_000;
+const AGENT_MENTION_LIFECYCLE_LOG_PREFIX = "[agent-gui] mention-lifecycle";
+
+interface AgentMentionBrowseFetchResult {
+  providerDiagnostics: AgentMentionProviderQueryDiagnostic[];
+  rawGroups: AgentMentionRawGroups;
+  totalCounts: AgentMentionTotalCounts;
+}
+
+interface AgentMentionBrowseCacheEntry extends AgentMentionBrowseFetchResult {
+  cachedAt: number;
+}
+
+type AgentMentionBrowseLoadReason = "open" | "preload";
+
+interface AgentMentionLifecycleDiagnosticLog {
+  event:
+    | "controller.construct"
+    | "controller.dispose"
+    | "browse.open"
+    | "browse.preload"
+    | "browse.cache"
+    | "browse.fetch.start"
+    | "browse.fetch.dedupe"
+    | "browse.fetch.success"
+    | "browse.fetch.error"
+    | "browse.apply.skipped";
+  details: Record<string, RuntimeDiagnosticsDetailValue>;
+}
+
+const sharedAgentMentionBrowseCache = new Map<
+  string,
+  AgentMentionBrowseCacheEntry
+>();
+const sharedAgentMentionBrowseFetches = new Map<
+  string,
+  Promise<AgentMentionBrowseFetchResult>
+>();
+
+// Bound the shared browse cache so long-lived renderer sessions cannot grow it
+// without limit. Eviction happens on write (LRU-by-insertion-order); reads keep
+// returning stale entries so the stale-while-revalidate path stays intact.
+export const MAX_BROWSE_CACHE_ENTRIES = 64;
+
+function writeBrowseCacheEntry(
+  cacheKey: string,
+  entry: AgentMentionBrowseCacheEntry
+): void {
+  // Re-insert so the freshly written key becomes the newest (Map preserves
+  // insertion order), then drop the oldest keys past the cap.
+  sharedAgentMentionBrowseCache.delete(cacheKey);
+  sharedAgentMentionBrowseCache.set(cacheKey, entry);
+  while (sharedAgentMentionBrowseCache.size > MAX_BROWSE_CACHE_ENTRIES) {
+    const oldestKey = sharedAgentMentionBrowseCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    sharedAgentMentionBrowseCache.delete(oldestKey);
+  }
+}
+
+// Defer speculative warm-up to a browser idle slot so it never blocks the
+// caller's synchronous path (e.g. a composer focus handler) or a render commit.
+// Falls back to a macrotask where requestIdleCallback is unavailable (jsdom,
+// older runtimes). Returns a canceller the owner uses on teardown.
+function scheduleIdleTask(task: () => void): () => void {
+  const scope = globalThis as typeof globalThis & {
+    requestIdleCallback?: (
+      cb: () => void,
+      opts?: { timeout: number }
+    ) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+  if (typeof scope.requestIdleCallback === "function") {
+    const handle = scope.requestIdleCallback(() => task(), { timeout: 500 });
+    return () => scope.cancelIdleCallback?.(handle);
+  }
+  const handle = setTimeout(task, 0);
+  return () => clearTimeout(handle);
+}
+
+export function resetAgentMentionSearchBrowseCacheForTests(): void {
+  sharedAgentMentionBrowseCache.clear();
+  sharedAgentMentionBrowseFetches.clear();
+}
+
+(
+  globalThis as typeof globalThis & {
+    __tuttiResetAgentMentionSearchBrowseCacheForTests?: () => void;
+  }
+).__tuttiResetAgentMentionSearchBrowseCacheForTests =
+  resetAgentMentionSearchBrowseCacheForTests;
 
 // Resolve filter tab labels lazily so they reflect the active i18n locale at the
 // time a state is emitted. Computing this at module load froze the labels to the
@@ -109,6 +208,7 @@ export class AgentMentionSearchController {
   private readonly debounceMs: number;
   private readonly fileLimit: number;
   private readonly issueLimit: number;
+  private readonly browseCacheTtlMs: number;
   private readonly providerTimeoutMs: number;
   private readonly diagnosticInfoLogger: (
     payload: AgentMentionSearchDiagnosticLog
@@ -119,33 +219,26 @@ export class AgentMentionSearchController {
   private readonly expandedCounts: Partial<
     Record<AgentMentionGroupId, number>
   > = {};
-  private readonly totalCounts: Partial<Record<AgentMentionGroupId, number>> =
-    {};
+  private readonly totalCounts: AgentMentionTotalCounts = {};
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private preloadCancel: (() => void) | null = null;
+  private pendingPreloadKey: string | null = null;
   private requestId = 0;
   private disposed = false;
   private activeWorkspaceId = "";
   private currentUserId = "";
-  private currentFilter: AgentMentionFilterId = "all";
+  private currentFilter: AgentMentionFilterId = DEFAULT_AGENT_MENTION_FILTER;
   private currentQuery = "";
   private currentSessionCwd = "";
   private currentFileSearchLimit: number;
   private currentIssueSearchLimit: number;
   private agentGeneratedBrowsePath: string | null = null;
-  private rawGroups: Record<AgentMentionRawGroupId, AgentContextMentionItem[]> =
-    {
-      apps: [],
-      opened_files: [],
-      agent_generated_files: [],
-      my_sessions: [],
-      collab_sessions: [],
-      issues: []
-    };
+  private rawGroups: AgentMentionRawGroups = emptyAgentMentionRawGroups();
   private state: AgentMentionSearchState = {
     status: "idle",
     query: "",
     mode: "browse",
-    filter: "all",
+    filter: DEFAULT_AGENT_MENTION_FILTER,
     categories: buildBrowseCategories(),
     groups: [],
     error: null
@@ -161,6 +254,8 @@ export class AgentMentionSearchController {
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.fileLimit = options.fileLimit ?? DEFAULT_FILE_LIMIT;
     this.issueLimit = options.issueLimit ?? DEFAULT_ISSUE_LIMIT;
+    this.browseCacheTtlMs =
+      options.browseCacheTtlMs ?? DEFAULT_BROWSE_CACHE_TTL_MS;
     this.providerTimeoutMs =
       options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
     this.diagnosticInfoLogger =
@@ -170,6 +265,10 @@ export class AgentMentionSearchController {
       options.diagnosticSlowThresholdMs ?? DEFAULT_DIAGNOSTIC_SLOW_THRESHOLD_MS;
     this.currentFileSearchLimit = this.fileLimit;
     this.currentIssueSearchLimit = this.issueLimit;
+    this.logLifecycle("controller.construct", {
+      providerIds: this.providerIdsForDiagnostics(),
+      providerCount: this.contextMentionProviders.size
+    });
   }
 
   subscribe(listener: Listener): () => void {
@@ -198,6 +297,7 @@ export class AgentMentionSearchController {
     this.resetAgentGeneratedBrowsePath();
     this.resetExpandedCounts();
     this.resetSearchLimits();
+    this.resetRawGroups();
 
     if (!this.activeWorkspaceId) {
       this.setState({
@@ -231,7 +331,8 @@ export class AgentMentionSearchController {
         workspaceId: this.activeWorkspaceId,
         currentUserId: this.currentUserId,
         query: this.currentQuery,
-        requestId
+        requestId,
+        filter: this.currentFilter
       });
     }, this.debounceMs);
   }
@@ -241,39 +342,28 @@ export class AgentMentionSearchController {
       return;
     }
     this.currentFilter = filter;
+    this.clearTimer();
+    const requestId = ++this.requestId;
     this.resetAgentGeneratedBrowsePath();
     this.resetExpandedCounts();
+    this.resetSearchLimits();
+    this.resetRawGroups();
     if (!this.currentQuery) {
       this.startBrowseModeFetch(filter);
       return;
     }
-    this.setState({
-      status: "ready",
-      query: this.currentQuery,
-      mode: "results",
-      filter: this.currentFilter,
-      categories: buildBrowseCategories(),
-      groups: this.groupsFromRawGroups(),
-      error: null
-    });
-  }
-
-  enterCategory(category: Exclude<AgentMentionFilterId, "all">): void {
-    if (this.disposed) {
-      return;
-    }
-    this.currentFilter = category;
-    this.resetExpandedCounts();
-    this.clearTimer();
-    if (!this.currentQuery) {
-      this.startBrowseModeFetch(category);
-      return;
-    }
     if (!this.activeWorkspaceId) {
-      this.emitBrowseState("ready");
+      this.setState({
+        status: "ready",
+        query: this.currentQuery,
+        mode: "results",
+        filter: this.currentFilter,
+        categories: buildBrowseCategories(),
+        groups: [],
+        error: null
+      });
       return;
     }
-    const requestId = ++this.requestId;
     this.setState({
       status: "loading",
       query: this.currentQuery,
@@ -287,8 +377,111 @@ export class AgentMentionSearchController {
       workspaceId: this.activeWorkspaceId,
       currentUserId: this.currentUserId,
       query: this.currentQuery,
-      requestId
+      requestId,
+      filter
     });
+  }
+
+  preloadBrowse(input: {
+    workspaceId: string;
+    currentUserId?: string | null;
+    sessionCwd?: string | null;
+    filter?: AgentMentionFilterId;
+  }): void {
+    if (this.disposed) {
+      return;
+    }
+    const workspaceId = input.workspaceId.trim();
+    if (!workspaceId) {
+      return;
+    }
+    const filter = input.filter ?? DEFAULT_AGENT_MENTION_FILTER;
+    const currentUserId = input.currentUserId?.trim() ?? "";
+    const sessionCwd = input.sessionCwd?.trim() ?? "";
+    const cacheKey = this.browseCacheKey({
+      currentUserId,
+      filter,
+      sessionCwd,
+      workspaceId
+    });
+    if (this.readBrowseCache(cacheKey).isFresh) {
+      return;
+    }
+    if (this.pendingPreloadKey === cacheKey) {
+      return;
+    }
+    this.cancelPendingPreload();
+    this.pendingPreloadKey = cacheKey;
+    this.preloadCancel = scheduleIdleTask(() => {
+      this.preloadCancel = null;
+      this.pendingPreloadKey = null;
+      if (this.disposed) {
+        return;
+      }
+      this.runBrowsePreload({
+        cacheKey,
+        currentUserId,
+        filter,
+        sessionCwd,
+        workspaceId
+      });
+    });
+  }
+
+  private runBrowsePreload(input: {
+    cacheKey: string;
+    currentUserId: string;
+    filter: AgentMentionFilterId;
+    sessionCwd: string;
+    workspaceId: string;
+  }): void {
+    const { cacheKey, currentUserId, filter, sessionCwd, workspaceId } = input;
+    this.logLifecycle("browse.preload", {
+      filter,
+      providerIds: this.providerIdsForDiagnostics(),
+      sessionCwdPresent: Boolean(sessionCwd),
+      workspaceId
+    });
+    const cached = this.readBrowseCache(cacheKey);
+    this.logBrowseCacheState({
+      cacheKey,
+      cached,
+      filter,
+      reason: "preload",
+      workspaceId
+    });
+    if (cached.isFresh) {
+      return;
+    }
+    void this.loadBrowseFetchResult(
+      {
+        workspaceId,
+        currentUserId,
+        filter,
+        sessionCwd
+      },
+      cacheKey,
+      "preload"
+    ).catch((error) => {
+      this.logLifecycle("browse.fetch.error", {
+        errorKind: diagnosticErrorKind(error),
+        filter,
+        reason: "preload",
+        workspaceId
+      });
+    });
+  }
+
+  private cancelPendingPreload(): void {
+    if (this.preloadCancel) {
+      this.preloadCancel();
+      this.preloadCancel = null;
+    }
+    this.pendingPreloadKey = null;
+  }
+
+  enterCategory(category: AgentMentionFilterId): void {
+    this.setFilter(category);
   }
 
   selectAgentGeneratedMentionItem(item: AgentContextMentionItem): boolean {
@@ -333,10 +526,6 @@ export class AgentMentionSearchController {
     const current = this.expandedCounts[groupId] ?? pageSize;
     this.expandedCounts[groupId] = current + pageSize;
     if (!this.currentQuery) {
-      const nextFilter = filterForGroup(groupId);
-      if (this.currentFilter === "all") {
-        this.currentFilter = nextFilter;
-      }
       this.setState({
         status: "ready",
         query: "",
@@ -382,7 +571,8 @@ export class AgentMentionSearchController {
         workspaceId: this.activeWorkspaceId,
         currentUserId: this.currentUserId,
         query: this.currentQuery,
-        requestId
+        requestId,
+        filter: this.currentFilter
       });
       return;
     }
@@ -400,30 +590,17 @@ export class AgentMentionSearchController {
   close(): void {
     this.clearTimer();
     this.requestId += 1;
-    this.currentFilter = "all";
+    this.currentFilter = DEFAULT_AGENT_MENTION_FILTER;
     this.resetAgentGeneratedBrowsePath();
     this.resetExpandedCounts();
     this.resetSearchLimits();
-    this.rawGroups = {
-      apps: [],
-      opened_files: [],
-      agent_generated_files: [],
-      my_sessions: [],
-      collab_sessions: [],
-      issues: []
-    };
-    this.totalCounts.apps = 0;
-    this.totalCounts.opened_files = 0;
-    this.totalCounts.agent_generated_files = 0;
-    this.totalCounts.my_sessions = 0;
-    this.totalCounts.collab_sessions = 0;
-    this.totalCounts.issues = 0;
+    this.resetRawGroups();
     this.currentQuery = "";
     this.setState({
       status: "idle",
       query: "",
       mode: "browse",
-      filter: "all",
+      filter: DEFAULT_AGENT_MENTION_FILTER,
       categories: buildBrowseCategories(),
       groups: [],
       error: null
@@ -433,39 +610,75 @@ export class AgentMentionSearchController {
   dispose(): void {
     this.disposed = true;
     this.clearTimer();
+    this.cancelPendingPreload();
     this.listeners.clear();
     this.requestId += 1;
+    this.logLifecycle("controller.dispose", {
+      requestId: this.requestId,
+      workspaceId: this.activeWorkspaceId
+    });
   }
 
   private startBrowseModeFetch(filter: AgentMentionFilterId): void {
-    if (!this.activeWorkspaceId || !shouldPrefetchBrowseFilter(filter)) {
-      this.rawGroups = {
-        apps: [],
-        opened_files: [],
-        agent_generated_files: [],
-        my_sessions: [],
-        collab_sessions: [],
-        issues: []
-      };
+    if (!this.activeWorkspaceId) {
+      this.resetRawGroups();
       this.emitBrowseState("ready");
       return;
     }
     this.clearTimer();
     const requestId = ++this.requestId;
-    this.rawGroups = {
-      apps: [],
-      opened_files: [],
-      agent_generated_files: [],
-      my_sessions: [],
-      collab_sessions: [],
-      issues: []
-    };
-    this.emitBrowseState("loading");
+    const cacheKey = this.browseCacheKey({
+      currentUserId: this.currentUserId,
+      filter,
+      sessionCwd: this.currentSessionCwd,
+      workspaceId: this.activeWorkspaceId
+    });
+    this.logLifecycle("browse.open", {
+      filter,
+      providerIds: this.providerIdsForDiagnostics(),
+      requestId,
+      sessionCwdPresent: Boolean(this.currentSessionCwd),
+      workspaceId: this.activeWorkspaceId
+    });
+    const cached = this.readBrowseCacheForBrowseInput({
+      cacheKey,
+      currentUserId: this.currentUserId,
+      filter,
+      sessionCwd: this.currentSessionCwd,
+      workspaceId: this.activeWorkspaceId
+    });
+    this.logBrowseCacheState({
+      cacheKey,
+      cached,
+      filter,
+      reason: "open",
+      workspaceId: this.activeWorkspaceId
+    });
+    if (cached.entry) {
+      this.applyBrowseFetchResult(cached.entry);
+      this.setState({
+        status: "ready",
+        query: "",
+        mode: "browse",
+        filter: this.currentFilter,
+        categories: buildBrowseCategories(),
+        groups: this.groupsFromRawGroups(),
+        error: null
+      });
+      if (cached.isFresh) {
+        return;
+      }
+    } else {
+      this.rawGroups = emptyAgentMentionRawGroups();
+      this.resetTotalCounts();
+      this.emitBrowseState("loading");
+    }
     void this.runBrowseSearch({
       workspaceId: this.activeWorkspaceId,
       currentUserId: this.currentUserId,
       requestId,
-      filter
+      filter,
+      sessionCwd: this.currentSessionCwd
     });
   }
 
@@ -474,69 +687,33 @@ export class AgentMentionSearchController {
     currentUserId: string;
     query: string;
     requestId: number;
+    filter: AgentMentionFilterId;
   }): Promise<void> {
     const startedAt = this.diagnosticNow();
-    const providerDiagnostics: AgentMentionProviderQueryDiagnostic[] = [];
+    let providerDiagnostics: AgentMentionProviderQueryDiagnostic[] = [];
     try {
-      const [fileItems, appItems, issueItems, sessionItems] = await Promise.all(
-        [
-          this.queryProviderMentionItemsById({
-            providerId: FILE_PROVIDER_ID,
-            workspaceId: input.workspaceId,
-            currentUserId: input.currentUserId,
-            query: input.query,
-            limit: this.currentFileSearchLimit,
-            diagnostics: providerDiagnostics
-          }),
-          this.queryProviderMentionItemsById({
-            providerId: WORKSPACE_APP_PROVIDER_ID,
-            workspaceId: input.workspaceId,
-            currentUserId: input.currentUserId,
-            query: input.query,
-            limit: DEFAULT_MENTION_GROUP_PAGE_SIZE,
-            diagnostics: providerDiagnostics
-          }),
-          this.queryProviderMentionItemsById({
-            providerId: WORKSPACE_ISSUE_PROVIDER_ID,
-            workspaceId: input.workspaceId,
-            currentUserId: input.currentUserId,
-            query: input.query,
-            limit: this.currentIssueSearchLimit,
-            diagnostics: providerDiagnostics
-          }),
-          this.queryProviderMentionItemsById({
-            providerId: AGENT_SESSION_PROVIDER_ID,
-            workspaceId: input.workspaceId,
-            currentUserId: input.currentUserId,
-            query: input.query,
-            limit: DEFAULT_SESSION_LIMIT,
-            diagnostics: providerDiagnostics
-          })
-        ]
-      );
+      const result = await this.fetchFilterResult({
+        workspaceId: input.workspaceId,
+        currentUserId: input.currentUserId,
+        query: input.query,
+        filter: input.filter,
+        sessionCwd: this.currentSessionCwd,
+        includeAgentGeneratedFiles: false
+      });
+      providerDiagnostics = result.providerDiagnostics;
 
-      if (!this.canApply(input.requestId, input.workspaceId, input.query)) {
+      if (
+        !this.canApply(
+          input.requestId,
+          input.workspaceId,
+          input.query,
+          input.filter
+        )
+      ) {
         return;
       }
 
-      this.rawGroups = {
-        apps: appItems.filter((item) => item.kind === "workspace-app"),
-        opened_files: fileItems.filter((item) => item.kind === "file"),
-        agent_generated_files: [],
-        my_sessions: sessionItems.filter(
-          (item) => item.kind === "session" && item.scope === "my_sessions"
-        ),
-        collab_sessions: sessionItems.filter(
-          (item) => item.kind === "session" && item.scope === "collab_sessions"
-        ),
-        issues: issueItems.filter((item) => item.kind === "workspace-issue")
-      };
-      this.totalCounts.apps = this.rawGroups.apps.length;
-      this.totalCounts.opened_files = this.rawGroups.opened_files.length;
-      this.totalCounts.agent_generated_files = 0;
-      this.totalCounts.my_sessions = this.rawGroups.my_sessions.length;
-      this.totalCounts.collab_sessions = this.rawGroups.collab_sessions.length;
-      this.totalCounts.issues = this.rawGroups.issues.length;
+      this.applyBrowseFetchResult(result);
       const groups = this.groupsFromRawGroups();
 
       this.setState({
@@ -549,7 +726,7 @@ export class AgentMentionSearchController {
         error: null
       });
       this.logSearchDiagnostic({
-        filter: this.currentFilter,
+        filter: input.filter,
         groups,
         mode: "results",
         providerDiagnostics,
@@ -560,7 +737,14 @@ export class AgentMentionSearchController {
         workspaceId: input.workspaceId
       });
     } catch (error) {
-      if (!this.canApply(input.requestId, input.workspaceId, input.query)) {
+      if (
+        !this.canApply(
+          input.requestId,
+          input.workspaceId,
+          input.query,
+          input.filter
+        )
+      ) {
         return;
       }
       this.setState({
@@ -574,7 +758,7 @@ export class AgentMentionSearchController {
       });
       this.logSearchDiagnostic({
         error,
-        filter: this.currentFilter,
+        filter: input.filter,
         groups: [],
         mode: "results",
         providerDiagnostics,
@@ -592,201 +776,26 @@ export class AgentMentionSearchController {
     currentUserId: string;
     requestId: number;
     filter: AgentMentionFilterId;
+    sessionCwd: string;
   }): Promise<void> {
     const startedAt = this.diagnosticNow();
-    const providerDiagnostics: AgentMentionProviderQueryDiagnostic[] = [];
+    let providerDiagnostics: AgentMentionProviderQueryDiagnostic[] = [];
+    const cacheKey = this.browseCacheKey(input);
     try {
-      if (input.filter === "file") {
-        const [fileItems, agentGeneratedFileItems] = await Promise.all([
-          this.queryProviderMentionItemsById({
-            providerId: FILE_PROVIDER_ID,
-            workspaceId: input.workspaceId,
-            currentUserId: input.currentUserId,
-            query: "",
-            limit: this.fileLimit,
-            diagnostics: providerDiagnostics
-          }),
-          this.queryProviderMentionItemsById({
-            providerId: AGENT_GENERATED_FILE_PROVIDER_ID,
-            workspaceId: input.workspaceId,
-            currentUserId: input.currentUserId,
-            query: "",
-            limit: this.fileLimit,
-            diagnostics: providerDiagnostics
-          })
-        ]);
-        if (!this.canApply(input.requestId, input.workspaceId, "")) {
-          return;
-        }
-        this.rawGroups = {
-          apps: [],
-          opened_files: fileItems.filter((item) => item.kind === "file"),
-          agent_generated_files: agentGeneratedFileItems.filter(
-            (item) => item.kind === "file"
-          ),
-          my_sessions: [],
-          collab_sessions: [],
-          issues: []
-        };
-        this.totalCounts.apps = 0;
-        this.totalCounts.opened_files = this.rawGroups.opened_files.length;
-        this.totalCounts.agent_generated_files =
-          this.rawGroups.agent_generated_files.length;
-        this.totalCounts.my_sessions = 0;
-        this.totalCounts.collab_sessions = 0;
-        this.totalCounts.issues = 0;
-      } else if (input.filter === "app") {
-        const appItems = await this.queryProviderMentionItemsById({
-          providerId: WORKSPACE_APP_PROVIDER_ID,
-          workspaceId: input.workspaceId,
-          currentUserId: input.currentUserId,
-          query: "",
-          limit: DEFAULT_MENTION_GROUP_PAGE_SIZE,
-          diagnostics: providerDiagnostics
+      const result = await this.loadBrowseFetchResult(input, cacheKey, "open");
+      providerDiagnostics = result.providerDiagnostics;
+      if (
+        !this.canApply(input.requestId, input.workspaceId, "", input.filter)
+      ) {
+        this.logLifecycle("browse.apply.skipped", {
+          filter: input.filter,
+          requestId: input.requestId,
+          reason: "open",
+          workspaceId: input.workspaceId
         });
-        if (!this.canApply(input.requestId, input.workspaceId, "")) {
-          return;
-        }
-        this.rawGroups = {
-          apps: appItems.filter((item) => item.kind === "workspace-app"),
-          opened_files: [],
-          agent_generated_files: [],
-          my_sessions: [],
-          collab_sessions: [],
-          issues: []
-        };
-        this.totalCounts.apps = this.rawGroups.apps.length;
-        this.totalCounts.opened_files = 0;
-        this.totalCounts.agent_generated_files = 0;
-        this.totalCounts.my_sessions = 0;
-        this.totalCounts.collab_sessions = 0;
-        this.totalCounts.issues = 0;
-      } else if (input.filter === "issue") {
-        const issueItems = await this.queryProviderMentionItemsById({
-          providerId: WORKSPACE_ISSUE_PROVIDER_ID,
-          workspaceId: input.workspaceId,
-          currentUserId: input.currentUserId,
-          query: "",
-          limit: this.currentIssueSearchLimit,
-          diagnostics: providerDiagnostics
-        });
-        if (!this.canApply(input.requestId, input.workspaceId, "")) {
-          return;
-        }
-        this.rawGroups = {
-          apps: [],
-          opened_files: [],
-          agent_generated_files: [],
-          my_sessions: [],
-          collab_sessions: [],
-          issues: issueItems.filter((item) => item.kind === "workspace-issue")
-        };
-        this.totalCounts.apps = 0;
-        this.totalCounts.opened_files = 0;
-        this.totalCounts.agent_generated_files = 0;
-        this.totalCounts.my_sessions = 0;
-        this.totalCounts.collab_sessions = 0;
-        this.totalCounts.issues = this.rawGroups.issues.length;
-      } else if (input.filter === "session") {
-        const sessionItems = await this.queryProviderMentionItemsById({
-          providerId: AGENT_SESSION_PROVIDER_ID,
-          workspaceId: input.workspaceId,
-          currentUserId: input.currentUserId,
-          query: "",
-          limit: DEFAULT_SESSION_LIMIT,
-          diagnostics: providerDiagnostics
-        });
-        if (!this.canApply(input.requestId, input.workspaceId, "")) {
-          return;
-        }
-        const sessionMentionItems = sessionItems.filter(
-          (item) => item.kind === "session"
-        );
-        const mySessionItems = sessionMentionItems
-          .filter((item) =>
-            input.currentUserId ? item.scope === "my_sessions" : true
-          )
-          .map((item) =>
-            item.scope === "my_sessions"
-              ? item
-              : { ...item, scope: "my_sessions" as const }
-          );
-        this.rawGroups = {
-          apps: [],
-          opened_files: [],
-          agent_generated_files: [],
-          my_sessions: mySessionItems,
-          collab_sessions: [],
-          issues: []
-        };
-        this.totalCounts.apps = 0;
-        this.totalCounts.opened_files = 0;
-        this.totalCounts.agent_generated_files = 0;
-        this.totalCounts.my_sessions = this.rawGroups.my_sessions.length;
-        this.totalCounts.collab_sessions =
-          this.rawGroups.collab_sessions.length;
-        this.totalCounts.issues = 0;
-      } else {
-        const [appItems, fileItems, issueItems, sessionItems] =
-          await Promise.all([
-            this.queryProviderMentionItemsById({
-              providerId: WORKSPACE_APP_PROVIDER_ID,
-              workspaceId: input.workspaceId,
-              currentUserId: input.currentUserId,
-              query: "",
-              limit: DEFAULT_MENTION_GROUP_PAGE_SIZE,
-              diagnostics: providerDiagnostics
-            }),
-            this.queryProviderMentionItemsById({
-              providerId: FILE_PROVIDER_ID,
-              workspaceId: input.workspaceId,
-              currentUserId: input.currentUserId,
-              query: "",
-              limit: this.fileLimit,
-              diagnostics: providerDiagnostics
-            }),
-            this.queryProviderMentionItemsById({
-              providerId: WORKSPACE_ISSUE_PROVIDER_ID,
-              workspaceId: input.workspaceId,
-              currentUserId: input.currentUserId,
-              query: "",
-              limit: this.currentIssueSearchLimit,
-              diagnostics: providerDiagnostics
-            }),
-            this.queryProviderMentionItemsById({
-              providerId: AGENT_SESSION_PROVIDER_ID,
-              workspaceId: input.workspaceId,
-              currentUserId: input.currentUserId,
-              query: "",
-              limit: DEFAULT_SESSION_LIMIT,
-              diagnostics: providerDiagnostics
-            })
-          ]);
-        if (!this.canApply(input.requestId, input.workspaceId, "")) {
-          return;
-        }
-        this.rawGroups = {
-          apps: appItems.filter((item) => item.kind === "workspace-app"),
-          opened_files: fileItems.filter((item) => item.kind === "file"),
-          agent_generated_files: [],
-          my_sessions: sessionItems.filter(
-            (item) => item.kind === "session" && item.scope === "my_sessions"
-          ),
-          collab_sessions: sessionItems.filter(
-            (item) =>
-              item.kind === "session" && item.scope === "collab_sessions"
-          ),
-          issues: issueItems.filter((item) => item.kind === "workspace-issue")
-        };
-        this.totalCounts.apps = this.rawGroups.apps.length;
-        this.totalCounts.opened_files = this.rawGroups.opened_files.length;
-        this.totalCounts.agent_generated_files =
-          this.rawGroups.agent_generated_files.length;
-        this.totalCounts.my_sessions = this.rawGroups.my_sessions.length;
-        this.totalCounts.collab_sessions =
-          this.rawGroups.collab_sessions.length;
-        this.totalCounts.issues = this.rawGroups.issues.length;
+        return;
       }
+      this.applyBrowseFetchResult(result);
       const groups = this.groupsFromRawGroups();
 
       this.setState({
@@ -799,7 +808,7 @@ export class AgentMentionSearchController {
         error: null
       });
       this.logSearchDiagnostic({
-        filter: this.currentFilter,
+        filter: input.filter,
         groups,
         mode: "browse",
         providerDiagnostics,
@@ -810,7 +819,9 @@ export class AgentMentionSearchController {
         workspaceId: input.workspaceId
       });
     } catch (error) {
-      if (!this.canApply(input.requestId, input.workspaceId, "")) {
+      if (
+        !this.canApply(input.requestId, input.workspaceId, "", input.filter)
+      ) {
         return;
       }
       this.setState({
@@ -824,7 +835,7 @@ export class AgentMentionSearchController {
       });
       this.logSearchDiagnostic({
         error,
-        filter: this.currentFilter,
+        filter: input.filter,
         groups: [],
         mode: "browse",
         providerDiagnostics,
@@ -837,12 +848,191 @@ export class AgentMentionSearchController {
     }
   }
 
+  private async loadBrowseFetchResult(
+    input: {
+      workspaceId: string;
+      currentUserId: string;
+      filter: AgentMentionFilterId;
+      sessionCwd: string;
+    },
+    cacheKey: string,
+    reason: AgentMentionBrowseLoadReason
+  ): Promise<AgentMentionBrowseFetchResult> {
+    const existingFetch = sharedAgentMentionBrowseFetches.get(cacheKey);
+    if (existingFetch) {
+      this.logLifecycle("browse.fetch.dedupe", {
+        filter: input.filter,
+        reason,
+        workspaceId: input.workspaceId
+      });
+      return existingFetch;
+    }
+    const startedAt = this.diagnosticNow();
+    this.logLifecycle("browse.fetch.start", {
+      filter: input.filter,
+      providerIds: this.providerIdsForDiagnostics(),
+      reason,
+      workspaceId: input.workspaceId
+    });
+    const fetchPromise = this.fetchBrowseResult(input)
+      .then((result) => {
+        writeBrowseCacheEntry(cacheKey, {
+          ...result,
+          cachedAt: this.diagnosticNow()
+        });
+        this.logLifecycle("browse.fetch.success", {
+          durationMs: elapsedDiagnosticMs(this.diagnosticNow(), startedAt),
+          filter: input.filter,
+          itemCount: rawGroupItemCount(result.rawGroups),
+          providerResults: providerDiagnosticsSummary(
+            result.providerDiagnostics
+          ),
+          reason,
+          workspaceId: input.workspaceId
+        });
+        return result;
+      })
+      .finally(() => {
+        if (sharedAgentMentionBrowseFetches.get(cacheKey) === fetchPromise) {
+          sharedAgentMentionBrowseFetches.delete(cacheKey);
+        }
+      });
+    sharedAgentMentionBrowseFetches.set(cacheKey, fetchPromise);
+    return fetchPromise;
+  }
+
+  private async fetchBrowseResult(input: {
+    workspaceId: string;
+    currentUserId: string;
+    filter: AgentMentionFilterId;
+    sessionCwd: string;
+  }): Promise<AgentMentionBrowseFetchResult> {
+    return this.fetchFilterResult({
+      ...input,
+      query: "",
+      includeAgentGeneratedFiles: input.filter === "file"
+    });
+  }
+
+  private async fetchFilterResult(input: {
+    workspaceId: string;
+    currentUserId: string;
+    query: string;
+    filter: AgentMentionFilterId;
+    sessionCwd: string;
+    includeAgentGeneratedFiles: boolean;
+  }): Promise<AgentMentionBrowseFetchResult> {
+    const providerDiagnostics: AgentMentionProviderQueryDiagnostic[] = [];
+    switch (input.filter) {
+      case "file": {
+        const fileQuery = this.queryProviderMentionItemsById({
+          providerId: FILE_PROVIDER_ID,
+          workspaceId: input.workspaceId,
+          currentUserId: input.currentUserId,
+          query: input.query,
+          limit: input.query ? this.currentFileSearchLimit : this.fileLimit,
+          sessionCwd: input.sessionCwd,
+          diagnostics: providerDiagnostics
+        });
+        const agentGeneratedFileQuery = input.includeAgentGeneratedFiles
+          ? this.queryProviderMentionItemsById({
+              providerId: AGENT_GENERATED_FILE_PROVIDER_ID,
+              workspaceId: input.workspaceId,
+              currentUserId: input.currentUserId,
+              query: input.query,
+              limit: this.fileLimit,
+              sessionCwd: input.sessionCwd,
+              diagnostics: providerDiagnostics
+            })
+          : Promise.resolve([] as AgentContextMentionItem[]);
+        const [fileItems, agentGeneratedFileItems] = await Promise.all([
+          fileQuery,
+          agentGeneratedFileQuery
+        ]);
+        const rawGroups = emptyAgentMentionRawGroups();
+        rawGroups.opened_files = fileItems.filter(
+          (item) => item.kind === "file"
+        );
+        rawGroups.agent_generated_files = agentGeneratedFileItems.filter(
+          (item) => item.kind === "file"
+        );
+        return {
+          providerDiagnostics,
+          rawGroups,
+          totalCounts: totalCountsFromRawGroups(rawGroups)
+        };
+      }
+      case "session": {
+        const sessionItems = await this.queryProviderMentionItemsById({
+          providerId: AGENT_SESSION_PROVIDER_ID,
+          workspaceId: input.workspaceId,
+          currentUserId: input.currentUserId,
+          query: input.query,
+          limit: DEFAULT_SESSION_LIMIT,
+          sessionCwd: input.sessionCwd,
+          diagnostics: providerDiagnostics
+        });
+        const rawGroups = emptyAgentMentionRawGroups();
+        rawGroups.my_sessions = normalizeSessionMentionItemsForMySessions({
+          currentUserId: input.currentUserId,
+          items: sessionItems
+        });
+        return {
+          providerDiagnostics,
+          rawGroups,
+          totalCounts: totalCountsFromRawGroups(rawGroups)
+        };
+      }
+      case "issue": {
+        const issueItems = await this.queryProviderMentionItemsById({
+          providerId: WORKSPACE_ISSUE_PROVIDER_ID,
+          workspaceId: input.workspaceId,
+          currentUserId: input.currentUserId,
+          query: input.query,
+          limit: this.currentIssueSearchLimit,
+          sessionCwd: input.sessionCwd,
+          diagnostics: providerDiagnostics
+        });
+        const rawGroups = emptyAgentMentionRawGroups();
+        rawGroups.issues = issueItems.filter(
+          (item) => item.kind === "workspace-issue"
+        );
+        return {
+          providerDiagnostics,
+          rawGroups,
+          totalCounts: totalCountsFromRawGroups(rawGroups)
+        };
+      }
+      case "app": {
+        const appItems = await this.queryProviderMentionItemsById({
+          providerId: WORKSPACE_APP_PROVIDER_ID,
+          workspaceId: input.workspaceId,
+          currentUserId: input.currentUserId,
+          query: input.query,
+          limit: DEFAULT_MENTION_GROUP_PAGE_SIZE,
+          sessionCwd: input.sessionCwd,
+          diagnostics: providerDiagnostics
+        });
+        const rawGroups = emptyAgentMentionRawGroups();
+        rawGroups.apps = appItems.filter(
+          (item) => item.kind === "workspace-app"
+        );
+        return {
+          providerDiagnostics,
+          rawGroups,
+          totalCounts: totalCountsFromRawGroups(rawGroups)
+        };
+      }
+    }
+  }
+
   private async queryProviderMentionItems(input: {
     provider: AgentContextMentionProvider;
     workspaceId: string;
     currentUserId: string;
     query: string;
     limit: number;
+    sessionCwd: string;
     abortSignal: AbortSignal;
   }): Promise<AgentContextMentionItem[]> {
     const items = await input.provider.query({
@@ -853,7 +1043,7 @@ export class AgentMentionSearchController {
       context: {
         metadata: {
           currentUserId: input.currentUserId,
-          sessionCwd: this.currentSessionCwd || undefined,
+          sessionCwd: input.sessionCwd || undefined,
           target: "agent-gui",
           workspaceId: input.workspaceId
         }
@@ -896,6 +1086,104 @@ export class AgentMentionSearchController {
     );
   }
 
+  private applyBrowseFetchResult(result: AgentMentionBrowseFetchResult): void {
+    this.rawGroups = cloneAgentMentionRawGroups(result.rawGroups);
+    this.resetTotalCounts();
+    for (const [groupId, count] of Object.entries(result.totalCounts) as [
+      AgentMentionGroupId,
+      number
+    ][]) {
+      this.totalCounts[groupId] = count;
+    }
+  }
+
+  private readBrowseCache(cacheKey: string): {
+    entry: AgentMentionBrowseCacheEntry | null;
+    isFresh: boolean;
+  } {
+    const entry = sharedAgentMentionBrowseCache.get(cacheKey);
+    if (!entry) {
+      return { entry: null, isFresh: false };
+    }
+    // Touch for LRU recency. We deliberately keep returning stale entries (no
+    // delete here) so the stale-while-revalidate path can still surface them.
+    sharedAgentMentionBrowseCache.delete(cacheKey);
+    sharedAgentMentionBrowseCache.set(cacheKey, entry);
+    const ageMs = this.diagnosticNow() - entry.cachedAt;
+    const isFresh =
+      this.browseCacheTtlMs >= 0 &&
+      Number.isFinite(this.browseCacheTtlMs) &&
+      ageMs <= this.browseCacheTtlMs;
+    return { entry, isFresh };
+  }
+
+  private readBrowseCacheForBrowseInput(input: {
+    cacheKey: string;
+    workspaceId: string;
+    currentUserId: string;
+    filter: AgentMentionFilterId;
+    sessionCwd: string;
+  }): {
+    entry: AgentMentionBrowseCacheEntry | null;
+    isFresh: boolean;
+  } {
+    return this.readBrowseCache(input.cacheKey);
+  }
+
+  private browseCacheKey(input: {
+    workspaceId: string;
+    currentUserId: string;
+    filter: AgentMentionFilterId;
+    sessionCwd: string;
+  }): string {
+    return JSON.stringify({
+      workspaceId: input.workspaceId,
+      currentUserId: input.currentUserId,
+      sessionCwd: input.sessionCwd,
+      filter: input.filter,
+      fileLimit: this.fileLimit,
+      issueLimit: this.currentIssueSearchLimit,
+      providerIds: [...this.contextMentionProviders.keys()].sort()
+    });
+  }
+
+  private logBrowseCacheState(input: {
+    cacheKey: string;
+    cached: { entry: AgentMentionBrowseCacheEntry | null; isFresh: boolean };
+    filter: AgentMentionFilterId;
+    reason: AgentMentionBrowseLoadReason;
+    workspaceId: string;
+  }): void {
+    this.logLifecycle("browse.cache", {
+      ageMs: input.cached.entry
+        ? elapsedDiagnosticMs(this.diagnosticNow(), input.cached.entry.cachedAt)
+        : null,
+      cacheKeyLength: input.cacheKey.length,
+      cacheState: input.cached.entry
+        ? input.cached.isFresh
+          ? "fresh"
+          : "stale"
+        : "miss",
+      filter: input.filter,
+      itemCount: input.cached.entry
+        ? rawGroupItemCount(input.cached.entry.rawGroups)
+        : 0,
+      reason: input.reason,
+      workspaceId: input.workspaceId
+    });
+  }
+
+  private logLifecycle(
+    event: AgentMentionLifecycleDiagnosticLog["event"],
+    details: Record<string, RuntimeDiagnosticsDetailValue>
+  ): void {
+    logAgentMentionLifecycleDiagnostic({ event, details });
+  }
+
+  private providerIdsForDiagnostics(): string {
+    return [...this.contextMentionProviders.keys()].sort().join(",");
+  }
+
   private async queryProviderMentionItemsById(input: {
     diagnostics: AgentMentionProviderQueryDiagnostic[];
     providerId: string;
@@ -903,6 +1191,7 @@ export class AgentMentionSearchController {
     currentUserId: string;
     query: string;
     limit: number;
+    sessionCwd?: string;
   }): Promise<AgentContextMentionItem[]> {
     const provider = this.contextMentionProviders.get(input.providerId);
     return queryAgentMentionProviderWithDiagnostics({
@@ -919,6 +1208,7 @@ export class AgentMentionSearchController {
               currentUserId: input.currentUserId,
               query: input.query,
               limit: input.limit,
+              sessionCwd: input.sessionCwd ?? this.currentSessionCwd,
               abortSignal
             })
         : null,
@@ -959,7 +1249,7 @@ export class AgentMentionSearchController {
 
   private groupsFromRawGroups(): AgentMentionGroup[] {
     const orderedGroupIds = groupIdsForFilter(this.currentFilter);
-    const groups = orderedGroupIds
+    return orderedGroupIds
       .map((groupId) => {
         const rawItems = resolveMentionGroupItems(groupId, this.rawGroups);
         const items =
@@ -1007,11 +1297,6 @@ export class AgentMentionSearchController {
         } satisfies AgentMentionGroup;
       })
       .filter((group): group is AgentMentionGroup => group !== null);
-    return orderMentionGroupsForFilter({
-      filter: this.currentFilter,
-      groups,
-      query: this.currentQuery
-    });
   }
 
   private emitBrowseState(status: "ready" | "loading"): void {
@@ -1029,13 +1314,15 @@ export class AgentMentionSearchController {
   private canApply(
     requestId: number,
     workspaceId: string,
-    query: string
+    query: string,
+    filter: AgentMentionFilterId
   ): boolean {
     return (
       !this.disposed &&
       requestId === this.requestId &&
       workspaceId === this.activeWorkspaceId &&
-      query === this.currentQuery
+      query === this.currentQuery &&
+      filter === this.currentFilter
     );
   }
 
@@ -1068,8 +1355,27 @@ export class AgentMentionSearchController {
     this.currentIssueSearchLimit = this.issueLimit;
   }
 
+  private resetRawGroups(): void {
+    this.rawGroups = emptyAgentMentionRawGroups();
+    this.resetTotalCounts();
+  }
+
   private resetAgentGeneratedBrowsePath(): void {
     this.agentGeneratedBrowsePath = null;
+  }
+
+  private resetTotalCounts(): void {
+    for (const groupId of [
+      "files",
+      "opened_files",
+      "agent_generated_files",
+      "my_sessions",
+      "collab_sessions",
+      "apps",
+      "issues"
+    ] as const) {
+      delete this.totalCounts[groupId];
+    }
   }
 
   private setState(state: AgentMentionSearchState): void {
@@ -1080,141 +1386,137 @@ export class AgentMentionSearchController {
   }
 }
 
-function orderMentionGroupsForFilter(input: {
-  filter: AgentMentionFilterId;
-  groups: AgentMentionGroup[];
-  query: string;
-}): AgentMentionGroup[] {
-  if (input.filter !== "all") {
-    return input.groups;
-  }
-  const query = normalizeQuery(input.query).toLowerCase();
-  return input.groups
-    .map((group, index) => ({
-      group,
-      hasItems: group.items.length > 0,
-      index,
-      score: mentionGroupBestMatchScore(group, query)
-    }))
-    .sort((left, right) => {
-      if (left.hasItems !== right.hasItems) {
-        return left.hasItems ? -1 : 1;
-      }
-      if (query && left.score !== right.score) {
-        return right.score - left.score;
-      }
-      return left.index - right.index;
-    })
-    .map((entry) => entry.group);
+// Warm the shared browse cache without a mounted controller — e.g. from an app
+// startup flow, so the first time the @ palette opens its results are already
+// cached. Spins up a transient controller (no listeners, default limits/ttl) so
+// the produced cacheKey matches a live composer controller built with the same
+// providers; the global cache + in-flight dedup are reused, so this never
+// double-fetches against a focus-driven preload. The instance holds no timers
+// after the idle warm runs, so it is garbage-collected.
+export function preloadAgentMentionBrowse(input: {
+  workspaceId: string;
+  currentUserId?: string | null;
+  sessionCwd?: string | null;
+  contextMentionProviders?: readonly AgentContextMentionProvider[];
+  filter?: AgentMentionFilterId;
+}): void {
+  const controller = new AgentMentionSearchController({
+    contextMentionProviders: input.contextMentionProviders
+  });
+  controller.preloadBrowse({
+    workspaceId: input.workspaceId,
+    currentUserId: input.currentUserId,
+    sessionCwd: input.sessionCwd,
+    filter: input.filter
+  });
 }
 
-function mentionGroupBestMatchScore(
-  group: AgentMentionGroup,
-  query: string
-): number {
-  if (!query) {
-    return 0;
-  }
-  return group.items.reduce(
-    (bestScore, item) =>
-      Math.max(bestScore, mentionItemMatchScore(item, query)),
+function emptyAgentMentionRawGroups(): AgentMentionRawGroups {
+  return {
+    apps: [],
+    opened_files: [],
+    agent_generated_files: [],
+    my_sessions: [],
+    collab_sessions: [],
+    issues: []
+  };
+}
+
+function cloneAgentMentionRawGroups(
+  rawGroups: AgentMentionRawGroups
+): AgentMentionRawGroups {
+  return {
+    apps: [...rawGroups.apps],
+    opened_files: [...rawGroups.opened_files],
+    agent_generated_files: [...rawGroups.agent_generated_files],
+    my_sessions: [...rawGroups.my_sessions],
+    collab_sessions: [...rawGroups.collab_sessions],
+    issues: [...rawGroups.issues]
+  };
+}
+
+function totalCountsFromRawGroups(
+  rawGroups: AgentMentionRawGroups
+): AgentMentionTotalCounts {
+  return {
+    apps: rawGroups.apps.length,
+    opened_files: rawGroups.opened_files.length,
+    agent_generated_files: rawGroups.agent_generated_files.length,
+    my_sessions: rawGroups.my_sessions.length,
+    collab_sessions: rawGroups.collab_sessions.length,
+    issues: rawGroups.issues.length
+  };
+}
+
+function rawGroupItemCount(rawGroups: AgentMentionRawGroups): number {
+  return Object.values(rawGroups).reduce(
+    (count, items) => count + items.length,
     0
   );
 }
 
-function mentionItemMatchScore(
-  item: AgentContextMentionItem,
-  query: string
-): number {
-  const primary: string[] = [];
-  const secondary: string[] = [];
-  let kindBoost = 0;
-
-  if (item.kind === "workspace-app") {
-    kindBoost = 8;
-    primary.push(item.name, item.appId, item.targetId);
-    secondary.push(item.description ?? "");
-  } else if (item.kind === "file") {
-    primary.push(item.name);
-    secondary.push(item.path, item.directoryPath);
-  } else if (item.kind === "session") {
-    primary.push(item.title);
-    secondary.push(
-      item.name,
-      item.initiatorName,
-      item.agentName,
-      item.inputPreview ?? "",
-      item.summaryPreview ?? ""
-    );
-  } else if (item.kind === "workspace-issue") {
-    primary.push(item.title, item.name);
-    secondary.push(
-      item.creatorName ?? "",
-      item.status ?? "",
-      item.contentPreview ?? ""
-    );
-  } else if (item.kind === "workspace-app-factory") {
-    primary.push(item.name, item.jobId, item.targetId);
-    secondary.push(item.action ?? "", item.contextPath ?? "");
-  }
-
-  const primaryScore = maxTextMatchScore(primary, query, {
-    contains: 60,
-    exact: 100,
-    prefix: 90,
-    wordPrefix: 80
-  });
-  const secondaryScore = maxTextMatchScore(secondary, query, {
-    contains: 25,
-    exact: 60,
-    prefix: 50,
-    wordPrefix: 40
-  });
-  const score = Math.max(primaryScore, secondaryScore);
-  return score > 0 ? score + kindBoost : 0;
+function providerDiagnosticsSummary(
+  diagnostics: readonly AgentMentionProviderQueryDiagnostic[]
+): string {
+  return diagnostics
+    .map(
+      (diagnostic) =>
+        `${diagnostic.providerId}:${diagnostic.status}:${diagnostic.resultCount}:${diagnostic.durationMs}`
+    )
+    .join(",");
 }
 
-function maxTextMatchScore(
-  values: readonly string[],
-  query: string,
-  scores: {
-    contains: number;
-    exact: number;
-    prefix: number;
-    wordPrefix: number;
-  }
-): number {
-  return values.reduce(
-    (bestScore, value) =>
-      Math.max(bestScore, textMatchScore(value, query, scores)),
-    0
-  );
+function elapsedDiagnosticMs(now: number, startedAt: number): number {
+  const durationMs = now - startedAt;
+  return Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : 0;
 }
 
-function textMatchScore(
-  value: string,
-  query: string,
-  scores: {
-    contains: number;
-    exact: number;
-    prefix: number;
-    wordPrefix: number;
+function diagnosticErrorKind(error: unknown): string {
+  if (error instanceof Error && error.name.trim()) {
+    return error.name.trim();
   }
-): number {
-  const normalized = normalizeQuery(value).toLowerCase();
-  if (!normalized) {
-    return 0;
+  if (error === null) {
+    return "null";
   }
-  if (normalized === query) {
-    return scores.exact;
+  return typeof error;
+}
+
+function logAgentMentionLifecycleDiagnostic(
+  payload: AgentMentionLifecycleDiagnosticLog
+): void {
+  try {
+    console.info(AGENT_MENTION_LIFECYCLE_LOG_PREFIX, JSON.stringify(payload));
+  } catch {
+    // Diagnostic logging must never affect mention search state.
   }
-  if (normalized.startsWith(query)) {
-    return scores.prefix;
+  try {
+    getOptionalAgentHostApi()?.debug?.logRuntimeDiagnostics?.({
+      source: "renderer-workspace-surface",
+      level: "info",
+      event: `agent-gui.mention.${payload.event}`,
+      // i18n-check-ignore: Internal diagnostic log message.
+      message: "Agent GUI mention search lifecycle event.",
+      details: payload.details
+    });
+  } catch {
+    // Diagnostic logging must never affect mention search state.
   }
-  if (normalized.split(/[^a-z0-9]+/i).some((word) => word.startsWith(query))) {
-    return scores.wordPrefix;
-  }
-  return normalized.includes(query) ? scores.contains : 0;
+}
+
+function normalizeSessionMentionItemsForMySessions(input: {
+  currentUserId: string;
+  items: readonly AgentContextMentionItem[];
+}): AgentContextMentionItem[] {
+  return input.items
+    .filter((item) => item.kind === "session")
+    .filter((item) =>
+      input.currentUserId ? item.scope === "my_sessions" : true
+    )
+    .map((item) =>
+      item.scope === "my_sessions"
+        ? item
+        : { ...item, scope: "my_sessions" as const }
+    );
 }
 
 function providerItemToAgentMentionItem(input: {

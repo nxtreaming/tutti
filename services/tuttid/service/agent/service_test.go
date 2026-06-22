@@ -508,6 +508,96 @@ func TestServiceCreateRejectsInvalidContentBeforePreparingRuntime(t *testing.T) 
 	}
 }
 
+func TestServiceCreateChecksProviderAdapterBeforePreparingRuntime(t *testing.T) {
+	runtime := newFakeRuntime()
+	service := NewService(runtime)
+	var prepareInput agentsidecarservice.PrepareInput
+	service.RuntimePreparer = fakeRuntimePreparer{
+		input: &prepareInput,
+		result: agentsidecarservice.PreparedRuntime{
+			Cwd: "/prepared/workdir",
+		},
+	}
+	checker := &fakeProviderAvailabilityChecker{
+		result: []ProviderAvailability{{
+			Provider: "claude-code",
+			Status:   ProviderAvailabilityUnavailable,
+			Checks: []ProviderAvailabilityCheck{
+				{Name: "cli", Passed: true, Detail: "/usr/local/bin/claude"},
+				{Name: "adapter", Passed: false, Detail: "ACP adapter not found"},
+				{Name: "auth", Passed: true, Detail: "authenticated"},
+			},
+			LastError: &ProviderAvailabilityError{
+				Code:    "acp_adapter_not_found",
+				Message: "ACP adapter not found",
+			},
+		}},
+	}
+	service.AvailabilityChecker = checker
+
+	_, err := service.Create(context.Background(), "ws-1", CreateSessionInput{
+		AgentSessionID: "session-1",
+		InitialContent: TextPromptContent("hello"),
+		Provider:       "claude-code",
+	})
+	var unavailable *ProviderUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("Create error = %v, want ProviderUnavailableError", err)
+	}
+	if unavailable.Provider != "claude-code" ||
+		unavailable.ReasonCode != "acp_adapter_not_found" ||
+		unavailable.Message != "ACP adapter not found" {
+		t.Fatalf("provider unavailable error = %#v", unavailable)
+	}
+	if checker.callCount != 1 ||
+		len(checker.providers) != 1 ||
+		checker.providers[0] != "claude-code" {
+		t.Fatalf("availability checker providers = %#v, callCount = %d", checker.providers, checker.callCount)
+	}
+	if prepareInput.WorkspaceID != "" {
+		t.Fatalf("runtime preparer input = %#v, want not called", prepareInput)
+	}
+	if len(runtime.startCalls) != 0 {
+		t.Fatalf("start calls = %d, want 0", len(runtime.startCalls))
+	}
+	if len(runtime.execCalls) != 0 {
+		t.Fatalf("exec calls = %d, want 0", len(runtime.execCalls))
+	}
+}
+
+func TestServiceCreateDoesNotTreatAuthRequiredAsInstallNeeded(t *testing.T) {
+	runtime := newFakeRuntime()
+	service := NewService(runtime)
+	checker := &fakeProviderAvailabilityChecker{
+		result: []ProviderAvailability{{
+			Provider: "claude-code",
+			Status:   ProviderAvailabilityUnavailable,
+			Checks: []ProviderAvailabilityCheck{
+				{Name: "cli", Passed: true, Detail: "/usr/local/bin/claude"},
+				{Name: "adapter", Passed: true, Detail: "/usr/local/bin/claude-agent-acp"},
+				{Name: "auth", Passed: false, Detail: "authentication required"},
+			},
+			LastError: &ProviderAvailabilityError{
+				Code:    "auth_required",
+				Message: "authentication required",
+			},
+		}},
+	}
+	service.AvailabilityChecker = checker
+
+	_, err := service.Create(context.Background(), "ws-1", CreateSessionInput{
+		AgentSessionID: "session-1",
+		InitialContent: TextPromptContent("hello"),
+		Provider:       "claude-code",
+	})
+	if err != nil {
+		t.Fatalf("Create error = %v, want nil", err)
+	}
+	if len(runtime.startCalls) != 1 {
+		t.Fatalf("start calls = %d, want 1", len(runtime.startCalls))
+	}
+}
+
 func TestServiceSendInputRejectsUnsupportedImageBeforePersistingAttachment(t *testing.T) {
 	runtime := newFakeRuntime()
 	runtime.validateErr = ErrPromptImageUnsupported
@@ -535,7 +625,7 @@ func TestServiceSendInputRejectsUnsupportedImageBeforePersistingAttachment(t *te
 	if len(runtime.execCalls) != 0 {
 		t.Fatalf("exec calls = %d, want 0", len(runtime.execCalls))
 	}
-	if entries, err := os.ReadDir(filepath.Join(tempDir, "agent-session-attachments")); err == nil && len(entries) > 0 {
+	if entries, err := os.ReadDir(filepath.Join(tempDir, "agent", "attachments")); err == nil && len(entries) > 0 {
 		t.Fatalf("attachment entries = %#v, want none", entries)
 	}
 }
@@ -817,6 +907,7 @@ func TestServiceDeleteCleansPreparedRuntime(t *testing.T) {
 func TestServiceGetsComposerOptionsWithoutStartingRuntime(t *testing.T) {
 	runtime := newFakeRuntime()
 	service := NewService(runtime)
+	service.CapabilityLister = &recordingComposerCapabilityLister{}
 
 	options, err := service.GetComposerOptions(context.Background(), ComposerOptionsInput{
 		Provider: "codex",
@@ -872,6 +963,96 @@ func TestServiceGetsComposerOptionsWithoutStartingRuntime(t *testing.T) {
 	capabilities, ok := options.RuntimeContext["capabilities"].([]string)
 	if !ok || !slices.Contains(capabilities, "imageInput") {
 		t.Fatalf("capabilities = %#v, want imageInput", options.RuntimeContext["capabilities"])
+	}
+}
+
+type recordingComposerCapabilityLister struct {
+	callCount int
+}
+
+func (l *recordingComposerCapabilityLister) ListComposerCapabilityOptions(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ []ComposerSkillOption,
+) ([]ComposerCapabilityOption, []string) {
+	l.callCount++
+	return []ComposerCapabilityOption{{
+		ID:         "connector:github",
+		Kind:       "connector",
+		Name:       "github",
+		Label:      "GitHub",
+		Status:     "available",
+		Invocation: "promptItem",
+	}}, nil
+}
+
+func TestServiceGetComposerOptionsSkipsCapabilityCatalogWhenDisabled(t *testing.T) {
+	runtime := newFakeRuntime()
+	lister := &recordingComposerCapabilityLister{}
+	service := NewService(runtime)
+	service.CapabilityLister = lister
+	includeCapabilityCatalog := false
+
+	options, err := service.GetComposerOptions(context.Background(), ComposerOptionsInput{
+		Provider:                 "codex",
+		IncludeCapabilityCatalog: &includeCapabilityCatalog,
+	})
+	if err != nil {
+		t.Fatalf("GetComposerOptions returned error: %v", err)
+	}
+	if lister.callCount != 0 {
+		t.Fatalf("capability lister calls = %d, want 0", lister.callCount)
+	}
+	if len(options.CapabilityCatalog) != 0 {
+		t.Fatalf("capability catalog = %#v, want empty when disabled", options.CapabilityCatalog)
+	}
+}
+
+func TestServiceGetComposerOptionsIncludesCapabilityCatalogByDefault(t *testing.T) {
+	runtime := newFakeRuntime()
+	lister := &recordingComposerCapabilityLister{}
+	service := NewService(runtime)
+	service.CapabilityLister = lister
+
+	options, err := service.GetComposerOptions(context.Background(), ComposerOptionsInput{
+		Provider: "codex",
+	})
+	if err != nil {
+		t.Fatalf("GetComposerOptions returned error: %v", err)
+	}
+	if lister.callCount != 1 {
+		t.Fatalf("capability lister calls = %d, want 1", lister.callCount)
+	}
+	if len(options.CapabilityCatalog) != 1 || options.CapabilityCatalog[0].ID != "connector:github" {
+		t.Fatalf("capability catalog = %#v", options.CapabilityCatalog)
+	}
+}
+
+func TestServiceGetComposerOptionsCachesCapabilityCatalog(t *testing.T) {
+	runtime := newFakeRuntime()
+	lister := &recordingComposerCapabilityLister{}
+	service := NewService(runtime)
+	service.CapabilityLister = lister
+
+	first, err := service.GetComposerOptions(context.Background(), ComposerOptionsInput{
+		Provider: "codex",
+	})
+	if err != nil {
+		t.Fatalf("GetComposerOptions first returned error: %v", err)
+	}
+	first.CapabilityCatalog[0].ID = "mutated"
+	second, err := service.GetComposerOptions(context.Background(), ComposerOptionsInput{
+		Provider: "codex",
+	})
+	if err != nil {
+		t.Fatalf("GetComposerOptions second returned error: %v", err)
+	}
+	if lister.callCount != 1 {
+		t.Fatalf("capability lister calls = %d, want 1", lister.callCount)
+	}
+	if len(second.CapabilityCatalog) != 1 || second.CapabilityCatalog[0].ID != "connector:github" {
+		t.Fatalf("cached capability catalog = %#v, want unmutated github connector", second.CapabilityCatalog)
 	}
 }
 
@@ -2456,6 +2637,22 @@ func writeAgentServiceJSONL(t *testing.T, path string, items ...map[string]any) 
 type fakeMessageReader struct {
 	lastLimit *int
 	page      SessionMessagesPage
+}
+
+type fakeProviderAvailabilityChecker struct {
+	err       error
+	providers []string
+	result    []ProviderAvailability
+	callCount int
+}
+
+func (f *fakeProviderAvailabilityChecker) ListProviderAvailability(_ context.Context, providers []string) ([]ProviderAvailability, error) {
+	f.callCount++
+	f.providers = append([]string(nil), providers...)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]ProviderAvailability(nil), f.result...), nil
 }
 
 type fakeSessionReader struct {

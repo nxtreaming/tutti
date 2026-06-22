@@ -22,9 +22,10 @@ import (
 var files embed.FS
 
 type App struct {
-	Manifest     workspacebiz.AppManifest
-	SourceDir    string
-	Distribution Distribution
+	Manifest      workspacebiz.AppManifest
+	SourceDir     string
+	Localizations []workspacebiz.AppManifestLocalization
+	Distribution  Distribution
 }
 
 type DistributionKind string
@@ -45,7 +46,9 @@ const (
 	remoteCatalogSchemaVersionV1 = "tutti.app.catalog.v1"
 	remoteCatalogFileEnv         = "TUTTI_APP_CATALOG_FILE"
 	remoteCatalogURLEnv          = "TUTTI_APP_CATALOG_URL"
-	defaultRemoteCatalogURL      = "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-releases/catalog.json"
+	ProductionRemoteCatalogURL   = "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-releases/catalog.json"
+	StagingRemoteCatalogURL      = "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-releases-staging/catalog.json"
+	defaultRemoteCatalogURL      = ProductionRemoteCatalogURL
 	remoteCatalogFetchTimeout    = 10 * time.Second
 	remoteCatalogFetchAttempts   = 3
 )
@@ -78,8 +81,9 @@ type remoteCatalogDocument struct {
 }
 
 type remoteCatalogApp struct {
-	Manifest     workspacebiz.AppManifest `json:"manifest"`
-	Distribution remoteDistribution       `json:"distribution"`
+	Localizations []workspacebiz.AppManifestLocalization `json:"localizations,omitempty"`
+	Manifest      workspacebiz.AppManifest               `json:"manifest"`
+	Distribution  remoteDistribution                     `json:"distribution"`
 }
 
 type remoteDistribution struct {
@@ -101,18 +105,42 @@ func Snapshot() (CatalogSnapshot, error) {
 	return snapshot(false)
 }
 
+func SnapshotForRemoteURL(catalogURL string) (CatalogSnapshot, error) {
+	return snapshotWithSource(remoteCatalogSourceForURL(catalogURL), false)
+}
+
 func RefreshRemoteCatalog() (CatalogSnapshot, error) {
 	return snapshot(true)
+}
+
+func RefreshRemoteCatalogForRemoteURL(catalogURL string) (CatalogSnapshot, error) {
+	return snapshotWithSource(remoteCatalogSourceForURL(catalogURL), true)
 }
 
 func RefreshRemoteCatalogAndWait(ctx context.Context) (CatalogSnapshot, error) {
 	return snapshotAndWait(ctx)
 }
 
+func RefreshRemoteCatalogAndWaitForRemoteURL(ctx context.Context, catalogURL string) (CatalogSnapshot, error) {
+	return snapshotAndWaitWithSource(ctx, remoteCatalogSourceForURL(catalogURL))
+}
+
+func RemoteCatalogEnvOverrideActive() bool {
+	filePath := strings.TrimSpace(os.Getenv(remoteCatalogFileEnv))
+	if filePath != "" {
+		return true
+	}
+	_, ok := os.LookupEnv(remoteCatalogURLEnv)
+	return ok
+}
+
 func snapshot(refreshRemote bool) (CatalogSnapshot, error) {
+	return snapshotWithSource(currentRemoteCatalogSource(), refreshRemote)
+}
+
+func snapshotWithSource(source remoteCatalogSource, refreshRemote bool) (CatalogSnapshot, error) {
 	apps := []App{}
 
-	source := currentRemoteCatalogSource()
 	remote, err := remoteCatalogSnapshot(source, refreshRemote)
 	if err != nil {
 		return CatalogSnapshot{}, err
@@ -133,9 +161,12 @@ func snapshot(refreshRemote bool) (CatalogSnapshot, error) {
 }
 
 func snapshotAndWait(ctx context.Context) (CatalogSnapshot, error) {
+	return snapshotAndWaitWithSource(ctx, currentRemoteCatalogSource())
+}
+
+func snapshotAndWaitWithSource(ctx context.Context, source remoteCatalogSource) (CatalogSnapshot, error) {
 	apps := []App{}
 
-	source := currentRemoteCatalogSource()
 	remote, err := remoteCatalogSnapshotAndWait(ctx, source)
 	if err != nil {
 		return CatalogSnapshot{}, err
@@ -296,6 +327,14 @@ func currentRemoteCatalogSource() remoteCatalogSource {
 	}
 
 	catalogURL := remoteCatalogURL()
+	if catalogURL == "" {
+		return remoteCatalogSource{kind: remoteCatalogSourceNone}
+	}
+	return remoteCatalogSource{kind: remoteCatalogSourceURL, value: catalogURL}
+}
+
+func remoteCatalogSourceForURL(catalogURL string) remoteCatalogSource {
+	catalogURL = strings.TrimSpace(catalogURL)
 	if catalogURL == "" {
 		return remoteCatalogSource{kind: remoteCatalogSourceNone}
 	}
@@ -534,9 +573,14 @@ func parseRemoteCatalog(data []byte) ([]App, error) {
 		if err != nil {
 			return nil, err
 		}
+		localizations, err := parseRemoteCatalogLocalizations(appID, entry.Localizations)
+		if err != nil {
+			return nil, err
+		}
 		apps = append(apps, App{
-			Manifest:     entry.Manifest,
-			Distribution: distribution,
+			Manifest:      entry.Manifest,
+			Localizations: localizations,
+			Distribution:  distribution,
 		})
 	}
 	return apps, nil
@@ -565,6 +609,40 @@ func parseRemoteDistribution(appID string, manifest workspacebiz.AppManifest, di
 		ArtifactSHA256: artifactSHA256,
 		IconURL:        iconURL,
 	}, nil
+}
+
+func parseRemoteCatalogLocalizations(appID string, localizations []workspacebiz.AppManifestLocalization) ([]workspacebiz.AppManifestLocalization, error) {
+	if len(localizations) == 0 {
+		return nil, nil
+	}
+	result := make([]workspacebiz.AppManifestLocalization, 0, len(localizations))
+	seenLocales := make(map[string]struct{}, len(localizations))
+	for index, localization := range localizations {
+		locale := strings.TrimSpace(localization.Locale)
+		if locale == "" {
+			return nil, fmt.Errorf("app catalog app %q localizations[%d].locale is required", appID, index)
+		}
+		localeKey := strings.ToLower(locale)
+		if _, ok := seenLocales[localeKey]; ok {
+			return nil, fmt.Errorf("app catalog app %q localizations[%d].locale must be unique", appID, index)
+		}
+		seenLocales[localeKey] = struct{}{}
+		normalized := workspacebiz.AppManifestLocalization{
+			Locale:      locale,
+			Name:        strings.TrimSpace(localization.Name),
+			Description: strings.TrimSpace(localization.Description),
+		}
+		for _, tag := range localization.Tags {
+			if trimmed := strings.TrimSpace(tag); trimmed != "" {
+				normalized.Tags = append(normalized.Tags, trimmed)
+			}
+		}
+		if normalized.Name == "" && normalized.Description == "" && len(normalized.Tags) == 0 {
+			continue
+		}
+		result = append(result, normalized)
+	}
+	return result, nil
 }
 
 func mergeCatalogs(embeddedApps []App, remoteApps []App) ([]App, error) {

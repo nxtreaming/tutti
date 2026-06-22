@@ -27,6 +27,7 @@ import type {
   DesktopRendererDiagnosticPayload,
   DesktopTerminalDiagnosticPayload,
   DesktopTerminalStreamUrlRequest,
+  DesktopWorkspaceAppExternalRendererEvent,
   DesktopWorkspaceAppExternalRendererRequest,
   DesktopWorkspaceAppExternalRendererResult,
   DesktopWorkspaceAppOpenFileResolvedPayload,
@@ -65,6 +66,7 @@ export interface DesktopPlatformApi {
 }
 
 export interface DesktopHostWorkspaceApi {
+  broadcastAgentStatus(payload: { agentBound: boolean }): void;
   onOpenFeatureRequest(
     listener: (request: DesktopWorkspaceOpenFeatureRequest) => void
   ): () => void;
@@ -108,11 +110,13 @@ export interface DesktopWorkspaceAppExternalHostApi {
       | Promise<DesktopWorkspaceAppExternalHostRequestResult>
       | DesktopWorkspaceAppExternalHostRequestResult
   ): () => void;
+  sendEvent(event: DesktopWorkspaceAppExternalRendererEvent): void;
 }
 
 export interface DesktopHostFilesApi {
   createUserDocumentsProjectDirectory(input: {
     name: string;
+    allowExisting?: boolean;
   }): Promise<DesktopCreateUserDocumentsProjectDirectoryResult>;
   selectAppArchive(): Promise<string | null>;
   selectAppArchiveExportPath(input: {

@@ -289,6 +289,62 @@ test("workspace app external bridge invokes file open with activation", async ()
   ]);
 });
 
+test("workspace app external bridge invokes PDF print with activation", async () => {
+  const calls: Array<{ channel: string; payload?: unknown }> = [];
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected subscribe");
+      }
+    },
+    isUserActivationActive: () => true,
+    send: unexpectedSend,
+    async invoke<TResult>(channel: string, payload?: unknown) {
+      calls.push({ channel, payload });
+      return { bytes: new Uint8Array([37, 80, 68, 70]) } as TResult;
+    }
+  });
+
+  assert.deepEqual(
+    await bridge.pdf.printHtmlToPdf({ html: "<h1>Hello</h1>" }),
+    {
+      bytes: new Uint8Array([37, 80, 68, 70])
+    }
+  );
+  assert.deepEqual(calls, [
+    {
+      channel: workspaceAppExternalChannels.pdfPrintHtml,
+      payload: { html: "<h1>Hello</h1>" }
+    }
+  ]);
+});
+
+test("workspace app external bridge requires activation for PDF print", () => {
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected subscribe");
+      }
+    },
+    isUserActivationActive: () => false,
+    send: unexpectedSend,
+    async invoke() {
+      throw new Error("unexpected invoke");
+    }
+  });
+
+  assert.throws(
+    () => bridge.pdf.printHtmlToPdf({ html: "<h1>Hello</h1>" }),
+    /pdf\.printHtmlToPdf requires a user action/
+  );
+});
+
 test("workspace app external bridge requires activation for permission request", () => {
   const bridge = createWorkspaceAppExternalBridge({
     appContext: {
@@ -410,6 +466,197 @@ test("workspace app external bridge invokes settings open with activation", asyn
       payload: { provider: "openai", tab: "models" }
     }
   ]);
+});
+
+test("workspace app external bridge invokes user project list without activation", async () => {
+  const calls: Array<{ channel: string; payload?: unknown }> = [];
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected subscribe");
+      }
+    },
+    isUserActivationActive: () => false,
+    send: unexpectedSend,
+    async invoke<TResult>(channel: string, payload?: unknown) {
+      calls.push({ channel, payload });
+      return {
+        projects: [{ id: "repo", label: "repo", path: "/workspace/repo" }]
+      } as TResult;
+    }
+  });
+
+  assert.deepEqual(await bridge.userProjects.list(), {
+    projects: [{ id: "repo", label: "repo", path: "/workspace/repo" }]
+  });
+  assert.deepEqual(calls, [
+    {
+      channel: workspaceAppExternalChannels.userProjectsList,
+      payload: undefined
+    }
+  ]);
+});
+
+test("workspace app external bridge invokes user project snapshot reads without activation", async () => {
+  const calls: Array<{ channel: string; payload?: unknown }> = [];
+  const snapshot = {
+    error: null,
+    initialized: true,
+    isLoading: false,
+    projects: [{ id: "repo", label: "repo", path: "/workspace/repo" }],
+    revision: 3
+  };
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected subscribe");
+      }
+    },
+    isUserActivationActive: () => false,
+    send: unexpectedSend,
+    async invoke<TResult>(channel: string, payload?: unknown) {
+      calls.push({ channel, payload });
+      return snapshot as TResult;
+    }
+  });
+
+  assert.deepEqual(await bridge.userProjects.getSnapshot(), snapshot);
+  assert.deepEqual(await bridge.userProjects.refresh(), snapshot);
+  assert.deepEqual(calls, [
+    {
+      channel: workspaceAppExternalChannels.userProjectsGetSnapshot,
+      payload: undefined
+    },
+    {
+      channel: workspaceAppExternalChannels.userProjectsRefresh,
+      payload: undefined
+    }
+  ]);
+});
+
+test("workspace app external bridge subscribes to user project snapshots", () => {
+  const snapshot = {
+    error: null,
+    initialized: true,
+    isLoading: false,
+    projects: [{ id: "repo", label: "repo", path: "/workspace/repo" }],
+    revision: 3
+  };
+  const snapshots: unknown[] = [];
+  let didUnsubscribe = false;
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected app subscribe");
+      }
+    },
+    isUserActivationActive: () => false,
+    send: unexpectedSend,
+    subscribeToUserProjects(listener) {
+      listener(snapshot);
+      return () => {
+        didUnsubscribe = true;
+      };
+    },
+    async invoke() {
+      throw new Error("unexpected invoke");
+    }
+  });
+
+  const unsubscribe = bridge.userProjects.subscribe((nextSnapshot) => {
+    snapshots.push(nextSnapshot);
+  });
+  unsubscribe();
+
+  assert.deepEqual(snapshots, [snapshot]);
+  assert.equal(didUnsubscribe, true);
+});
+
+test("workspace app external bridge invokes user project use without activation", async () => {
+  const calls: Array<{ channel: string; payload?: unknown }> = [];
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected subscribe");
+      }
+    },
+    isUserActivationActive: () => false,
+    send: unexpectedSend,
+    async invoke<TResult>(channel: string, payload?: unknown) {
+      calls.push({ channel, payload });
+      return { id: "repo", label: "repo", path: "/workspace/repo" } as TResult;
+    }
+  });
+
+  assert.deepEqual(await bridge.userProjects.use({ path: "/workspace/repo" }), {
+    id: "repo",
+    label: "repo",
+    path: "/workspace/repo"
+  });
+  assert.deepEqual(calls, [
+    {
+      channel: workspaceAppExternalChannels.userProjectsUse,
+      payload: { path: "/workspace/repo" }
+    }
+  ]);
+});
+
+test("workspace app external bridge requires activation for user project create", () => {
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected subscribe");
+      }
+    },
+    isUserActivationActive: () => false,
+    send: unexpectedSend,
+    async invoke() {
+      throw new Error("unexpected invoke");
+    }
+  });
+
+  assert.throws(
+    () => bridge.userProjects.create({ name: "repo" }),
+    /userProjects\.create requires a user action/
+  );
+});
+
+test("workspace app external bridge requires activation for user project directory select", () => {
+  const bridge = createWorkspaceAppExternalBridge({
+    appContext: {
+      async get() {
+        return { locale: "en" };
+      },
+      subscribe() {
+        throw new Error("unexpected subscribe");
+      }
+    },
+    isUserActivationActive: () => false,
+    send: unexpectedSend,
+    async invoke() {
+      throw new Error("unexpected invoke");
+    }
+  });
+
+  assert.throws(
+    () => bridge.userProjects.selectDirectory(),
+    /userProjects\.selectDirectory requires a user action/
+  );
 });
 
 test("workspace app external bridge sends logs without user activation", () => {

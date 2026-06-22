@@ -62,10 +62,11 @@ type ComposerSettings struct {
 }
 
 type ComposerOptionsInput struct {
-	Cwd      string
-	Locale   string
-	Provider string
-	Settings ComposerSettings
+	Cwd                      string
+	Locale                   string
+	Provider                 string
+	Settings                 ComposerSettings
+	IncludeCapabilityCatalog *bool
 }
 
 type ComposerSkillOption struct {
@@ -74,6 +75,23 @@ type ComposerSkillOption struct {
 	SourceKind  string
 	Description string
 	PluginName  string
+	Path        string
+}
+
+type ComposerCapabilityOption struct {
+	ID          string
+	Kind        string
+	Name        string
+	Label       string
+	Description string
+	Status      string
+	Source      string
+	PluginName  string
+	ServerName  string
+	ToolName    string
+	Trigger     string
+	Path        string
+	Invocation  string
 }
 
 type ComposerOptions struct {
@@ -85,6 +103,7 @@ type ComposerOptions struct {
 	EffectiveSettings ComposerSettings
 	RuntimeContext    map[string]any
 	Skills            []ComposerSkillOption
+	CapabilityCatalog []ComposerCapabilityOption
 }
 
 func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsInput) (ComposerOptions, error) {
@@ -122,7 +141,16 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 		"speed":            nullableString(effectiveSettings.Speed),
 	}
 	skills := s.discoverComposerSkillOptions(provider, input.Cwd, nil)
+	capabilityCatalog := []ComposerCapabilityOption{}
+	capabilityErrors := []string(nil)
+	if composerOptionsIncludeCapabilityCatalog(input) {
+		capabilityCatalog, capabilityErrors = s.listComposerCapabilityOptions(ctx, provider, input.Cwd, skills)
+	}
 	runtimeContext["skills"] = composerSkillOptionsRuntimeContext(skills)
+	runtimeContext["capabilityCatalog"] = composerCapabilityOptionsRuntimeContext(capabilityCatalog)
+	if len(capabilityErrors) > 0 {
+		runtimeContext["capabilityCatalogErrors"] = capabilityErrors
+	}
 	if composerOptionsProviderUsesModelCatalog(provider) {
 		if catalogOptions, source, ok := composerModelOptionsFromCatalog(ctx, s.ModelCatalog, provider, effectiveSettings.Model); ok {
 			modelOptions = catalogOptions
@@ -139,7 +167,12 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 		EffectiveSettings: effectiveSettings,
 		RuntimeContext:    runtimeContext,
 		Skills:            skills,
+		CapabilityCatalog: capabilityCatalog,
 	}, nil
+}
+
+func composerOptionsIncludeCapabilityCatalog(input ComposerOptionsInput) bool {
+	return input.IncludeCapabilityCatalog == nil || *input.IncludeCapabilityCatalog
 }
 
 // composerProviderCapabilities is the conservative static default used to

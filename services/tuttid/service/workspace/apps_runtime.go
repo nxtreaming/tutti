@@ -84,13 +84,14 @@ func (s *AppCenterService) StartEnabled(ctx context.Context, workspaceID string)
 		}
 	}
 	var builtins []builtinapps.App
-	builtins, err = s.builtinCatalog()
+	builtins, err = s.builtinCatalog(ctx)
 	if err != nil {
 		slog.Warn("workspace app start remote builtin sync skipped; builtin catalog unavailable", "workspaceId", workspaceID, "error", err)
 	}
 	remoteBuiltins := remoteBuiltinByAppID(builtins)
 	slog.Info("workspace app start enabled started", "workspaceId", workspaceID, "enabledAppCount", len(enabledAppIDs))
 
+	remoteBuiltinInstallStarted := false
 	for _, installation := range installations {
 		if !installation.Enabled {
 			continue
@@ -105,11 +106,13 @@ func (s *AppCenterService) StartEnabled(ctx context.Context, workspaceID string)
 				return nil, err
 			}
 			s.startRemoteBuiltinInstallJob(workspaceID, remoteBuiltin)
+			remoteBuiltinInstallStarted = true
 			slog.Warn("workspace app start enabled deferred app; package unavailable locally", "workspaceId", workspaceID, "appId", installation.AppID)
 			continue
 		}
 		if remoteBuiltin, ok := remoteBuiltins[installation.AppID]; ok && shouldMaterializeRemoteBuiltin(appPackage, remoteBuiltin) {
 			s.startRemoteBuiltinInstallJob(workspaceID, remoteBuiltin)
+			remoteBuiltinInstallStarted = true
 			slog.Info(
 				"workspace app start enabled deferred app; remote builtin update available",
 				"workspaceId", workspaceID,
@@ -146,6 +149,9 @@ func (s *AppCenterService) StartEnabled(ctx context.Context, workspaceID string)
 		}
 	}
 	slog.Info("workspace app start enabled completed", "workspaceId", workspaceID, "enabledAppCount", len(enabledAppIDs), "duration", time.Since(startedAt))
+	if !remoteBuiltinInstallStarted {
+		s.startRuntimePreload()
+	}
 
 	apps, err := s.List(ctx, workspaceID)
 	if err != nil {
@@ -194,7 +200,7 @@ func (s *AppCenterService) publishInstalledAppRuntime(ctx context.Context, works
 
 func (s *AppCenterService) startRemoteBuiltinInstallJob(workspaceID string, builtin builtinapps.App) bool {
 	appID := strings.TrimSpace(builtin.Manifest.AppID)
-	return s.startInstallJob(workspaceID, appID, InstallOptions{}, func(ctx context.Context) (workspacebiz.AppPackage, error) {
+	return s.startInstallJob(workspaceID, appID, InstallOptions{}, appRuntimeProfileForManifest(builtin.Manifest), func(ctx context.Context) (workspacebiz.AppPackage, error) {
 		return s.packageForRemoteBuiltinInstall(ctx, builtin)
 	})
 }
@@ -269,6 +275,7 @@ func (s *AppCenterService) startPackage(ctx context.Context, workspaceID string,
 		PackageDir:      appPackage.PackageDir,
 		Bootstrap:       appPackage.Manifest.Runtime.Bootstrap,
 		HealthcheckPath: appPackage.Manifest.Runtime.HealthcheckPath,
+		RuntimeProfile:  appRuntimeProfileForPackage(appPackage),
 		RuntimeDir:      filepath.Join(root, "runtime"),
 		DataDir:         filepath.Join(root, "data"),
 		LogDir:          filepath.Join(root, "logs"),

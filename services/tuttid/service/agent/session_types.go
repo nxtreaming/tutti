@@ -9,16 +9,21 @@ import (
 )
 
 type Service struct {
-	Runtime                   RuntimeController
-	AvailabilityChecker       ProviderAvailabilityChecker
-	ModelCatalog              AgentModelCatalog
-	SessionReader             SessionReader
-	MessageReader             MessageReader
-	ExternalImportStore       agentactivitybiz.Repository
-	SessionDirectoryAllocator SessionDirectoryAllocator
-	PromptAttachmentStore     PromptAttachmentStore
-	RuntimePreparer           agentsidecarservice.Preparer
-	skillOptionsCache         *composerSkillOptionsCache
+	Runtime                      RuntimeController
+	AvailabilityChecker          ProviderAvailabilityChecker
+	ModelCatalog                 AgentModelCatalog
+	SessionReader                SessionReader
+	MessageReader                MessageReader
+	ExternalImportStore          agentactivitybiz.Repository
+	SessionDirectoryAllocator    SessionDirectoryAllocator
+	PromptAttachmentStore        PromptAttachmentStore
+	RuntimePreparer              agentsidecarservice.Preparer
+	CapabilityLister             ComposerCapabilityLister
+	ProviderAvailabilityCacheTTL time.Duration
+	CapabilityCatalogCacheTTL    time.Duration
+	skillOptionsCache            *composerSkillOptionsCache
+	providerAvailabilityCache    *providerAvailabilityCache
+	capabilityCatalogCache       *composerCapabilityCatalogCache
 }
 
 type StaleTurnResumeReconciler interface {
@@ -43,6 +48,10 @@ type RuntimeController interface {
 
 type SessionDirectoryAllocator interface {
 	CreateSessionDirectory(context.Context) (string, error)
+}
+
+type ComposerCapabilityLister interface {
+	ListComposerCapabilityOptions(context.Context, string, string, []ComposerSkillOption) ([]ComposerCapabilityOption, []string)
 }
 
 type Session struct {
@@ -295,6 +304,7 @@ type PromptContentBlock struct {
 	Data         string `json:"data,omitempty"`
 	AttachmentID string `json:"attachmentId,omitempty"`
 	Name         string `json:"name,omitempty"`
+	Path         string `json:"path,omitempty"`
 }
 
 type PromptAttachment struct {

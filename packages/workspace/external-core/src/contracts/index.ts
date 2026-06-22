@@ -1,4 +1,12 @@
 import type { WorkspaceFileReference } from "@tutti-os/workspace-file-reference/contracts";
+import type {
+  WorkspaceUserProject,
+  WorkspaceUserProjectDefaultSelection,
+  WorkspaceUserProjectPathCheck,
+  WorkspaceUserProjectSelectionPreparation,
+  WorkspaceUserProjectSelectionPreparationInput,
+  WorkspaceUserProjectServiceSnapshot
+} from "@tutti-os/workspace-user-project/contracts";
 
 export const TUTTI_EXTERNAL_AT_PROVIDER_IDS = {
   agentGeneratedFile: "agent-generated-file",
@@ -148,6 +156,18 @@ export interface TuttiExternalReferenceOpenInput {
   href: string;
 }
 
+export interface TuttiExternalUserProjectCreateInput {
+  name: string;
+}
+
+export interface TuttiExternalUserProjectPathInput {
+  path: string;
+}
+
+export interface TuttiExternalUserProjectRememberDefaultSelectionInput {
+  path: string | null;
+}
+
 export const tuttiExternalLogLevels = [
   "debug",
   "info",
@@ -161,6 +181,26 @@ export interface TuttiExternalLogInput {
   details?: Record<string, unknown>;
   event: string;
   level?: TuttiExternalLogLevel;
+}
+
+export interface TuttiExternalPdfMargin {
+  bottom?: string;
+  left?: string;
+  right?: string;
+  top?: string;
+}
+
+export interface TuttiExternalPdfPrintHtmlInput {
+  baseUrl?: string;
+  html: string;
+  margin?: TuttiExternalPdfMargin;
+  pageSize?: "A4" | "Letter";
+  printBackground?: boolean;
+  title?: string;
+}
+
+export interface TuttiExternalPdfPrintHtmlResult {
+  bytes: Uint8Array;
 }
 
 export interface TuttiExternalBridge {
@@ -192,6 +232,40 @@ export interface TuttiExternalBridge {
   };
   references: {
     open(input: TuttiExternalReferenceOpenInput): Promise<void>;
+  };
+  pdf: {
+    printHtmlToPdf(
+      input: TuttiExternalPdfPrintHtmlInput
+    ): Promise<TuttiExternalPdfPrintHtmlResult>;
+  };
+  userProjects: {
+    checkPath(
+      input: TuttiExternalUserProjectPathInput
+    ): Promise<WorkspaceUserProjectPathCheck>;
+    create(
+      input: TuttiExternalUserProjectCreateInput
+    ): Promise<WorkspaceUserProject>;
+    getDefaultSelection(): Promise<WorkspaceUserProjectDefaultSelection | null>;
+    getSnapshot(): Promise<WorkspaceUserProjectServiceSnapshot>;
+    list(): Promise<{ projects: WorkspaceUserProject[] }>;
+    prepareSelection(
+      input: WorkspaceUserProjectSelectionPreparationInput
+    ): Promise<WorkspaceUserProjectSelectionPreparation>;
+    refresh(): Promise<WorkspaceUserProjectServiceSnapshot>;
+    rememberDefaultSelection(
+      input: TuttiExternalUserProjectRememberDefaultSelectionInput
+    ): Promise<void>;
+    selectDirectory(): Promise<{ path: string } | null>;
+    /**
+     * Subscribes to user-project snapshots. Implementations replay the latest
+     * known snapshot after registration, then emit future snapshots.
+     */
+    subscribe(
+      listener: (snapshot: WorkspaceUserProjectServiceSnapshot) => void
+    ): () => void;
+    use(
+      input: TuttiExternalUserProjectPathInput
+    ): Promise<WorkspaceUserProject>;
   };
   logs: {
     write(input: TuttiExternalLogInput): void;
@@ -231,6 +305,71 @@ export type TuttiExternalRendererRequest =
       appId: string;
       input: TuttiExternalReferenceOpenInput;
       operation: "references.open";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      input: TuttiExternalUserProjectPathInput;
+      operation: "userProjects.checkPath";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      input: TuttiExternalUserProjectCreateInput;
+      operation: "userProjects.create";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      operation: "userProjects.getDefaultSelection";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      operation: "userProjects.getSnapshot";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      operation: "userProjects.list";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      input: WorkspaceUserProjectSelectionPreparationInput;
+      operation: "userProjects.prepareSelection";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      operation: "userProjects.refresh";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      input: TuttiExternalUserProjectRememberDefaultSelectionInput;
+      operation: "userProjects.rememberDefaultSelection";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      operation: "userProjects.selectDirectory";
+      requestId: string;
+      workspaceId: string;
+    }
+  | {
+      appId: string;
+      input: TuttiExternalUserProjectPathInput;
+      operation: "userProjects.use";
       requestId: string;
       workspaceId: string;
     };

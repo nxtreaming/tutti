@@ -1,6 +1,7 @@
 import {
+  BrowserWindow,
   ipcMain,
-  type BrowserWindow,
+  webContents,
   type IpcMainEvent,
   type WebContents
 } from "electron";
@@ -8,6 +9,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import {
   desktopIpcChannels,
   type DesktopIpcResult,
+  type DesktopWorkspaceAppExternalRendererEvent,
   type DesktopWorkspaceAppExternalRendererRequest,
   type DesktopWorkspaceAppExternalRendererResponse,
   type DesktopWorkspaceAppExternalRendererResult,
@@ -19,9 +21,14 @@ import {
   normalizeTuttiExternalFileOpenInput,
   normalizeTuttiExternalFileSelectInput,
   normalizeTuttiExternalLogInput,
+  normalizeTuttiExternalPdfPrintHtmlInput,
   normalizeTuttiExternalPermissionRequestInput,
   normalizeTuttiExternalReferenceOpenInput,
   normalizeTuttiExternalSettingsOpenInput,
+  normalizeTuttiExternalUserProjectCreateInput,
+  normalizeTuttiExternalUserProjectPathInput,
+  normalizeTuttiExternalUserProjectRememberDefaultSelectionInput,
+  normalizeTuttiExternalUserProjectSelectionPreparationInput,
   normalizeTuttiExternalWorkspaceOpenFeatureInput
 } from "@tutti-os/workspace-external-core/core";
 import type {
@@ -30,6 +37,9 @@ import type {
   TuttiExternalFileSelectResult,
   TuttiExternalManagedAiModel,
   TuttiExternalManagedAiModelProviderId,
+  TuttiExternalPdfMargin,
+  TuttiExternalPdfPrintHtmlInput,
+  TuttiExternalPdfPrintHtmlResult,
   TuttiExternalPermissionRequestInput,
   TuttiExternalPermissionRequestResult
 } from "@tutti-os/workspace-external-core/contracts";
@@ -58,11 +68,18 @@ const workspaceAppGuestContexts = new Map<number, WorkspaceAppGuestContext>();
 let workspaceAppFrontendLogWriter: WorkspaceAppFrontendLogWriter | null = null;
 let workspaceAppGuestLogRateLimiter: WorkspaceAppGuestLogRateLimiter | null =
   null;
+type WorkspaceAppPrintLoadListener = (...args: unknown[]) => void;
 
 interface WorkspaceAppGuestContext {
   appID: string;
   ownerWindow: BrowserWindow;
   workspaceID: string;
+}
+
+interface WorkspaceAppPrintWebContents {
+  loadURL(url: string): Promise<void>;
+  off(event: string, listener: WorkspaceAppPrintLoadListener): unknown;
+  once(event: string, listener: WorkspaceAppPrintLoadListener): unknown;
 }
 
 export function registerWorkspaceAppGuestWebContents(
@@ -179,6 +196,14 @@ export function registerWorkspaceAppContextIpc(
     }
   );
   registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.pdfPrintHtml,
+    async (event, payload) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      const input = normalizeTuttiExternalPdfPrintHtmlInput(payload);
+      return printWorkspaceAppHtmlToPdf(context, input);
+    }
+  );
+  registerDesktopIpcHandler(
     desktopIpcChannels.appExternal.settingsOpen,
     async (event, payload) => {
       const context = requireWorkspaceAppGuestContext(event.sender);
@@ -201,6 +226,141 @@ export function registerWorkspaceAppContextIpc(
         appId: context.appID,
         input,
         operation: "references.open",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsCheckPath,
+    async (event, payload) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      const input = normalizeTuttiExternalUserProjectPathInput(
+        payload,
+        "checkPath"
+      );
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        input,
+        operation: "userProjects.checkPath",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsCreate,
+    async (event, payload) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      const input = normalizeTuttiExternalUserProjectCreateInput(payload);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        input,
+        operation: "userProjects.create",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsGetDefaultSelection,
+    async (event) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        operation: "userProjects.getDefaultSelection",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsGetSnapshot,
+    async (event) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        operation: "userProjects.getSnapshot",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsList,
+    async (event) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        operation: "userProjects.list",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsPrepareSelection,
+    async (event, payload) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      const input =
+        normalizeTuttiExternalUserProjectSelectionPreparationInput(payload);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        input,
+        operation: "userProjects.prepareSelection",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsRefresh,
+    async (event) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        operation: "userProjects.refresh",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsRememberDefaultSelection,
+    async (event, payload) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      const input =
+        normalizeTuttiExternalUserProjectRememberDefaultSelectionInput(payload);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        input,
+        operation: "userProjects.rememberDefaultSelection",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsSelectDirectory,
+    async (event) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        operation: "userProjects.selectDirectory",
+        requestId: randomUUID(),
+        workspaceId: context.workspaceID
+      });
+    }
+  );
+  registerDesktopIpcHandler(
+    desktopIpcChannels.appExternal.userProjectsUse,
+    async (event, payload) => {
+      const context = requireWorkspaceAppGuestContext(event.sender);
+      const input = normalizeTuttiExternalUserProjectPathInput(payload, "use");
+      return requestWorkspaceAppExternalRenderer(context, {
+        appId: context.appID,
+        input,
+        operation: "userProjects.use",
         requestId: randomUUID(),
         workspaceId: context.workspaceID
       });
@@ -229,6 +389,18 @@ export function registerWorkspaceAppContextIpc(
           payload: normalizedPayload
         });
       }
+    }
+  );
+  ipcMain.on(
+    desktopIpcChannels.appExternal.rendererEvent,
+    (event, payload: unknown) => {
+      const rendererEvent = isWorkspaceAppExternalRendererEvent(payload)
+        ? payload
+        : null;
+      if (!rendererEvent) {
+        return;
+      }
+      forwardWorkspaceAppExternalRendererEvent(event.sender, rendererEvent);
     }
   );
   ipcMain.on(
@@ -284,11 +456,160 @@ export function registerWorkspaceAppContextIpc(
       );
     }
   );
+  ipcMain.on(
+    desktopIpcChannels.appContext.agentStatusBroadcast,
+    (_event, payload: unknown) => {
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        typeof (payload as { agentBound?: unknown }).agentBound === "boolean"
+      ) {
+        broadcastWorkspaceAppContext({
+          agentBound: (payload as { agentBound: boolean }).agentBound
+        });
+      }
+    }
+  );
   preferences.subscribe(() => {
     broadcastWorkspaceAppContext({
       locale: preferences.getLocale()
     });
   });
+}
+
+async function printWorkspaceAppHtmlToPdf(
+  context: WorkspaceAppGuestContext,
+  input: TuttiExternalPdfPrintHtmlInput
+): Promise<TuttiExternalPdfPrintHtmlResult> {
+  const printWindow = new BrowserWindow({
+    height: 900,
+    parent: context.ownerWindow,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      session: context.ownerWindow.webContents.session
+    },
+    width: 720
+  });
+
+  try {
+    await loadPrintHtml(printWindow.webContents, input);
+    const pdf = await printWindow.webContents.printToPDF({
+      margins: printMargins(input.margin),
+      pageSize: input.pageSize ?? "A4",
+      printBackground: input.printBackground !== false
+    });
+    return { bytes: new Uint8Array(pdf) };
+  } finally {
+    if (!printWindow.isDestroyed()) {
+      printWindow.destroy();
+    }
+  }
+}
+
+function loadPrintHtml(
+  contents: WorkspaceAppPrintWebContents,
+  input: TuttiExternalPdfPrintHtmlInput
+): Promise<void> {
+  const html = preparePrintHtml(input);
+  const url = `data:text/html;charset=utf-8;base64,${Buffer.from(html, "utf8").toString("base64")}`;
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("PDF print HTML load timed out."));
+    }, 30_000);
+    const cleanup = (): void => {
+      clearTimeout(timeout);
+      contents.off("did-finish-load", handleLoaded);
+      contents.off("did-fail-load", handleFailed);
+    };
+    const handleLoaded = (): void => {
+      cleanup();
+      resolve();
+    };
+    const handleFailed: WorkspaceAppPrintLoadListener = (...args) => {
+      const errorDescription =
+        typeof args[2] === "string"
+          ? args[2]
+          : "PDF print HTML failed to load.";
+      cleanup();
+      reject(new Error(errorDescription));
+    };
+    contents.once("did-finish-load", handleLoaded);
+    contents.once("did-fail-load", handleFailed);
+    void contents.loadURL(url).catch((error: unknown) => {
+      cleanup();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    });
+  });
+}
+
+function preparePrintHtml(input: TuttiExternalPdfPrintHtmlInput): string {
+  const base = input.baseUrl
+    ? `<base href="${escapeHtml(input.baseUrl)}">`
+    : "";
+  const title = input.title ? `<title>${escapeHtml(input.title)}</title>` : "";
+  const printHead = `${base}${title}`;
+  if (!printHead) {
+    return input.html;
+  }
+  if (/<head[^>]*>/iu.test(input.html)) {
+    return input.html.replace(/<head([^>]*)>/iu, `<head$1>${printHead}`);
+  }
+  if (/<html[^>]*>/iu.test(input.html)) {
+    return input.html.replace(
+      /<html([^>]*)>/iu,
+      `<html$1><head>${printHead}</head>`
+    );
+  }
+  return `<!DOCTYPE html><html><head>${printHead}</head><body>${input.html}</body></html>`;
+}
+
+function printMargins(
+  margin: TuttiExternalPdfMargin | undefined
+): Electron.Margins | undefined {
+  if (!margin) {
+    return undefined;
+  }
+  return {
+    marginType: "custom",
+    bottom: marginToPixels(margin.bottom),
+    left: marginToPixels(margin.left),
+    right: marginToPixels(margin.right),
+    top: marginToPixels(margin.top)
+  };
+}
+
+function marginToPixels(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const match = value.match(/^(\d+(?:\.\d+)?)(px|in|cm|mm)$/u);
+  if (!match) {
+    return 0;
+  }
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit === "px") {
+    return amount;
+  }
+  if (unit === "in") {
+    return amount * 96;
+  }
+  if (unit === "cm") {
+    return (amount / 2.54) * 96;
+  }
+  return (amount / 25.4) * 96;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;");
 }
 
 function writeWorkspaceAppDiagnosticLog(
@@ -306,6 +627,32 @@ function writeWorkspaceAppDiagnosticLog(
   }
 
   workspaceAppFrontendLogWriter?.write(guestWebContentsId, context, record);
+}
+
+function forwardWorkspaceAppExternalRendererEvent(
+  ownerContents: WebContents,
+  rendererEvent: DesktopWorkspaceAppExternalRendererEvent
+): void {
+  for (const [guestWebContentsId, context] of workspaceAppGuestContexts) {
+    if (context.workspaceID !== rendererEvent.workspaceId) {
+      continue;
+    }
+    if (context.ownerWindow.webContents.id !== ownerContents.id) {
+      continue;
+    }
+    const guestContents = webContents.fromId(guestWebContentsId);
+    if (
+      !guestContents ||
+      guestContents.isDestroyed() ||
+      !workspaceAppGuestWebContents.has(guestContents)
+    ) {
+      continue;
+    }
+    guestContents.send(
+      desktopIpcChannels.appExternal.guestEvent,
+      rendererEvent
+    );
+  }
 }
 
 function requireWorkspaceAppGuestContext(
@@ -523,7 +870,12 @@ function createWorkspaceAppContext(
   const installationId = `${context.workspaceID}:${context.appID}`;
   return {
     appId: context.appID,
-    capabilities: ["files.open@1", "workspace.openFeature@1"],
+    capabilities: [
+      "files.open@1",
+      "pdf.printHtmlToPdf@1",
+      "userProjects@1",
+      "workspace.openFeature@1"
+    ],
     contextToken: createWorkspaceAppContextToken(endpoint, context, {
       installationId,
       issuer
@@ -604,6 +956,31 @@ function isWorkspaceAppDiagnosticPayload(
   return typeof value === "object" && value !== null;
 }
 
+function isWorkspaceAppExternalRendererEvent(
+  value: unknown
+): value is DesktopWorkspaceAppExternalRendererEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.type !== "userProjects.changed") {
+    return false;
+  }
+  if (typeof value.workspaceId !== "string") {
+    return false;
+  }
+  if (!isRecord(value.snapshot)) {
+    return false;
+  }
+  const snapshot = value.snapshot;
+  return (
+    (typeof snapshot.error === "string" || snapshot.error === null) &&
+    typeof snapshot.initialized === "boolean" &&
+    typeof snapshot.isLoading === "boolean" &&
+    Array.isArray(snapshot.projects) &&
+    typeof snapshot.revision === "number"
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -632,7 +1009,9 @@ function normalizeWorkspaceAppOpenUrlLogPayload(
   };
 }
 
-function broadcastWorkspaceAppContext(payload: { locale: string }): void {
+function broadcastWorkspaceAppContext(
+  payload: Partial<DesktopWorkspaceAppContext>
+): void {
   for (const contents of [...workspaceAppGuestWebContents]) {
     if (contents.isDestroyed()) {
       workspaceAppGuestWebContents.delete(contents);

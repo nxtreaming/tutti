@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
 	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
 	builtinapps "github.com/tutti-os/tutti/services/tuttid/builtin-apps"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
@@ -24,9 +25,28 @@ type appStoreStub struct {
 	installations   map[string]workspacebiz.AppInstallation
 }
 
+type appCenterPreferencesStoreStub struct {
+	preferences preferencesbiz.DesktopPreferences
+	err         error
+}
+
 type workspaceAppPublisherStub struct {
 	published  []workspacebiz.WorkspaceApp
 	workspaces []string
+}
+
+func (s appCenterPreferencesStoreStub) GetDesktopPreferences(context.Context) (preferencesbiz.DesktopPreferences, error) {
+	if s.err != nil {
+		return preferencesbiz.DesktopPreferences{}, s.err
+	}
+	return s.preferences, nil
+}
+
+func (s appCenterPreferencesStoreStub) PutDesktopPreferences(_ context.Context, preferences preferencesbiz.DesktopPreferences) (preferencesbiz.DesktopPreferences, error) {
+	if s.err != nil {
+		return preferencesbiz.DesktopPreferences{}, s.err
+	}
+	return preferences, nil
 }
 
 type appArtifactFetcherStub struct {
@@ -35,9 +55,13 @@ type appArtifactFetcherStub struct {
 }
 
 type appRuntimeResolverStub struct {
-	called chan struct{}
-	once   sync.Once
-	err    error
+	called         chan struct{}
+	once           sync.Once
+	mu             sync.Mutex
+	profile        string
+	resolveProfile string
+	resolveCalls   int
+	err            error
 }
 
 type preloadThenFailRuntimeResolver struct {
@@ -176,6 +200,32 @@ func (r *appRuntimeResolverStub) Resolve(context.Context) (ResolvedAppRuntime, e
 	r.once.Do(func() {
 		close(r.called)
 	})
+	r.mu.Lock()
+	r.resolveCalls += 1
+	r.mu.Unlock()
+	if r.err != nil {
+		return ResolvedAppRuntime{}, r.err
+	}
+	return ResolvedAppRuntime{}, nil
+}
+
+func (r *appRuntimeResolverStub) PreloadProfile(_ context.Context, profile string) error {
+	r.once.Do(func() {
+		close(r.called)
+	})
+	r.mu.Lock()
+	r.profile = profile
+	r.mu.Unlock()
+	return r.err
+}
+
+func (r *appRuntimeResolverStub) ResolveProfile(_ context.Context, profile string) (ResolvedAppRuntime, error) {
+	r.once.Do(func() {
+		close(r.called)
+	})
+	r.mu.Lock()
+	r.resolveProfile = profile
+	r.mu.Unlock()
 	if r.err != nil {
 		return ResolvedAppRuntime{}, r.err
 	}
@@ -460,6 +510,68 @@ func TestAppCenterServiceListSkipsRuntimePreloadWhenAllAppsInstalled(t *testing.
 	}
 }
 
+func TestAppCenterServiceInstallNodeStaticPackageSkipsBaselineRuntimePreload(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAppStoreStub()
+	manifest := workspacebiz.AppManifest{
+		SchemaVersion: workspacebiz.AppManifestSchemaVersionV1,
+		AppID:         "node-app",
+		Version:       "1.0.0",
+		Name:          "Node App",
+		Description:   "Node-only app",
+		Runtime: workspacebiz.AppManifestRuntime{
+			Bootstrap:       "bootstrap.sh",
+			HealthcheckPath: "/",
+			Profile:         workspaceAppNodeRuntimePreloadProfile,
+		},
+	}
+	packageDir := createWorkspaceAppPackageForTest(t, t.TempDir(), manifest)
+	if err := store.PutAppPackage(ctx, workspacebiz.AppPackage{
+		AppID:      manifest.AppID,
+		Version:    manifest.Version,
+		PackageDir: packageDir,
+		Manifest:   manifest,
+		Source:     workspacebiz.AppPackageSourceGenerated,
+	}); err != nil {
+		t.Fatalf("PutAppPackage() error = %v", err)
+	}
+	resolver := &appRuntimeResolverStub{called: make(chan struct{})}
+	service := AppCenterService{
+		Store:          store,
+		WorkspaceStore: &catalogStoreStub{getWorkspace: workspacebiz.Summary{ID: "ws-1", Name: "Workspace"}},
+		Runner:         &AppRunner{RuntimeResolver: resolver},
+		StateDir:       t.TempDir(),
+		BuiltinCatalog: func() ([]builtinapps.App, error) {
+			return nil, nil
+		},
+	}
+
+	if _, err := service.Install(ctx, "ws-1", manifest.AppID); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+
+	deadline := time.After(time.Second)
+	for {
+		resolver.mu.Lock()
+		profile := resolver.profile
+		resolveCalls := resolver.resolveCalls
+		resolver.mu.Unlock()
+		if profile == workspaceAppNodeRuntimePreloadProfile {
+			if resolveCalls != 0 {
+				t.Fatalf("baseline Resolve() calls = %d, want 0", resolveCalls)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("node-static runtime preload did not run")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
 func TestAppCenterServiceInitializesBuiltinCatalogAndInstallState(t *testing.T) {
 	t.Setenv("TUTTI_APP_CATALOG_URL", "")
 
@@ -514,6 +626,30 @@ func TestAppCenterServiceInitializesBuiltinPackagesWhenRemoteCatalogFails(t *tes
 	}
 }
 
+func TestAppCenterServiceAppCatalogRemoteURLFollowsPreferenceChannel(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	service := AppCenterService{}
+	if got := service.appCatalogRemoteURL(ctx); got != builtinapps.ProductionRemoteCatalogURL {
+		t.Fatalf("appCatalogRemoteURL() = %q, want production URL", got)
+	}
+
+	service.PreferencesStore = appCenterPreferencesStoreStub{
+		preferences: preferencesbiz.DesktopPreferences{
+			AppCatalogChannel: "staging",
+		},
+	}
+	if got := service.appCatalogRemoteURL(ctx); got != builtinapps.StagingRemoteCatalogURL {
+		t.Fatalf("appCatalogRemoteURL() = %q, want staging URL", got)
+	}
+
+	service.PreferencesStore = appCenterPreferencesStoreStub{err: errors.New("preferences unavailable")}
+	if got := service.appCatalogRemoteURL(ctx); got != builtinapps.ProductionRemoteCatalogURL {
+		t.Fatalf("appCatalogRemoteURL() with preference error = %q, want production URL", got)
+	}
+}
+
 func TestAppCenterServiceListsRemoteBuiltinBeforeDownloadAndMaterializesOnDemand(t *testing.T) {
 	t.Parallel()
 
@@ -556,6 +692,14 @@ func TestAppCenterServiceListsRemoteBuiltinBeforeDownloadAndMaterializesOnDemand
 		BuiltinCatalog: func() ([]builtinapps.App, error) {
 			return []builtinapps.App{{
 				Manifest: sourceManifest,
+				Localizations: []workspacebiz.AppManifestLocalization{
+					{
+						Locale:      "zh-CN",
+						Name:        "大型内置应用",
+						Description: "大型应用",
+						Tags:        []string{"内置", "工作区"},
+					},
+				},
 				Distribution: builtinapps.Distribution{
 					Kind:           builtinapps.DistributionRemote,
 					ArtifactURL:    fileServer.URL + "/" + filepath.Base(archivePath),
@@ -576,6 +720,10 @@ func TestAppCenterServiceListsRemoteBuiltinBeforeDownloadAndMaterializesOnDemand
 	}
 	if actualIconURL := remoteApp.ResolvedIconURL(); actualIconURL == nil || *actualIconURL != iconURL {
 		t.Fatalf("remote builtin icon url = %v, want %q", actualIconURL, iconURL)
+	}
+	localizations := remoteApp.Package.Localizations()
+	if len(localizations) != 1 || localizations[0].Locale != "zh-CN" || localizations[0].Name != "大型内置应用" {
+		t.Fatalf("remote builtin localizations = %#v", localizations)
 	}
 	if _, err := store.GetAppPackage(ctx, "large-builtin"); !errors.Is(err, workspacedata.ErrWorkspaceAppNotFound) {
 		t.Fatalf("GetAppPackage() before materialize error = %v", err)
@@ -1234,6 +1382,83 @@ func TestAppCenterServiceStartEnabledWaitsForRemoteCatalogRefresh(t *testing.T) 
 	case <-fetcher.done:
 	case <-time.After(time.Second):
 		t.Fatal("background remote builtin update did not finish")
+	}
+}
+
+func TestAppCenterServiceStartEnabledPreloadsRuntimeAfterRemoteCatalogRefresh(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("TUTTI_APP_CATALOG_FILE", "")
+
+	releaseCatalog := make(chan struct{})
+	releaseCatalogOnce := sync.Once{}
+	releaseCatalogResponse := func() {
+		releaseCatalogOnce.Do(func() {
+			close(releaseCatalog)
+		})
+	}
+	t.Cleanup(releaseCatalogResponse)
+	catalogRequested := make(chan struct{})
+	var catalogRequestedOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		catalogRequestedOnce.Do(func() {
+			close(catalogRequested)
+		})
+		<-releaseCatalog
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{
+			"schemaVersion": "tutti.app.catalog.v1",
+			"apps": []
+		}`))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("TUTTI_APP_CATALOG_URL", server.URL+"/catalog.json")
+
+	resolver := &appRuntimeResolverStub{called: make(chan struct{})}
+	service := AppCenterService{
+		Store:          newAppStoreStub(),
+		WorkspaceStore: &catalogStoreStub{getWorkspace: workspacebiz.Summary{ID: "ws-1", Name: "Workspace"}},
+		Runner:         &AppRunner{RuntimeResolver: resolver},
+		StateDir:       t.TempDir(),
+	}
+
+	resultCh := make(chan error, 1)
+	go func() {
+		_, err := service.StartEnabled(ctx, "ws-1")
+		resultCh <- err
+	}()
+
+	select {
+	case <-catalogRequested:
+	case err := <-resultCh:
+		t.Fatalf("StartEnabled() returned before catalog request completed: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("remote catalog was not requested")
+	}
+	select {
+	case <-resolver.called:
+		t.Fatal("runtime preload started before catalog refresh completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	releaseCatalogResponse()
+	select {
+	case err := <-resultCh:
+		if err != nil {
+			t.Fatalf("StartEnabled() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("StartEnabled() did not return after catalog refresh completed")
+	}
+	select {
+	case <-resolver.called:
+	case <-time.After(time.Second):
+		t.Fatal("runtime preload did not start after catalog refresh")
+	}
+	resolver.mu.Lock()
+	preloadedProfile := resolver.profile
+	resolver.mu.Unlock()
+	if preloadedProfile != workspaceAppNodeRuntimePreloadProfile {
+		t.Fatalf("runtime preload profile = %q, want %q", preloadedProfile, workspaceAppNodeRuntimePreloadProfile)
 	}
 }
 
@@ -2658,6 +2883,27 @@ func TestAppCenterServiceRemoveDeletesWorkspaceAppState(t *testing.T) {
 	}
 	if _, err := os.Stat(stateRoot); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("removed app state root stat error = %v, want not exist", err)
+	}
+}
+
+func TestWorkspaceAppStateRootUsesHashedInstallationScope(t *testing.T) {
+	t.Parallel()
+
+	stateDir := t.TempDir()
+	service := AppCenterService{StateDir: stateDir}
+
+	first := service.workspaceAppStateRoot("workspace-1", "sample-app")
+	second := service.workspaceAppStateRoot("workspace-2", "sample-app")
+
+	if strings.Contains(first, "workspace-1") || strings.Contains(first, "workspace-2") {
+		t.Fatalf("workspace app state root leaks workspace id: %q", first)
+	}
+	if first == second {
+		t.Fatalf("workspace app state roots collide: %q", first)
+	}
+	wantPrefix := filepath.Join(stateDir, "apps", "installations", "sample-app") + string(os.PathSeparator)
+	if !strings.HasPrefix(first, wantPrefix) {
+		t.Fatalf("workspace app state root = %q, want prefix %q", first, wantPrefix)
 	}
 }
 

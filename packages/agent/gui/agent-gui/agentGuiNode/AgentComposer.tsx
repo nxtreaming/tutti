@@ -106,7 +106,10 @@ import {
   AgentFileMentionPalette,
   flattenAgentMentionPaletteEntries
 } from "./AgentFileMentionPalette";
-import { AGENT_MENTION_FILTER_TAB_ORDER } from "./agentMentionSearchHelpers";
+import {
+  AGENT_MENTION_FILTER_TAB_ORDER,
+  DEFAULT_AGENT_MENTION_FILTER
+} from "./agentMentionSearchHelpers";
 import {
   exitAgentFileMentionSuggestion,
   parseMentionItemFromHref,
@@ -241,6 +244,9 @@ export interface AgentComposerProps {
     slashPaletteCommandsGroup: string;
     slashPaletteCapabilitiesGroup: string;
     slashPaletteSkillsGroup: string;
+    slashPalettePluginsGroup: string;
+    slashPaletteConnectorsGroup: string;
+    slashPaletteMcpGroup: string;
     slashStatusTitle: string;
     slashStatusSession: string;
     slashStatusBaseUrl: string;
@@ -473,7 +479,7 @@ function AgentUsageChip({
         >
           <span
             aria-hidden="true"
-            className="absolute inset-0.5 rounded-full bg-[var(--background-panel)]"
+            className="absolute inset-0.5 rounded-full bg-[var(--agent-gui-surface-raised,var(--background-fronted))]"
           />
         </button>
       </PopoverTrigger>
@@ -726,7 +732,7 @@ export function AgentComposer({
       status: "idle",
       query: "",
       mode: "browse",
-      filter: "all",
+      filter: DEFAULT_AGENT_MENTION_FILTER,
       categories: [],
       groups: [],
       error: null
@@ -2346,6 +2352,9 @@ export function AgentComposer({
                 commandsGroupLabel={labels.slashPaletteCommandsGroup}
                 capabilitiesGroupLabel={labels.slashPaletteCapabilitiesGroup}
                 skillsGroupLabel={labels.slashPaletteSkillsGroup}
+                pluginsGroupLabel={labels.slashPalettePluginsGroup}
+                connectorsGroupLabel={labels.slashPaletteConnectorsGroup}
+                mcpGroupLabel={labels.slashPaletteMcpGroup}
                 onHighlightChange={setHighlightedIndex}
                 onSelect={selectCommand}
                 onSelectCapability={selectCapability}

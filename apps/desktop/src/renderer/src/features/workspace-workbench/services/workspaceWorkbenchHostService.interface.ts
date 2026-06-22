@@ -38,6 +38,7 @@ import type {
   TuttiExternalAtQueryResult
 } from "@tutti-os/workspace-external-core/contracts";
 import type { WorkspaceFileReferenceAdapter } from "@tutti-os/workspace-file-reference/contracts";
+import type { WorkspaceUserProjectApi } from "@tutti-os/workspace-user-project/contracts";
 import type { DesktopWorkspaceAppOpenFileResolvedPayload } from "@shared/contracts/ipc";
 
 export type WorkspaceCustomWallpaperStatus = "idle" | "saving" | "removing";
@@ -47,6 +48,13 @@ export interface WorkspaceCustomWallpaperSnapshot {
   fullUrl: string | null;
   status: WorkspaceCustomWallpaperStatus;
   thumbnailUrl: string | null;
+}
+
+export interface WorkspaceOnboardingAutoOpenDiagnostic {
+  details?: Record<string, unknown>;
+  event: string;
+  level: "debug" | "info" | "warn" | "error";
+  workspaceId: string;
 }
 
 export interface WorkspaceFilesNodeActivationPayload {
@@ -120,6 +128,8 @@ export interface IWorkspaceWorkbenchHostService {
   createWorkspaceAppExternalFileReferenceAdapter(
     workspaceId: string
   ): WorkspaceFileReferenceAdapter;
+  createWorkspaceAppExternalUserProjectApi(): WorkspaceUserProjectApi;
+  openExternal(url: string): Promise<void>;
   queryWorkspaceAppExternalAt(input: {
     query: TuttiExternalAtQueryInput;
     workspaceId: string;
@@ -135,6 +145,9 @@ export interface IWorkspaceWorkbenchHostService {
     listener: (request: DesktopWorkspaceAppOpenFileResolvedPayload) => void
   ): () => void;
   hasWorkspaceOnboardingAutoOpened(workspaceId: string): Promise<boolean>;
+  logWorkspaceOnboardingAutoOpenDiagnostic(
+    diagnostic: WorkspaceOnboardingAutoOpenDiagnostic
+  ): void;
   markWorkspaceOnboardingAutoOpened(workspaceId: string): Promise<void>;
   readWallpaperDisplayMode(workspaceId: string): WorkspaceWallpaperDisplayMode;
   readWallpaperId(workspaceId: string): WorkspaceWallpaperId;
@@ -161,6 +174,7 @@ export interface IWorkspaceWorkbenchHostService {
     wallpaperId: WorkspaceWallpaperId
   ): void;
   subscribeWallpaperChanges(listener: () => void): () => void;
+  broadcastAgentStatus(payload: { agentBound: boolean }): void;
 }
 
 export const IWorkspaceWorkbenchHostService =

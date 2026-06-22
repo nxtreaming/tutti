@@ -410,6 +410,18 @@ function ReadyWorkspaceWorkbench({
   });
 
   useEffect(() => {
+    const broadcastAgentBound = () => {
+      const snapshot = agentProviderStatusService.getSnapshot();
+      const agentBound = snapshot.statuses.some(
+        (s) => s.availability.status === "ready"
+      );
+      runtime.workbenchHostService.broadcastAgentStatus({ agentBound });
+    };
+    broadcastAgentBound();
+    return agentProviderStatusService.subscribe(broadcastAgentBound);
+  }, [agentProviderStatusService, runtime.workbenchHostService]);
+
+  useEffect(() => {
     const missionControlShortcutsEnabled =
       runtime.shortcutsEnabled || runtime.missionControl.isOpen;
     if (!missionControlShortcutsEnabled || !runtime.missionControl.canOpen) {

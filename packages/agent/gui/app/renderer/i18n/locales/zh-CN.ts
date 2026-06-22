@@ -355,7 +355,7 @@ export const zhCN = {
       permissionSemantics: {
         "ask-before-write": {
           label: "请求批准",
-          description: "编辑外部文件或使用互联网前始终询问你"
+          description: "编辑外部文件和使用互联网时始终询问"
         },
         "accept-edits": {
           label: "接受编辑",
@@ -367,11 +367,11 @@ export const zhCN = {
         },
         auto: {
           label: "替我审批",
-          description: "仅在检测到可能不安全的操作时询问你"
+          description: "仅对检测到的风险操作请求批准"
         },
         "full-access": {
-          label: "完全访问",
-          description: "可不受限制地访问互联网和你电脑上的任何文件"
+          label: "完全访问权限",
+          description: "可不受限制地访问互联网和您电脑上的任何文件"
         },
         unconfigurable: {
           label: "固定模式",
@@ -382,15 +382,15 @@ export const zhCN = {
         codex: {
           "read-only": {
             label: "请求批准",
-            description: "编辑外部文件或使用互联网前始终询问你"
+            description: "编辑外部文件和使用互联网时始终询问"
           },
           auto: {
             label: "替我审批",
-            description: "仅在检测到可能不安全的操作时询问你"
+            description: "仅对检测到的风险操作请求批准"
           },
           "full-access": {
-            label: "完全访问",
-            description: "可不受限制地访问互联网和你电脑上的任何文件"
+            label: "完全访问权限",
+            description: "可不受限制地访问互联网和您电脑上的任何文件"
           }
         },
         nexight: {
@@ -610,7 +610,6 @@ export const zhCN = {
       searchNoConversations: "暂无相关会话",
       conversationUnavailable: "会话不可用。",
       contextPickerBrowseHint: "根据你输入的内容搜索工作区文件",
-      contextPickerBrowseAllHint: "根据你输入的内容搜索工作区文件",
       contextPickerBrowseFileHint:
         "暂无已打开或 Agent 生成的文件，继续输入文件名可搜索本机文件",
       mentionFileSearchMoreHint: "继续输入文件名可搜索更多本机文件",
@@ -630,7 +629,7 @@ export const zhCN = {
       sectionToday: "今天",
       sectionYesterday: "昨天",
       sectionEarlier: "更早",
-      projectSectionEdit: "编辑",
+      projectSectionEdit: "新建会话",
       projectSectionMoreActions: "项目操作",
       projectSectionViewFiles: "打开文件夹",
       projectRailCreateProject: "新建项目",
@@ -734,6 +733,9 @@ export const zhCN = {
       shortcutEnter: "Enter",
       shortcutCmdEnter: "Cmd + Enter",
       shortcutCtrEnter: "Ctr + Enter",
+      openConversationWindow: "在新窗口打开会话",
+      showMoreConversations: "显示更多",
+      showLessConversations: "收起",
       deleteSession: "删除会话",
       pinSession: "置顶会话",
       unpinSession: "取消置顶",
@@ -755,6 +757,9 @@ export const zhCN = {
       slashPaletteCommandsGroup: "命令",
       slashPaletteCapabilitiesGroup: "能力",
       slashPaletteSkillsGroup: "技能",
+      slashPalettePluginsGroup: "插件",
+      slashPaletteConnectorsGroup: "连接器",
+      slashPaletteMcpGroup: "MCP",
       browserUseCapabilityLabel: "浏览器",
       browserUseCapabilityDescription: "让 Agent 使用浏览器。",
       browserUseCapabilityDescriptionAutoConnect:
@@ -821,7 +826,6 @@ export const zhCN = {
       projectMissingDescription: "此对话的工作目录已不存在",
       fileMentionSwitchCategory: "切换分类",
       fileMentionSwitchSelection: "切换选中",
-      mentionFilterAll: "全部",
       mentionFilterFile: "文件",
       mentionFilterApp: "应用",
       mentionFilterSession: "会话",

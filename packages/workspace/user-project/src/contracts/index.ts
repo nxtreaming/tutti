@@ -43,11 +43,13 @@ export interface WorkspaceUserProjectApi {
   checkPath?(input: { path: string }): Promise<WorkspaceUserProjectPathCheck>;
   create?(input: { name: string }): Promise<WorkspaceUserProject>;
   getDefaultSelection?(): Promise<WorkspaceUserProjectDefaultSelection | null>;
+  getSnapshot?(): Promise<WorkspaceUserProjectServiceSnapshot>;
   isNoProjectPath?(input: { path: string }): boolean;
   list(): Promise<{ projects: WorkspaceUserProject[] }>;
   prepareSelection?(
     input: WorkspaceUserProjectSelectionPreparationInput
   ): Promise<WorkspaceUserProjectSelectionPreparation>;
+  refresh?(): Promise<WorkspaceUserProjectServiceSnapshot>;
   remove?(input: { path: string }): Promise<void> | void;
   rememberDefaultSelection?(input: {
     path: string | null;
@@ -56,6 +58,9 @@ export interface WorkspaceUserProjectApi {
     | Promise<{ path: string } | null>
     | { path: string }
     | null;
+  subscribe?(
+    listener: (snapshot?: WorkspaceUserProjectServiceSnapshot) => void
+  ): () => void;
   use?(input: { path: string }): Promise<WorkspaceUserProject>;
 }
 

@@ -39,16 +39,22 @@ func (e AgentPromptContentBlockMimeType) Valid() bool {
 
 // Defines values for AgentPromptContentBlockType.
 const (
-	Image AgentPromptContentBlockType = "image"
-	Text  AgentPromptContentBlockType = "text"
+	AgentPromptContentBlockTypeImage   AgentPromptContentBlockType = "image"
+	AgentPromptContentBlockTypeMention AgentPromptContentBlockType = "mention"
+	AgentPromptContentBlockTypeSkill   AgentPromptContentBlockType = "skill"
+	AgentPromptContentBlockTypeText    AgentPromptContentBlockType = "text"
 )
 
 // Valid indicates whether the value is a known member of the AgentPromptContentBlockType enum.
 func (e AgentPromptContentBlockType) Valid() bool {
 	switch e {
-	case Image:
+	case AgentPromptContentBlockTypeImage:
 		return true
-	case Text:
+	case AgentPromptContentBlockTypeMention:
+		return true
+	case AgentPromptContentBlockTypeSkill:
+		return true
+	case AgentPromptContentBlockTypeText:
 		return true
 	default:
 		return false
@@ -157,6 +163,81 @@ func (e AgentProviderAvailabilityStatus) Valid() bool {
 	case AgentProviderAvailabilityStatusUnknown:
 		return true
 	case AgentProviderAvailabilityStatusUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProviderCapabilityOptionInvocation.
+const (
+	AgentProviderCapabilityOptionInvocationNone        AgentProviderCapabilityOptionInvocation = "none"
+	AgentProviderCapabilityOptionInvocationPromptItem  AgentProviderCapabilityOptionInvocation = "promptItem"
+	AgentProviderCapabilityOptionInvocationTextTrigger AgentProviderCapabilityOptionInvocation = "textTrigger"
+)
+
+// Valid indicates whether the value is a known member of the AgentProviderCapabilityOptionInvocation enum.
+func (e AgentProviderCapabilityOptionInvocation) Valid() bool {
+	switch e {
+	case AgentProviderCapabilityOptionInvocationNone:
+		return true
+	case AgentProviderCapabilityOptionInvocationPromptItem:
+		return true
+	case AgentProviderCapabilityOptionInvocationTextTrigger:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProviderCapabilityOptionKind.
+const (
+	AgentProviderCapabilityOptionKindConnector AgentProviderCapabilityOptionKind = "connector"
+	AgentProviderCapabilityOptionKindMcpServer AgentProviderCapabilityOptionKind = "mcpServer"
+	AgentProviderCapabilityOptionKindMcpTool   AgentProviderCapabilityOptionKind = "mcpTool"
+	AgentProviderCapabilityOptionKindPlugin    AgentProviderCapabilityOptionKind = "plugin"
+	AgentProviderCapabilityOptionKindSkill     AgentProviderCapabilityOptionKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the AgentProviderCapabilityOptionKind enum.
+func (e AgentProviderCapabilityOptionKind) Valid() bool {
+	switch e {
+	case AgentProviderCapabilityOptionKindConnector:
+		return true
+	case AgentProviderCapabilityOptionKindMcpServer:
+		return true
+	case AgentProviderCapabilityOptionKindMcpTool:
+		return true
+	case AgentProviderCapabilityOptionKindPlugin:
+		return true
+	case AgentProviderCapabilityOptionKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProviderCapabilityOptionStatus.
+const (
+	AuthRequired  AgentProviderCapabilityOptionStatus = "authRequired"
+	Available     AgentProviderCapabilityOptionStatus = "available"
+	Disabled      AgentProviderCapabilityOptionStatus = "disabled"
+	SetupRequired AgentProviderCapabilityOptionStatus = "setupRequired"
+	Unsupported   AgentProviderCapabilityOptionStatus = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the AgentProviderCapabilityOptionStatus enum.
+func (e AgentProviderCapabilityOptionStatus) Valid() bool {
+	switch e {
+	case AuthRequired:
+		return true
+	case Available:
+		return true
+	case Disabled:
+		return true
+	case SetupRequired:
+		return true
+	case Unsupported:
 		return true
 	default:
 		return false
@@ -358,6 +439,24 @@ func (e CliOutputMode) Valid() bool {
 	case Plain:
 		return true
 	case Table:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopAppCatalogChannel.
+const (
+	Production DesktopAppCatalogChannel = "production"
+	Staging    DesktopAppCatalogChannel = "staging"
+)
+
+// Valid indicates whether the value is a known member of the DesktopAppCatalogChannel enum.
+func (e DesktopAppCatalogChannel) Valid() bool {
+	switch e {
+	case Production:
+		return true
+	case Staging:
 		return true
 	default:
 		return false
@@ -888,25 +987,25 @@ func (e WorkspaceAppCatalogLoadStatus) Valid() bool {
 
 // Defines values for WorkspaceAppCliStatus.
 const (
-	Active  WorkspaceAppCliStatus = "active"
-	Error   WorkspaceAppCliStatus = "error"
-	None    WorkspaceAppCliStatus = "none"
-	Pending WorkspaceAppCliStatus = "pending"
-	Warning WorkspaceAppCliStatus = "warning"
+	WorkspaceAppCliStatusActive  WorkspaceAppCliStatus = "active"
+	WorkspaceAppCliStatusError   WorkspaceAppCliStatus = "error"
+	WorkspaceAppCliStatusNone    WorkspaceAppCliStatus = "none"
+	WorkspaceAppCliStatusPending WorkspaceAppCliStatus = "pending"
+	WorkspaceAppCliStatusWarning WorkspaceAppCliStatus = "warning"
 )
 
 // Valid indicates whether the value is a known member of the WorkspaceAppCliStatus enum.
 func (e WorkspaceAppCliStatus) Valid() bool {
 	switch e {
-	case Active:
+	case WorkspaceAppCliStatusActive:
 		return true
-	case Error:
+	case WorkspaceAppCliStatusError:
 		return true
-	case None:
+	case WorkspaceAppCliStatusNone:
 		return true
-	case Pending:
+	case WorkspaceAppCliStatusPending:
 		return true
-	case Warning:
+	case WorkspaceAppCliStatusWarning:
 		return true
 	default:
 		return false
@@ -1271,6 +1370,7 @@ type AgentPromptContentBlock struct {
 	Data         *string                          `json:"data,omitempty"`
 	MimeType     *AgentPromptContentBlockMimeType `json:"mimeType,omitempty"`
 	Name         *string                          `json:"name,omitempty"`
+	Path         *string                          `json:"path,omitempty"`
 	Text         *string                          `json:"text,omitempty"`
 	Type         AgentPromptContentBlockType      `json:"type"`
 }
@@ -1338,6 +1438,32 @@ type AgentProviderAvailability struct {
 // AgentProviderAvailabilityStatus defines model for AgentProviderAvailabilityStatus.
 type AgentProviderAvailabilityStatus string
 
+// AgentProviderCapabilityOption defines model for AgentProviderCapabilityOption.
+type AgentProviderCapabilityOption struct {
+	Description *string                                 `json:"description,omitempty"`
+	Id          string                                  `json:"id"`
+	Invocation  AgentProviderCapabilityOptionInvocation `json:"invocation"`
+	Kind        AgentProviderCapabilityOptionKind       `json:"kind"`
+	Label       string                                  `json:"label"`
+	Name        string                                  `json:"name"`
+	Path        *string                                 `json:"path,omitempty"`
+	PluginName  *string                                 `json:"pluginName,omitempty"`
+	ServerName  *string                                 `json:"serverName,omitempty"`
+	Source      *string                                 `json:"source,omitempty"`
+	Status      AgentProviderCapabilityOptionStatus     `json:"status"`
+	ToolName    *string                                 `json:"toolName,omitempty"`
+	Trigger     *string                                 `json:"trigger,omitempty"`
+}
+
+// AgentProviderCapabilityOptionInvocation defines model for AgentProviderCapabilityOption.Invocation.
+type AgentProviderCapabilityOptionInvocation string
+
+// AgentProviderCapabilityOptionKind defines model for AgentProviderCapabilityOption.Kind.
+type AgentProviderCapabilityOptionKind string
+
+// AgentProviderCapabilityOptionStatus defines model for AgentProviderCapabilityOption.Status.
+type AgentProviderCapabilityOptionStatus string
+
 // AgentProviderCliStatus defines model for AgentProviderCliStatus.
 type AgentProviderCliStatus struct {
 	BinaryPath *string `json:"binaryPath,omitempty"`
@@ -1363,14 +1489,15 @@ type AgentProviderComposerConfigOptionValue struct {
 
 // AgentProviderComposerOptionsResponse defines model for AgentProviderComposerOptionsResponse.
 type AgentProviderComposerOptionsResponse struct {
-	EffectiveSettings AgentSessionComposerSettings `json:"effectiveSettings"`
-	ModelConfig       AgentProviderComposerConfig  `json:"modelConfig"`
-	PermissionConfig  PermissionConfig             `json:"permissionConfig"`
-	Provider          WorkspaceAgentProvider       `json:"provider"`
-	ReasoningConfig   AgentProviderComposerConfig  `json:"reasoningConfig"`
-	RuntimeContext    map[string]interface{}       `json:"runtimeContext"`
-	Skills            []AgentProviderSkillOption   `json:"skills"`
-	SpeedConfig       *AgentProviderComposerConfig `json:"speedConfig,omitempty"`
+	CapabilityCatalog []AgentProviderCapabilityOption `json:"capabilityCatalog"`
+	EffectiveSettings AgentSessionComposerSettings    `json:"effectiveSettings"`
+	ModelConfig       AgentProviderComposerConfig     `json:"modelConfig"`
+	PermissionConfig  PermissionConfig                `json:"permissionConfig"`
+	Provider          WorkspaceAgentProvider          `json:"provider"`
+	ReasoningConfig   AgentProviderComposerConfig     `json:"reasoningConfig"`
+	RuntimeContext    map[string]interface{}          `json:"runtimeContext"`
+	Skills            []AgentProviderSkillOption      `json:"skills"`
+	SpeedConfig       *AgentProviderComposerConfig    `json:"speedConfig,omitempty"`
 }
 
 // AgentProviderProbeResponse defines model for AgentProviderProbeResponse.
@@ -1391,6 +1518,7 @@ type AgentProviderProbeStatus string
 type AgentProviderSkillOption struct {
 	Description *string                            `json:"description,omitempty"`
 	Name        string                             `json:"name"`
+	Path        *string                            `json:"path,omitempty"`
 	PluginName  *string                            `json:"pluginName,omitempty"`
 	SourceKind  AgentProviderSkillOptionSourceKind `json:"sourceKind"`
 	Trigger     string                             `json:"trigger"`
@@ -1860,6 +1988,9 @@ type DesktopAgentGuiConversationRailCollapsedByProvider struct {
 	Openclaw   *bool `json:"openclaw,omitempty"`
 }
 
+// DesktopAppCatalogChannel defines model for DesktopAppCatalogChannel.
+type DesktopAppCatalogChannel string
+
 // DesktopBrowserUseConnectionMode defines model for DesktopBrowserUseConnectionMode.
 type DesktopBrowserUseConnectionMode string
 
@@ -1882,6 +2013,7 @@ type DesktopLocale string
 type DesktopPreferences struct {
 	AgentComposerDefaultsByProvider             DesktopAgentComposerDefaultsByProvider             `json:"agentComposerDefaultsByProvider"`
 	AgentGuiConversationRailCollapsedByProvider DesktopAgentGuiConversationRailCollapsedByProvider `json:"agentGuiConversationRailCollapsedByProvider"`
+	AppCatalogChannel                           DesktopAppCatalogChannel                           `json:"appCatalogChannel"`
 	BrowserUseConnectionMode                    *DesktopBrowserUseConnectionMode                   `json:"browserUseConnectionMode,omitempty"`
 	DefaultAgentProvider                        WorkspaceAgentProvider                             `json:"defaultAgentProvider"`
 	DockIconStyle                               DesktopDockIconStyle                               `json:"dockIconStyle"`
@@ -3132,6 +3264,9 @@ type GetAgentProviderStatusesParams struct {
 type ListCliCapabilitiesParams struct {
 	// WorkspaceID Optional workspace context. When omitted, the daemon uses the startup workspace.
 	WorkspaceID *string `form:"workspaceID,omitempty" json:"workspaceID,omitempty"`
+
+	// IncludeHidden Include capabilities hidden from CLI command discovery by provider availability filters. Intended for metadata consumers, not command routing.
+	IncludeHidden *bool `form:"includeHidden,omitempty" json:"includeHidden,omitempty"`
 }
 
 // ListWorkspaceAgentGeneratedFilesParams defines parameters for ListWorkspaceAgentGeneratedFiles.

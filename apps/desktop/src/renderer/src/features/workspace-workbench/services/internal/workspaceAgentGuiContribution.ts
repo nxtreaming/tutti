@@ -29,9 +29,11 @@ import type { IReporterService } from "@renderer/features/analytics";
 import {
   createDesktopAgentGUIWorkbenchHostInput,
   DesktopAgentGUIWorkbenchBody,
+  preloadDesktopAgentGuiMentionBrowse,
   requestWorkspaceAgentGuiLaunch,
   type AgentProviderStatusService
 } from "@renderer/features/workspace-agent";
+import { getActiveLocale } from "@renderer/i18n";
 import { runDesktopAgentGUILinkAction } from "@renderer/features/workspace-agent/services/desktopAgentGUILinkActions.ts";
 import {
   workspaceWorkbenchDesktopI18nKeys,
@@ -81,6 +83,16 @@ export function createWorkspaceAgentGuiContribution(input: {
     workspaceUserProjectService: input.workspaceUserProjectService,
     workspaceId: input.workspaceId
   });
+  // Warm the @-mention browse cache at workspace startup (this factory runs once
+  // per workspace, before the agent GUI is opened) so the first palette open is
+  // instant rather than waiting for a focus-driven preload.
+  preloadDesktopAgentGuiMentionBrowse({
+    workspaceId: input.workspaceId,
+    baseProviders: agentGUIWorkbenchHostInput.contextMentionProviders,
+    agentActivityRuntime: agentGUIWorkbenchHostInput.agentActivityRuntime,
+    apps: input.appCenterService.store.apps,
+    locale: getActiveLocale()
+  });
   const handleLinkAction: NonNullable<
     Parameters<typeof DesktopAgentGUIWorkbenchBody>[0]["onLinkAction"]
   > = (action) => {
@@ -117,6 +129,9 @@ export function createWorkspaceAgentGuiContribution(input: {
       dockPreviewCache: input.dockPreviewCache,
       onCapabilitySettingsRequest: input.onCapabilitySettingsRequest,
       onLinkAction: handleLinkAction,
+      onOpenAgentConversationWindow: async (request) => {
+        await requestWorkspaceAgentGuiLaunch(request);
+      },
       onStateChange: (...args) => helpers.onStateChange(...args),
       previewMode: options?.previewMode,
       contextMentionProviders:

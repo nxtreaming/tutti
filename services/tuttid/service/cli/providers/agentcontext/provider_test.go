@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	agentactivitybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentactivity"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentgui"
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
 	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
@@ -40,6 +41,8 @@ type fakeAgentSessions struct {
 	cancelCallCount int
 	limit           int
 	afterVersion    uint64
+	beforeVersion   uint64
+	order           agentactivitybiz.MessageOrder
 	listCallCount   int
 	messageCallIDs  []string
 	createCallCount int
@@ -214,6 +217,8 @@ func (f *fakeAgentSessions) ListMessages(_ context.Context, workspaceID string, 
 	f.sessionID = sessionID
 	f.limit = input.Limit
 	f.afterVersion = input.AfterVersion
+	f.beforeVersion = input.BeforeVersion
+	f.order = input.Order
 	f.messageCallIDs = append(f.messageCallIDs, sessionID)
 	return agentservice.SessionMessagesPage{
 		AgentSessionID: sessionID,
@@ -309,7 +314,12 @@ func TestSessionSummaryCommandUsesLimitAndAfterVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handler: %v", err)
 	}
-	if sessions.workspaceID != "workspace-1" || sessions.sessionID != "SESSION-1" || sessions.limit != 20 || sessions.afterVersion != 3 {
+	if sessions.workspaceID != "workspace-1" ||
+		sessions.sessionID != "SESSION-1" ||
+		sessions.limit != 20 ||
+		sessions.afterVersion != 3 ||
+		sessions.beforeVersion != 0 ||
+		sessions.order != agentactivitybiz.MessageOrderAsc {
 		t.Fatalf("sessions = %#v", sessions)
 	}
 	if output.Value["agentSessionId"] != "SESSION-1" || output.Value["latestVersion"] != uint64(2) {
@@ -329,6 +339,39 @@ func TestSessionSummaryCommandUsesLimitAndAfterVersion(t *testing.T) {
 	}
 	if _, ok := message["payload"]; ok {
 		t.Fatalf("compact message should not include payload: %#v", message)
+	}
+}
+
+func TestSessionSummaryCommandUsesDescendingBeforeVersion(t *testing.T) {
+	sessions := &fakeAgentSessions{}
+	command := NewProvider(fakeWorkspaceCatalog{startup: workspacebiz.Summary{ID: "workspace-1"}}, sessions).newSessionSummaryCommand()
+
+	_, err := command.Handler(context.Background(), cliservice.InvokeRequest{
+		Input:      map[string]any{"session-id": "SESSION-1", "limit": "50", "order": "desc", "before-version": "99"},
+		OutputMode: cliservice.OutputModeJSON,
+	})
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	if sessions.workspaceID != "workspace-1" ||
+		sessions.sessionID != "SESSION-1" ||
+		sessions.limit != 50 ||
+		sessions.afterVersion != 0 ||
+		sessions.beforeVersion != 99 ||
+		sessions.order != agentactivitybiz.MessageOrderDesc {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+}
+
+func TestSessionSummaryCommandRejectsInvalidOrder(t *testing.T) {
+	sessions := &fakeAgentSessions{}
+	command := NewProvider(fakeWorkspaceCatalog{startup: workspacebiz.Summary{ID: "workspace-1"}}, sessions).newSessionSummaryCommand()
+
+	_, err := command.Handler(context.Background(), cliservice.InvokeRequest{
+		Input: map[string]any{"session-id": "SESSION-1", "order": "sideways"},
+	})
+	if !errors.Is(err, cliservice.ErrInvalidInput) {
+		t.Fatalf("err = %v, want ErrInvalidInput", err)
 	}
 }
 
@@ -446,6 +489,9 @@ func TestComposerOptionsCommandReturnsProviderOptions(t *testing.T) {
 	if sessions.composerInput.Locale != "zh-CN" || sessions.composerInput.Provider != "codex" || sessions.composerInput.Settings.Model != "gpt-5" || sessions.composerInput.Settings.PermissionModeID != "auto" || sessions.composerInput.Settings.ReasoningEffort != "high" {
 		t.Fatalf("composer input = %#v", sessions.composerInput)
 	}
+	if sessions.composerInput.IncludeCapabilityCatalog != nil {
+		t.Fatalf("include capability catalog = %#v, want nil default", *sessions.composerInput.IncludeCapabilityCatalog)
+	}
 	if output.Value["provider"] != "codex" {
 		t.Fatalf("output = %#v", output.Value)
 	}
@@ -460,6 +506,27 @@ func TestComposerOptionsCommandReturnsProviderOptions(t *testing.T) {
 	modes := permissionConfig["modes"].([]any)
 	if modes[0].(map[string]any)["label"] != "替我审批" {
 		t.Fatalf("permission modes = %#v", modes)
+	}
+}
+
+func TestComposerOptionsCommandCanDisableCapabilityCatalog(t *testing.T) {
+	sessions := &fakeAgentSessions{}
+	command := NewProvider(fakeWorkspaceCatalog{startup: workspacebiz.Summary{ID: "workspace-1"}}, sessions).newComposerOptionsCommand()
+
+	_, err := command.Handler(context.Background(), cliservice.InvokeRequest{
+		Input: map[string]any{
+			"provider":                   "codex",
+			"include-capability-catalog": "false",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	if sessions.composerInput.IncludeCapabilityCatalog == nil {
+		t.Fatal("include capability catalog = nil, want explicit false")
+	}
+	if *sessions.composerInput.IncludeCapabilityCatalog {
+		t.Fatalf("include capability catalog = true, want false")
 	}
 }
 

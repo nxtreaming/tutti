@@ -53,6 +53,7 @@ import { createDesktopWorkspaceAppMentionProvider } from "../../rich-text-at/pro
 import { AGENT_CONTEXT_MENTION_PROVIDER_IDS } from "@tutti-os/agent-gui/context-mention-provider";
 import { resolveWorkbenchDockFileMentionItems } from "../services/internal/resolveWorkbenchDockFileMentionItems.ts";
 import { createDesktopAgentGeneratedFileMentionProvider } from "../services/internal/createDesktopAgentGeneratedFileMentionProvider.ts";
+import { composeDesktopAgentGuiContextMentionProviders } from "../services/internal/composeDesktopAgentGuiContextMentionProviders.ts";
 import { resolveDesktopWorkspaceAppIconEntries } from "../services/internal/desktopWorkspaceAppIcons.ts";
 import { wrapDesktopFileMentionProviderWithDockFiles } from "../services/internal/wrapDesktopFileMentionProviderWithDockFiles.ts";
 import {
@@ -89,6 +90,11 @@ interface DesktopAgentGUIWorkbenchBodyProps {
   dockPreviewCache: WorkbenchDockPreviewCache;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   onCapabilitySettingsRequest?: AgentGUIProps["onCapabilitySettingsRequest"];
+  onOpenAgentConversationWindow?: (input: {
+    agentSessionId: string;
+    provider: DesktopAgentGUINodeState["provider"];
+    workspaceId: string;
+  }) => Promise<void> | void;
   onStateChange: (state: DesktopAgentGUIWorkbenchState) => void;
   previewMode?: boolean;
   contextMentionProviders: NonNullable<
@@ -158,6 +164,7 @@ export function DesktopAgentGUIWorkbenchBody({
   dockPreviewCache,
   onLinkAction,
   onCapabilitySettingsRequest,
+  onOpenAgentConversationWindow,
   onStateChange,
   previewMode = false,
   contextMentionProviders,
@@ -214,21 +221,17 @@ export function DesktopAgentGUIWorkbenchBody({
     [agentActivityRuntime, workspaceId]
   );
   const effectiveContextMentionProviders = useMemo(
-    () => [
-      ...contextMentionProviders
-        .filter(
-          (provider) =>
-            provider.id !== AGENT_CONTEXT_MENTION_PROVIDER_IDS.workspaceApp
-        )
-        .map((provider) =>
+    () =>
+      composeDesktopAgentGuiContextMentionProviders({
+        baseProviders: contextMentionProviders,
+        agentGeneratedFileMentionProvider,
+        workspaceAppMentionProvider,
+        wrapBaseProvider: (provider) =>
           wrapDesktopFileMentionProviderWithDockFiles(provider, {
             readDockPreview: dockPreviewCache.read.bind(dockPreviewCache),
             resolveDockFiles
           })
-        ),
-      agentGeneratedFileMentionProvider,
-      ...(workspaceAppMentionProvider ? [workspaceAppMentionProvider] : [])
-    ],
+      }),
     [
       agentGeneratedFileMentionProvider,
       dockPreviewCache,
@@ -655,6 +658,24 @@ export function DesktopAgentGUIWorkbenchBody({
     };
   }, [context.instanceId, previewMode]);
 
+  const handleOpenConversationWindow = useCallback(
+    (agentSessionId: string) => {
+      if (previewMode || !onOpenAgentConversationWindow) {
+        return;
+      }
+      const trimmedAgentSessionId = agentSessionId.trim();
+      if (!trimmedAgentSessionId) {
+        return;
+      }
+      void onOpenAgentConversationWindow({
+        agentSessionId: trimmedAgentSessionId,
+        provider,
+        workspaceId
+      });
+    },
+    [onOpenAgentConversationWindow, previewMode, provider, workspaceId]
+  );
+
   useEffect(() => {
     if (
       previewMode ||
@@ -814,6 +835,11 @@ export function DesktopAgentGUIWorkbenchBody({
       onResize={DESKTOP_AGENT_GUI_NOOP}
       onShowMessage={DESKTOP_AGENT_GUI_NOOP}
       onUpdateNode={handleUpdateNode}
+      onOpenConversationWindow={
+        previewMode || !onOpenAgentConversationWindow
+          ? undefined
+          : handleOpenConversationWindow
+      }
       onWorkspaceFileReferencesAdded={trackWorkspaceFileReferences}
       position={DESKTOP_AGENT_GUI_POSITION}
       previewMode={previewMode}

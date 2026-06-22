@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createDefaultWorkspaceUserProjectI18nRuntime } from "@tutti-os/workspace-user-project/i18n";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceAgentSessionDetailViewModel } from "../../shared/workspaceAgentSessionDetailViewModel";
@@ -9,6 +9,10 @@ import { AgentGUINodeView, type AgentGUIViewLabels } from "./AgentGUINodeView";
 
 const conversationFlowMock = vi.hoisted(() => ({
   calls: [] as Array<{ conversation: unknown; labels: unknown }>
+}));
+
+const conversationMetaMock = vi.hoisted(() => ({
+  calls: [] as string[]
 }));
 
 const composerMock = vi.hoisted(() => ({
@@ -84,9 +88,24 @@ vi.mock("../../app/renderer/components/StatusDot", () => ({
   }
 }));
 
+vi.mock("./agentGuiNodeViewConversation", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./agentGuiNodeViewConversation")>();
+  return {
+    ...actual,
+    ConversationMeta: (
+      props: Parameters<typeof actual.ConversationMeta>[0]
+    ): React.JSX.Element => {
+      conversationMetaMock.calls.push(props.item.id);
+      return actual.ConversationMeta(props);
+    }
+  };
+});
+
 describe("AgentGUINodeView layout persistence", () => {
   afterEach(() => {
     conversationFlowMock.calls = [];
+    conversationMetaMock.calls = [];
     composerMock.calls = [];
     statusDotMock.calls = [];
   });
@@ -299,11 +318,11 @@ describe("AgentGUINodeView layout persistence", () => {
       },
       labels: {
         ...createLabels(),
-        projectSectionEdit: "Edit"
+        projectSectionEdit: "New session"
       }
     });
 
-    fireEvent.click(screen.getByLabelText("Edit"));
+    fireEvent.click(screen.getByLabelText("New session"));
 
     expect(actions.createConversation).toHaveBeenCalledWith({
       projectPath: "/workspace/app"
@@ -356,6 +375,32 @@ describe("AgentGUINodeView layout persistence", () => {
     });
   });
 
+  it("shows tooltips for project section icon actions", () => {
+    const { container } = renderAgentGUINodeView({
+      viewModel: {
+        ...createViewModel(),
+        userProjects: [
+          {
+            id: "project-app",
+            path: "/workspace/app",
+            label: "App"
+          }
+        ]
+      }
+    });
+
+    const tooltips = Array.from(
+      container.querySelectorAll(
+        ".agent-gui-node__conversation-section-action-tooltip"
+      )
+    );
+
+    expect(tooltips.map((tooltip) => tooltip.textContent)).toEqual([
+      "projectSectionEdit",
+      "projectSectionMoreActions"
+    ]);
+  });
+
   it("hides the project rail header when the project selector is disabled", () => {
     const { container } = renderAgentGUINodeView({
       showProjectSelector: false,
@@ -405,6 +450,30 @@ describe("AgentGUINodeView layout persistence", () => {
     expect(screen.queryByText("noConversations")).not.toBeInTheDocument();
   });
 
+  it("hides batch delete from empty project section actions", async () => {
+    renderAgentGUINodeView({
+      viewModel: {
+        ...createViewModel(),
+        userProjects: [
+          {
+            id: "project-app",
+            path: "/workspace/app",
+            label: "App"
+          }
+        ]
+      }
+    });
+
+    const moreActionsButton = screen.getByRole("button", {
+      name: "projectSectionMoreActions"
+    });
+    fireEvent.pointerDown(moreActionsButton);
+    fireEvent.click(moreActionsButton);
+
+    expect(screen.queryByText("batchDeleteProjectSessions")).toBeNull();
+    expect(await screen.findByText("removeProject")).toBeInTheDocument();
+  });
+
   it("shows a tooltip trigger for the active conversation run path", () => {
     renderAgentGUINodeView({
       viewModel: {
@@ -434,6 +503,136 @@ describe("AgentGUINodeView layout persistence", () => {
       screen.getByTestId("agent-gui-conversation-list-loading-skeleton")
     ).toHaveAccessibleName("loadingConversations");
     expect(screen.queryByText("loadingConversations")).not.toBeInTheDocument();
+  });
+
+  it("opens a conversation from the rail with the external-link action", () => {
+    const actions = createActions();
+    const onOpenConversationWindow = vi.fn();
+
+    renderAgentGUINodeView({
+      actions,
+      onOpenConversationWindow,
+      viewModel: {
+        ...createViewModel(),
+        activeConversationId: "session-1",
+        conversations: [
+          createConversationSummary("session-1"),
+          createConversationSummary("session-2")
+        ]
+      }
+    });
+
+    const row = screen.getByTestId("agent-gui-conversation-item-session-2");
+    const openWindowButton = within(row).getByRole("button", {
+      name: "openConversationWindow"
+    });
+
+    expect(
+      openWindowButton.querySelector("svg.lucide-external-link")
+    ).toBeInTheDocument();
+
+    fireEvent.click(openWindowButton);
+
+    expect(onOpenConversationWindow).toHaveBeenCalledTimes(1);
+    expect(onOpenConversationWindow).toHaveBeenCalledWith("session-2");
+    expect(actions.selectConversation).not.toHaveBeenCalled();
+  });
+
+  it("pages each conversation rail section five sessions at a time", () => {
+    renderAgentGUINodeView({
+      labels: {
+        ...createLabels(),
+        showMoreConversations: "Show more",
+        showLessConversations: "Show less"
+      },
+      viewModel: {
+        ...createViewModel(),
+        conversations: Array.from({ length: 12 }, (_, index) =>
+          createConversationSummary(`session-${index + 1}`)
+        )
+      }
+    });
+
+    expect(
+      screen.getByTestId("agent-gui-conversation-item-session-5")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-gui-conversation-item-session-6")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show less" })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+
+    expect(
+      screen.getByTestId("agent-gui-conversation-item-session-10")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-gui-conversation-item-session-11")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show more" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show less" })
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show less" }));
+
+    expect(
+      screen.getByTestId("agent-gui-conversation-item-session-5")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-gui-conversation-item-session-6")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show less" })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+
+    expect(
+      screen.getByTestId("agent-gui-conversation-item-session-12")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show more" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show less" })
+    ).toBeInTheDocument();
+  });
+
+  it("does not rerender the conversation rail when only the active detail state changes", () => {
+    const actions = createActions();
+    const labels = createLabels();
+    const viewModel = {
+      ...createViewModel(),
+      conversations: Array.from({ length: 20 }, (_, index) =>
+        createConversationSummary(`session-${index + 1}`)
+      )
+    };
+    const initialOptions = {
+      actions,
+      isActive: true,
+      labels,
+      viewModel
+    };
+
+    const { rerender } = renderAgentGUINodeView(initialOptions);
+
+    expect(conversationMetaMock.calls).toHaveLength(5);
+    conversationMetaMock.calls = [];
+
+    rerender(
+      buildAgentGUINodeViewElement({
+        ...initialOptions,
+        isActive: false
+      })
+    );
+
+    expect(conversationMetaMock.calls).toHaveLength(0);
   });
 
   it("scrolls the active conversation item into view", () => {
@@ -1109,12 +1308,14 @@ describe("AgentGUINodeView usage alert banner", () => {
 interface RenderAgentGUINodeViewOptions {
   conversationRailCollapsed?: boolean;
   conversationRailWidthPx?: number;
+  isActive?: boolean;
   isAgentProviderReady?: boolean;
   onConversationRailWidthChanged?: (widthPx: number) => void;
   onLinkAction?: AgentGUINodeViewProps["onLinkAction"];
   viewModel?: AgentGUINodeViewModel;
   actions?: AgentGUINodeViewProps["actions"];
   labels?: AgentGUIViewLabels;
+  onOpenConversationWindow?: AgentGUINodeViewProps["onOpenConversationWindow"];
   slashStatusLimits?: AgentGUINodeViewProps["slashStatusLimits"];
   showProjectSelector?: boolean;
 }
@@ -1122,12 +1323,14 @@ interface RenderAgentGUINodeViewOptions {
 function buildAgentGUINodeViewElement({
   conversationRailCollapsed = false,
   conversationRailWidthPx = 240,
+  isActive = true,
   isAgentProviderReady = true,
   onConversationRailWidthChanged = vi.fn(),
   onLinkAction,
   viewModel = createViewModel(),
   actions = createActions(),
   labels = createLabels(),
+  onOpenConversationWindow,
   slashStatusLimits = [],
   showProjectSelector = true
 }: RenderAgentGUINodeViewOptions = {}) {
@@ -1135,6 +1338,7 @@ function buildAgentGUINodeViewElement({
     <AgentGUINodeView
       viewModel={viewModel}
       onLinkAction={onLinkAction}
+      isActive={isActive}
       isAgentProviderReady={isAgentProviderReady}
       slashStatusLimits={slashStatusLimits}
       actions={actions}
@@ -1146,6 +1350,7 @@ function buildAgentGUINodeViewElement({
       detailMinWidthPx={220}
       uiLanguage="en"
       showProjectSelector={showProjectSelector}
+      onOpenConversationWindow={onOpenConversationWindow}
       onConversationRailWidthChanged={onConversationRailWidthChanged}
       labels={labels}
     />
@@ -1463,6 +1668,9 @@ function createLabels(): AgentGUIViewLabels {
     waitingForAnswer: "waitingForAnswer",
     thinkingLabel: "thinkingLabel",
     toolCallsLabel: (count: number) => `toolCalls:${count}`,
+    openConversationWindow: "openConversationWindow",
+    showMoreConversations: "showMoreConversations",
+    showLessConversations: "showLessConversations",
     deleteSession: "deleteSession",
     pinSession: "pinSession",
     unpinSession: "unpinSession",
@@ -1482,6 +1690,9 @@ function createLabels(): AgentGUIViewLabels {
     slashPaletteCommandsGroup: "slashPaletteCommandsGroup",
     slashPaletteCapabilitiesGroup: "slashPaletteCapabilitiesGroup",
     slashPaletteSkillsGroup: "slashPaletteSkillsGroup",
+    slashPalettePluginsGroup: "slashPalettePluginsGroup",
+    slashPaletteConnectorsGroup: "slashPaletteConnectorsGroup",
+    slashPaletteMcpGroup: "slashPaletteMcpGroup",
     browserUseCapabilityLabel: "browserUseCapabilityLabel",
     browserUseCapabilityDescription: "browserUseCapabilityDescription",
     browserUseCapabilityDescriptionAutoConnect:

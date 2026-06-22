@@ -1,5 +1,6 @@
 import {
   desktopIpcChannels,
+  type DesktopWorkspaceAppExternalRendererEvent,
   type DesktopWorkspaceAppExternalRendererRequest,
   type DesktopWorkspaceAppExternalRendererResponse
 } from "../../shared/contracts/ipc";
@@ -32,6 +33,9 @@ export function createWorkspaceAppExternalDesktopApi(): DesktopWorkspaceAppExter
           handler
         );
       };
+    },
+    sendEvent(event: DesktopWorkspaceAppExternalRendererEvent) {
+      ipcRenderer.send(desktopIpcChannels.appExternal.rendererEvent, event);
     }
   };
 }

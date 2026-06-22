@@ -57,8 +57,14 @@ const styles = {
   conversationItem: "agent-gui-node__conversation-item",
   conversationList: "agent-gui-node__conversation-list",
   conversationMeta: "agent-gui-node__conversation-meta",
+  conversationOpenWindowButton:
+    "agent-gui-node__conversation-open-window-button",
   conversationPinButton: "agent-gui-node__conversation-pin-button",
   conversationSection: "agent-gui-node__conversation-section",
+  conversationSectionActionTooltip:
+    "agent-gui-node__conversation-section-action-tooltip",
+  conversationSectionActionTooltipWrap:
+    "agent-gui-node__conversation-section-action-tooltip-wrap",
   conversationSectionActions: "agent-gui-node__conversation-section-actions",
   conversationSectionChevron: "agent-gui-node__conversation-section-chevron",
   conversationSectionEmpty: "agent-gui-node__conversation-section-empty",
@@ -71,6 +77,10 @@ const styles = {
     "agent-gui-node__conversation-section-label-icon",
   conversationSectionMoreButton:
     "agent-gui-node__conversation-section-more-button",
+  conversationSectionPagination:
+    "agent-gui-node__conversation-section-pagination",
+  conversationSectionPaginationButton:
+    "agent-gui-node__conversation-section-pagination-button",
   conversationSectionToggle: "agent-gui-node__conversation-section-toggle",
   conversationSelect: "agent-gui-node__conversation-select",
   conversationStatusGlyph: "agent-gui-node__conversation-status-glyph",

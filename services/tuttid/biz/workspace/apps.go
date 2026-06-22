@@ -46,6 +46,7 @@ type AppManifestIcon struct {
 type AppManifestRuntime struct {
 	Bootstrap       string `json:"bootstrap"`
 	HealthcheckPath string `json:"healthcheckPath"`
+	Profile         string `json:"profile,omitempty"`
 }
 
 type AppManifestCLI struct {
@@ -91,6 +92,7 @@ type AppPackage struct {
 	PackageDir           string
 	Manifest             AppManifest
 	ManifestJSON         string
+	CatalogLocalizations []AppManifestLocalization
 	Source               AppPackageSource
 	FactoryJobID         string
 	CreatedInWorkspaceID string
@@ -165,7 +167,7 @@ func (p AppPackage) IconDataURL() *string {
 
 func (p AppPackage) Localizations() []AppManifestLocalization {
 	if p.Manifest.LocalizationInfo == nil || strings.TrimSpace(p.PackageDir) == "" {
-		return nil
+		return append([]AppManifestLocalization(nil), p.CatalogLocalizations...)
 	}
 
 	localizations := make([]AppManifestLocalization, 0, len(p.Manifest.LocalizationInfo.AdditionalLocales))
@@ -178,6 +180,9 @@ func (p AppPackage) Localizations() []AppManifestLocalization {
 		if ok {
 			localizations = append(localizations, localization)
 		}
+	}
+	if len(localizations) == 0 {
+		return append([]AppManifestLocalization(nil), p.CatalogLocalizations...)
 	}
 	return localizations
 }
@@ -535,6 +540,9 @@ func ValidateAppManifest(manifest AppManifest) error {
 	}
 	if !strings.HasPrefix(manifest.Runtime.HealthcheckPath, "/") {
 		return errors.New("app manifest runtime.healthcheckPath must start with /")
+	}
+	if profile := strings.TrimSpace(manifest.Runtime.Profile); profile != "" && profile != "node-static" {
+		return errors.New("app manifest runtime.profile must be node-static when set")
 	}
 	if manifest.Window != nil {
 		minimizeBehavior := strings.TrimSpace(manifest.Window.MinimizeBehavior)

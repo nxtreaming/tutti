@@ -164,3 +164,18 @@ test("desktop dock preview capture avoids visible window isolation", () => {
     new RegExp("captureIsolated" + "WorkspaceWindowPreview")
   );
 });
+
+test("workspace app external user project API exposes live project state", () => {
+  assert.match(
+    workspaceWorkbenchHostServiceSource,
+    /getSnapshot: \(\) =>\s+Promise\.resolve\(cloneWorkspaceUserProjectServiceSnapshot\(service\)\)/
+  );
+  assert.match(
+    workspaceWorkbenchHostServiceSource,
+    /refresh: async \(\) => \{\s+await service\.refresh\(\);\s+return cloneWorkspaceUserProjectServiceSnapshot\(service\);/
+  );
+  assert.match(
+    workspaceWorkbenchHostServiceSource,
+    /subscribe: \(listener\) =>\s+service\.subscribe\(\(\) => \{\s+listener\(cloneWorkspaceUserProjectServiceSnapshot\(service\)\);/
+  );
+});

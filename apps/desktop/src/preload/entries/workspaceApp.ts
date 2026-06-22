@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   DesktopIpcResult,
-  DesktopWorkspaceAppContext
+  DesktopWorkspaceAppContext,
+  DesktopWorkspaceAppExternalRendererEvent
 } from "../../shared/contracts/ipc";
 import { createWorkspaceAppExternalBridge } from "./workspaceAppExternalBridge.ts";
 import { installWorkspaceAppLinkInterception } from "./workspaceAppLinks.ts";
+import { createWorkspaceAppUserProjectSnapshotBridge } from "./workspaceAppUserProjectSnapshots.ts";
 
 const appContextChannels = {
   changed: "workspace-app-context:changed",
@@ -39,6 +41,7 @@ export interface WorkspaceAppHostContext {
 const contextListeners = new Set<
   (context: DesktopWorkspaceAppContext) => void
 >();
+const userProjectSnapshots = createWorkspaceAppUserProjectSnapshotBridge();
 let cachedContext: DesktopWorkspaceAppContext | null = null;
 let pendingContext: Promise<DesktopWorkspaceAppContext> | null = null;
 
@@ -88,6 +91,9 @@ const tuttiExternal = createWorkspaceAppExternalBridge({
     globalThis.navigator.userActivation?.isActive === true,
   send(channel, payload) {
     ipcRenderer.send(channel, payload);
+  },
+  subscribeToUserProjects(listener) {
+    return userProjectSnapshots.subscribe(listener);
   }
 });
 
@@ -99,6 +105,18 @@ ipcRenderer.on(
       for (const listener of contextListeners) {
         listener(payload);
       }
+    }
+  }
+);
+
+ipcRenderer.on(
+  "workspace-app-external:guest-event",
+  (_event: IpcRendererEvent, payload: unknown) => {
+    if (!isWorkspaceAppExternalRendererEvent(payload)) {
+      return;
+    }
+    if (payload.type === "userProjects.changed") {
+      userProjectSnapshots.publish(payload.snapshot);
     }
   }
 );
@@ -147,6 +165,34 @@ function isWorkspaceAppContext(
     typeof value === "object" &&
     value !== null &&
     typeof (value as DesktopWorkspaceAppContext).locale === "string"
+  );
+}
+
+function isWorkspaceAppExternalRendererEvent(
+  value: unknown
+): value is DesktopWorkspaceAppExternalRendererEvent {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.type !== "userProjects.changed") {
+    return false;
+  }
+  if (typeof record.workspaceId !== "string") {
+    return false;
+  }
+  const snapshot = record.snapshot;
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return false;
+  }
+  const snapshotRecord = snapshot as Record<string, unknown>;
+  return (
+    (typeof snapshotRecord.error === "string" ||
+      snapshotRecord.error === null) &&
+    typeof snapshotRecord.initialized === "boolean" &&
+    typeof snapshotRecord.isLoading === "boolean" &&
+    Array.isArray(snapshotRecord.projects) &&
+    typeof snapshotRecord.revision === "number"
   );
 }
 

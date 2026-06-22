@@ -15,7 +15,10 @@ import type {
   DesktopWorkspaceAppExternalHostApi,
   DesktopWorkspaceAppExternalHostRequestResult
 } from "@preload/types";
-import type { DesktopWorkspaceAppExternalRendererRequest } from "@shared/contracts/ipc";
+import type {
+  DesktopWorkspaceAppExternalRendererEvent,
+  DesktopWorkspaceAppExternalRendererRequest
+} from "@shared/contracts/ipc";
 import type { TuttiExternalFileOpenInput } from "@tutti-os/workspace-external-core/contracts";
 import { resolveWorkspaceMentionLinkAction } from "@contexts/workspace/presentation/renderer/actions/workspaceLinkActions";
 import { runDesktopAgentGUILinkAction } from "@renderer/features/workspace-agent/services/desktopAgentGUILinkActions.ts";
@@ -88,6 +91,10 @@ export function WorkspaceAppExternalBridge({
       hostService.createWorkspaceAppExternalFileReferenceAdapter(workspaceId),
     [hostService, workspaceId]
   );
+  const userProjectsApi = useMemo(
+    () => hostService.createWorkspaceAppExternalUserProjectApi(),
+    [hostService]
+  );
   const copy = useMemo<WorkspaceFileReferenceCopy>(
     () => ({
       t(key, values) {
@@ -98,6 +105,37 @@ export function WorkspaceAppExternalBridge({
     }),
     [t]
   );
+  useEffect(() => {
+    if (!api || !userProjectsApi.getSnapshot || !userProjectsApi.subscribe) {
+      return;
+    }
+    let disposed = false;
+    const sendSnapshot = (
+      snapshot?: Awaited<
+        ReturnType<NonNullable<typeof userProjectsApi.getSnapshot>>
+      >
+    ): void => {
+      if (disposed) {
+        return;
+      }
+      if (!snapshot) {
+        void userProjectsApi.getSnapshot?.().then(sendSnapshot, () => {});
+        return;
+      }
+      const event: DesktopWorkspaceAppExternalRendererEvent = {
+        snapshot,
+        type: "userProjects.changed",
+        workspaceId
+      };
+      api.sendEvent(event);
+    };
+    const unsubscribe = userProjectsApi.subscribe(sendSnapshot);
+    void userProjectsApi.getSnapshot().then(sendSnapshot, () => {});
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [api, userProjectsApi, workspaceId]);
 
   const resolvePendingFileSelect = useCallback(
     (refs: WorkspaceFileReference[]) => {
@@ -179,6 +217,27 @@ export function WorkspaceAppExternalBridge({
           }
           return undefined;
         }
+        case "userProjects.checkPath":
+          return userProjectsApi.checkPath?.(request.input);
+        case "userProjects.create":
+          return userProjectsApi.create?.(request.input);
+        case "userProjects.getDefaultSelection":
+          return userProjectsApi.getDefaultSelection?.() ?? null;
+        case "userProjects.getSnapshot":
+          return userProjectsApi.getSnapshot?.();
+        case "userProjects.list":
+          return userProjectsApi.list();
+        case "userProjects.prepareSelection":
+          return userProjectsApi.prepareSelection?.(request.input);
+        case "userProjects.refresh":
+          return userProjectsApi.refresh?.();
+        case "userProjects.rememberDefaultSelection":
+          await userProjectsApi.rememberDefaultSelection?.(request.input);
+          return undefined;
+        case "userProjects.selectDirectory":
+          return userProjectsApi.selectDirectory?.() ?? null;
+        case "userProjects.use":
+          return userProjectsApi.use?.(request.input);
       }
     },
     [
@@ -187,6 +246,7 @@ export function WorkspaceAppExternalBridge({
       openFile,
       openFileSelect,
       settingsService,
+      userProjectsApi,
       workspaceId
     ]
   );
