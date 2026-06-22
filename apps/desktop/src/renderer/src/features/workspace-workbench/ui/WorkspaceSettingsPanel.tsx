@@ -54,11 +54,13 @@ import {
 } from "../../../../../shared/i18n/index.ts";
 import {
   type DesktopAgentProvider,
+  desktopAppCatalogChannels,
   desktopBrowserUseConnectionModes,
   desktopDockPlacements,
   desktopFileDefaultOpeners,
   desktopSleepPreventionModes,
   normalizeDesktopFileExtension,
+  type DesktopAppCatalogChannel,
   type DesktopBrowserUseConnectionMode,
   type DesktopDockPlacement,
   type DesktopFileDefaultOpener,
@@ -307,7 +309,14 @@ export function WorkspaceSettingsPanel({
               />
             ) : settingsState.activeSection === "apps" ? (
               <WorkspaceAppsSettingsSection
+                appCatalogChannel={desktopPreferencesState.appCatalogChannel}
+                changingAppCatalogChannel={
+                  desktopPreferencesState.changingAppCatalogChannel
+                }
                 managedModels={settingsState.managedModels}
+                onAppCatalogChannelChange={(channel) => {
+                  void settingsService.changeAppCatalogChannel(channel);
+                }}
                 onBeginDraft={(provider) => {
                   settingsService.beginManagedModelProviderDraft(provider);
                 }}
@@ -660,7 +669,10 @@ function normalizeWorkspaceManagedModelRows(
 }
 
 function WorkspaceAppsSettingsSection({
+  appCatalogChannel,
+  changingAppCatalogChannel,
   managedModels,
+  onAppCatalogChannelChange,
   onBeginDraft,
   onCancelDraft,
   onDeleteProvider,
@@ -672,7 +684,10 @@ function WorkspaceAppsSettingsSection({
   onUpdateDraft,
   onUpdateProvider
 }: {
+  appCatalogChannel: DesktopAppCatalogChannel;
+  changingAppCatalogChannel: DesktopAppCatalogChannel | null;
   managedModels: WorkspaceSettingsManagedModelsSnapshotState;
+  onAppCatalogChannelChange: (channel: DesktopAppCatalogChannel) => void;
   onBeginDraft: (provider: WorkspaceManagedModelProviderID) => void;
   onCancelDraft: () => void;
   onDeleteProvider: (providerID: WorkspaceManagedModelProviderID) => void;
@@ -691,6 +706,8 @@ function WorkspaceAppsSettingsSection({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const effectiveAppCatalogChannel =
+    changingAppCatalogChannel ?? appCatalogChannel;
   const { draft, providers } = managedModels;
   const [expandedProviderID, setExpandedProviderID] =
     useState<WorkspaceManagedModelProviderID | null>(
@@ -741,6 +758,45 @@ function WorkspaceAppsSettingsSection({
 
   return (
     <SettingsRows>
+      <div className="flex w-full items-center justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <strong className="text-[13px] font-semibold text-[var(--text-primary)]">
+            {t("workspace.settings.apps.appCatalogChannelLabel")}
+          </strong>
+          <p className="m-0 text-[13px] leading-[1.35] text-[var(--text-secondary)]">
+            {t("workspace.settings.apps.appCatalogChannelDescription")}
+          </p>
+        </div>
+        <div
+          aria-label={t("workspace.settings.apps.appCatalogChannelLabel")}
+          className="grid h-8 shrink-0 grid-cols-2 overflow-hidden rounded-[6px] bg-[var(--transparency-block)] p-0.5"
+          role="group"
+        >
+          {desktopAppCatalogChannels.map((channel) => {
+            const selected = effectiveAppCatalogChannel === channel;
+            return (
+              <button
+                key={channel}
+                aria-pressed={selected}
+                className={cn(
+                  "min-w-[92px] rounded-[5px] border-0 px-3 text-[13px] font-semibold leading-none outline-none transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+                  selected
+                    ? "bg-[var(--background-fronted)] text-[var(--text-primary)] shadow-sm"
+                    : "bg-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                )}
+                disabled={changingAppCatalogChannel !== null}
+                type="button"
+                onClick={() => onAppCatalogChannelChange(channel)}
+              >
+                {t(
+                  `workspace.settings.apps.appCatalogChannelOptions.${channel}`
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex w-full items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-2">
           <strong className="text-[13px] font-semibold text-[var(--text-primary)]">

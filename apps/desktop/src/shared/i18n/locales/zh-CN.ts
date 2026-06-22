@@ -361,6 +361,13 @@ export const zhCN = {
         general: "通用"
       },
       apps: {
+        appCatalogChannelDescription: "选择当前桌面使用哪个 App Center 目录。",
+        appCatalogChannelLabel: "App Center 来源",
+        appCatalogChannelOptions: {
+          production: "Production",
+          staging: "Staging"
+        },
+        appCatalogChannelSaveFailed: "暂时无法更新 App Center 来源。",
         managedModels: {
           apiKey: "API 密钥",
           addModel: "添加",

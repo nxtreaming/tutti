@@ -3305,12 +3305,18 @@ components:
       enum:
         - isolated
         - autoConnect
+    DesktopAppCatalogChannel:
+      type: string
+      enum:
+        - production
+        - staging
     DesktopPreferences:
       type: object
       additionalProperties: false
       required:
         - agentComposerDefaultsByProvider
         - agentGuiConversationRailCollapsedByProvider
+        - appCatalogChannel
         - defaultAgentProvider
         - dockIconStyle
         - dockPlacement
@@ -3325,6 +3331,8 @@ components:
           $ref: "#/components/schemas/DesktopAgentComposerDefaultsByProvider"
         agentGuiConversationRailCollapsedByProvider:
           $ref: "#/components/schemas/DesktopAgentGuiConversationRailCollapsedByProvider"
+        appCatalogChannel:
+          $ref: "#/components/schemas/DesktopAppCatalogChannel"
         browserUseConnectionMode:
           $ref: "#/components/schemas/DesktopBrowserUseConnectionMode"
         defaultAgentProvider:

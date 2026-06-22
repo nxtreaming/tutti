@@ -742,6 +742,32 @@ test("WorkspaceSettingsService writes changed preferences", async () => {
   assert.deepEqual(writes, ["zh-CN", "left", "claude-code", "dark"]);
 });
 
+test("WorkspaceSettingsService refreshes App Center after changing catalog channel", async () => {
+  const refreshedWorkspaceIDs: string[] = [];
+  const service = new WorkspaceSettingsService(
+    {
+      client: createWorkspaceSettingsClient({})
+    },
+    createDesktopPreferencesService({
+      onSetAppCatalogChannel: async (channel) => channel,
+      state: createPreferencesState({})
+    }),
+    createNotificationRecorder().service,
+    null,
+    undefined,
+    {
+      refreshCatalog: async (workspaceID) => {
+        refreshedWorkspaceIDs.push(workspaceID);
+      }
+    }
+  );
+
+  service.openPanel({ id: "workspace-1" });
+  await service.changeAppCatalogChannel("staging");
+
+  assert.deepEqual(refreshedWorkspaceIDs, ["workspace-1"]);
+});
+
 test("WorkspaceSettingsService reports preference save failures", async () => {
   const notifications = createNotificationRecorder();
   const service = new WorkspaceSettingsService(
@@ -957,6 +983,7 @@ function createWorkspaceSettingsClient(
 
 function createDesktopPreferencesService(input: {
   onSetDefaultAgentProvider?: IDesktopPreferencesService["setDefaultAgentProvider"];
+  onSetAppCatalogChannel?: IDesktopPreferencesService["setAppCatalogChannel"];
   onSetBrowserUseConnectionMode?: IDesktopPreferencesService["setBrowserUseConnectionMode"];
   onSetDockIconStyle?: IDesktopPreferencesService["setDockIconStyle"];
   onSetDockPlacement?: IDesktopPreferencesService["setDockPlacement"];
@@ -973,6 +1000,8 @@ function createDesktopPreferencesService(input: {
     store: input.state,
     rememberAgentComposerDefaults: async () => {},
     rememberAgentGuiConversationRailCollapsed: async () => {},
+    setAppCatalogChannel:
+      input.onSetAppCatalogChannel ?? (async (channel) => channel),
     setBrowserUseConnectionMode:
       input.onSetBrowserUseConnectionMode ?? (async (mode) => mode),
     setDefaultAgentProvider:
@@ -999,7 +1028,9 @@ function createPreferencesState(
   return {
     agentComposerDefaultsByProvider: {},
     agentGuiConversationRailCollapsedByProvider: {},
+    appCatalogChannel: "production",
     browserUseConnectionMode: "isolated",
+    changingAppCatalogChannel: null,
     changingBrowserUseConnectionMode: null,
     changingDefaultAgentProvider: null,
     changingDockIconStyle: null,

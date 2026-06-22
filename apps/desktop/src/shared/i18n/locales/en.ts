@@ -381,6 +381,15 @@ export const en = {
         general: "General"
       },
       apps: {
+        appCatalogChannelDescription:
+          "Choose which App Center catalog this desktop uses.",
+        appCatalogChannelLabel: "App Center source",
+        appCatalogChannelOptions: {
+          production: "Production",
+          staging: "Staging"
+        },
+        appCatalogChannelSaveFailed:
+          "We couldn't update the App Center source right now.",
         managedModels: {
           apiKey: "API key",
           addModel: "Add",
