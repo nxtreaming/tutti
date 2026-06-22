@@ -867,6 +867,7 @@ export const AgentGUINode = memo(function AgentGUINode({
       projectSectionMoreActions: t(
         "agentHost.agentGui.projectSectionMoreActions"
       ),
+      projectSectionViewFiles: t("agentHost.agentGui.projectSectionViewFiles"),
       projectRailCreateProject: t(
         "agentHost.agentGui.projectRailCreateProject"
       ),

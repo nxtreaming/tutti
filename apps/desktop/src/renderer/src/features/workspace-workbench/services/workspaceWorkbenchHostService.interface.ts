@@ -58,6 +58,7 @@ export interface WorkspaceOnboardingAutoOpenDiagnostic {
 }
 
 export interface WorkspaceFilesNodeActivationPayload {
+  mode?: "reveal" | "open-directory";
   path: string;
 }
 

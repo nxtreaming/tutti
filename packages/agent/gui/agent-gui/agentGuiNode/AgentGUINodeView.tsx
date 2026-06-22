@@ -262,6 +262,7 @@ export interface AgentGUIViewLabels {
   sectionEarlier: string;
   projectSectionEdit: string;
   projectSectionMoreActions: string;
+  projectSectionViewFiles: string;
   projectRailCreateProject: string;
   projectRailLinkExistingProject: string;
   removeProject: string;
@@ -946,6 +947,7 @@ export function AgentGUINodeView({
   const openConversationWindow = useOptionalStableEventCallback(
     onOpenConversationWindow
   );
+  const openProjectFiles = useOptionalStableEventCallback(onLinkAction);
   const detailComposerFocusRequestSequence =
     localComposerFocusRequestSequence === 0
       ? composerFocusRequestSequence
@@ -1159,6 +1161,7 @@ export function AgentGUINodeView({
         onRequestDeleteConversation: requestDeleteConversation,
         onCancelDeleteConversation: cancelDeleteConversation,
         onConfirmDeleteConversation: confirmDeleteConversation,
+        onOpenProjectFiles: openProjectFiles,
         onOpenConversationWindow: openConversationWindow
       }),
       [
@@ -1169,6 +1172,7 @@ export function AgentGUINodeView({
         createConversationDisabled,
         labels,
         openConversationWindow,
+        openProjectFiles,
         openclawGateway,
         removeProject,
         requestCreateConversation,
@@ -2849,6 +2853,7 @@ interface AgentGUIConversationRailPaneProps {
   onRetryOpenclawGateway: () => void;
   onSelectConversation: (agentSessionId: string) => void;
   onToggleConversationPinned: (agentSessionId: string, pinned: boolean) => void;
+  onOpenProjectFiles?: ((action: WorkspaceLinkAction) => void) | null;
   onOpenConversationWindow?: (agentSessionId: string) => void;
   onRemoveProject: (path: string) => void;
   onConfirmDeleteProjectConversations: (path?: string) => void;
@@ -2921,6 +2926,7 @@ function agentGUIConversationRailStoreSnapshotsEqual(
     current.onRetryOpenclawGateway === next.onRetryOpenclawGateway &&
     current.onSelectConversation === next.onSelectConversation &&
     current.onToggleConversationPinned === next.onToggleConversationPinned &&
+    current.onOpenProjectFiles === next.onOpenProjectFiles &&
     current.onOpenConversationWindow === next.onOpenConversationWindow &&
     current.onRemoveProject === next.onRemoveProject &&
     current.onConfirmDeleteProjectConversations ===
@@ -2977,6 +2983,7 @@ const AgentGUIConversationRailPane = memo(
     onRetryOpenclawGateway,
     onSelectConversation,
     onToggleConversationPinned,
+    onOpenProjectFiles,
     onOpenConversationWindow,
     onRemoveProject,
     onConfirmDeleteProjectConversations,
@@ -3205,6 +3212,7 @@ const AgentGUIConversationRailPane = memo(
                     onSelectConversation={onSelectConversation}
                     setPendingProjectAction={setPendingProjectAction}
                     onToggleConversationPinned={onToggleConversationPinned}
+                    onOpenProjectFiles={onOpenProjectFiles}
                     onOpenConversationWindow={onOpenConversationWindow}
                     onToggleProjectSectionCollapsed={
                       toggleProjectSectionCollapsed
@@ -3290,6 +3298,7 @@ interface AgentGUIConversationRailSectionProps {
   setPendingProjectAction: (action: AgentGUIProjectActionDialog | null) => void;
   onSelectConversation: (agentSessionId: string) => void;
   onToggleConversationPinned: (agentSessionId: string, pinned: boolean) => void;
+  onOpenProjectFiles?: ((action: WorkspaceLinkAction) => void) | null;
   onOpenConversationWindow?: (agentSessionId: string) => void;
   onRequestDeleteConversation: (agentSessionId: string) => void;
   onCancelDeleteConversation: () => void;
@@ -3316,6 +3325,7 @@ const AgentGUIConversationRailSection = memo(
     onSelectConversation,
     setPendingProjectAction,
     onToggleConversationPinned,
+    onOpenProjectFiles,
     onOpenConversationWindow,
     onRequestDeleteConversation,
     onCancelDeleteConversation,
@@ -3418,6 +3428,22 @@ const AgentGUIConversationRailSection = memo(
                   className={`${styles.composerMenuContent} nodrag [-webkit-app-region:no-drag]`}
                   sideOffset={6}
                 >
+                  <DropdownMenuItem
+                    className={`${styles.composerMenuItem} nodrag [-webkit-app-region:no-drag]`}
+                    disabled={!onOpenProjectFiles}
+                    onSelect={() => {
+                      onOpenProjectFiles?.({
+                        directoryPath: projectPath,
+                        mode: "open-directory",
+                        path: projectPath,
+                        source: "agent-project-menu",
+                        type: "open-workspace-file",
+                        workspaceRoot: projectPath
+                      });
+                    }}
+                  >
+                    <span>{labels.projectSectionViewFiles}</span>
+                  </DropdownMenuItem>
                   {projectConversationCount > 0 ? (
                     <DropdownMenuItem
                       className={`${styles.composerMenuItem} nodrag [-webkit-app-region:no-drag]`}
