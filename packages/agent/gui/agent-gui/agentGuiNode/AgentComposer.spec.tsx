@@ -14,6 +14,11 @@ import {
   workspaceUserProjectI18nResources
 } from "@tutti-os/workspace-user-project/i18n";
 import { AgentComposer } from "./AgentComposer";
+import {
+  resetAgentActivityRuntimeForTests,
+  setAgentActivityRuntimeForTests,
+  type AgentActivityRuntime
+} from "../../agentActivityRuntime";
 import type {
   AgentComposerDraft,
   AgentGUIComposerSettingsVM,
@@ -29,6 +34,7 @@ const { mockProjectMissingState } = vi.hoisted(() => ({
 
 afterEach(() => {
   mockProjectMissingState.current = false;
+  resetAgentActivityRuntimeForTests();
   vi.restoreAllMocks();
 });
 
@@ -2427,6 +2433,120 @@ describe("AgentComposer", () => {
     expect(
       screen.queryByTestId("agent-gui-composer-image-drafts")
     ).not.toBeInTheDocument();
+  });
+
+  it("uploads pasted images immediately and submits the uploaded url", async () => {
+    type UploadResult = {
+      content: [
+        {
+          type: "image";
+          mimeType: "image/png";
+          url: string;
+          name: string;
+        }
+      ];
+    };
+    let resolveUpload: (result: UploadResult) => void = () => undefined;
+    const uploadPromptContent = vi.fn(
+      () =>
+        new Promise<UploadResult>((resolve) => {
+          resolveUpload = resolve;
+        })
+    );
+    setAgentActivityRuntimeForTests({
+      uploadPromptContent
+    } as unknown as AgentActivityRuntime);
+
+    let draftContent = createDraft("");
+    const onDraftContentChange = vi.fn((nextDraft: AgentComposerDraft) => {
+      draftContent = nextDraft;
+    });
+    const onSubmit = vi.fn();
+    const renderComposer = () => (
+      <AgentComposer
+        workspaceId="workspace-1"
+        currentUserId="user-1"
+        provider="codex"
+        draftContent={draftContent}
+        availableCommands={[] satisfies readonly AgentHostAgentSessionCommand[]}
+        disabled={false}
+        submitDisabled={false}
+        placeholder="placeholder"
+        composerSettings={createComposerSettings()}
+        queuedPrompts={[]}
+        drainingQueuedPromptId={null}
+        canQueueWhileBusy={false}
+        showStopButton={false}
+        activePrompt={null}
+        isInterrupting={false}
+        isSendingTurn={false}
+        isSubmittingPrompt={false}
+        labels={createLabels()}
+        workspaceUserProjectI18n={workspaceUserProjectI18n}
+        onDraftContentChange={onDraftContentChange}
+        onSettingsChange={vi.fn()}
+        onSubmit={onSubmit}
+        onSendQueuedPromptNext={vi.fn()}
+        onRemoveQueuedPrompt={vi.fn()}
+        onEditQueuedPrompt={vi.fn()}
+        onInterruptCurrentTurn={vi.fn()}
+        onSubmitInteractivePrompt={vi.fn()}
+      />
+    );
+    const { rerender } = render(renderComposer());
+
+    fireEvent.click(screen.getByTestId("mock-paste-image"));
+
+    expect(uploadPromptContent).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      content: [
+        {
+          type: "image",
+          mimeType: "image/png",
+          data: "aW1hZ2U=",
+          name: "screen.png"
+        }
+      ]
+    });
+    expect(draftContent.images[0]).toMatchObject({
+      data: "aW1hZ2U=",
+      uploading: true
+    });
+    rerender(renderComposer());
+    expect(
+      screen.getByTestId("agent-gui-composer-image-upload-spinner")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+
+    resolveUpload({
+      content: [
+        {
+          type: "image",
+          mimeType: "image/png",
+          url: "https://cdn.example.com/screen.png",
+          name: "screen.png"
+        }
+      ]
+    });
+    await waitFor(() =>
+      expect(draftContent.images[0]).toMatchObject({
+        url: "https://cdn.example.com/screen.png",
+        uploading: false
+      })
+    );
+    rerender(renderComposer());
+
+    const sendButton = screen.getByRole("button", { name: "发送" });
+    expect(sendButton).not.toBeDisabled();
+    fireEvent.click(sendButton);
+    expect(onSubmit).toHaveBeenCalledWith([
+      {
+        type: "image",
+        mimeType: "image/png",
+        url: "https://cdn.example.com/screen.png",
+        name: "screen.png"
+      }
+    ]);
   });
 
   it("renders controlled text and image draft content", () => {

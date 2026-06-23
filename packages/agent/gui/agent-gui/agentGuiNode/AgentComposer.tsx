@@ -134,6 +134,7 @@ import {
   USAGE_CRITICAL_PERCENT,
   USAGE_WARN_PERCENT
 } from "./model/agentUsageThresholds";
+import { useOptionalAgentActivityRuntime } from "../../agentActivityRuntime";
 
 export { formatSlashStatusTokenCount };
 
@@ -709,6 +710,7 @@ export function AgentComposer({
   "use memo";
   const draftPrompt = draftContent.prompt;
   const draftImages = draftContent.images;
+  const agentActivityRuntime = useOptionalAgentActivityRuntime();
   const [isPaletteOpen, setIsPaletteOpen] = useState(true);
   const [isReviewPickerOpen, setIsReviewPickerOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -752,6 +754,7 @@ export function AgentComposer({
   const promptInputAreaRef = useRef<HTMLDivElement | null>(null);
   const paletteContentRef = useRef<HTMLDivElement | null>(null);
   const draftPromptRef = useRef(draftPrompt);
+  const draftImagesRef = useRef<AgentComposerDraftImage[]>(draftImages);
   const submittedImagePreviewObservedBusyRef = useRef(false);
   const promptTipRef = useRef<HTMLSpanElement | null>(null);
   const mentionControllerRef = useRef<AgentMentionSearchController | null>(
@@ -1015,6 +1018,10 @@ export function AgentComposer({
   }, [draftPrompt]);
 
   useEffect(() => {
+    draftImagesRef.current = draftImages;
+  }, [draftImages]);
+
+  useEffect(() => {
     if (
       previousSlashStatusAgentSessionIdRef.current === slashStatusAgentSessionId
     ) {
@@ -1224,9 +1231,13 @@ export function AgentComposer({
 
   const submitCurrentPrompt = useStableEventCallback((): void => {
     const canSubmitWhileSending = canQueueWhileBusy && isSendingTurn;
+    const hasUploadingImages = draftImages.some((image) => image.uploading);
+    const hasFailedImages = draftImages.some((image) => image.uploadError);
     if (
       isSelectedProjectMissing ||
       submitDisabled ||
+      hasUploadingImages ||
+      hasFailedImages ||
       (disabled && !canQueueWhileBusy) ||
       (isSendingTurn && !canSubmitWhileSending)
     ) {
@@ -1668,30 +1679,96 @@ export function AgentComposer({
       }
       setSubmittedImagePreview([]);
       submittedImagePreviewObservedBusyRef.current = false;
+      const currentDraftImages = draftImagesRef.current;
       const remainingSlots = Math.max(
         0,
-        MAX_AGENT_COMPOSER_DRAFT_IMAGES - draftImages.length
+        MAX_AGENT_COMPOSER_DRAFT_IMAGES - currentDraftImages.length
       );
       if (remainingSlots === 0) {
         return;
       }
+      const uploadPromptContent = agentActivityRuntime?.uploadPromptContent;
       const nextImages = images.slice(0, remainingSlots).map((image) => ({
         id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
         name: image.name,
         mimeType: image.mimeType,
         data: image.data,
-        previewUrl: `data:${image.mimeType};base64,${image.data}`
+        previewUrl: `data:${image.mimeType};base64,${image.data}`,
+        uploading: Boolean(uploadPromptContent)
       }));
+      const nextDraftImages = [...currentDraftImages, ...nextImages];
+      draftImagesRef.current = nextDraftImages;
       onDraftContentChange({
         prompt: draftPromptRef.current,
-        images: [...draftImages, ...nextImages]
+        images: nextDraftImages
       });
+      if (!uploadPromptContent) {
+        return;
+      }
+      for (const draftImage of nextImages) {
+        void uploadPromptContent({
+          workspaceId,
+          content: [
+            {
+              type: "image",
+              mimeType: draftImage.mimeType,
+              data: draftImage.data,
+              name: draftImage.name
+            }
+          ]
+        })
+          .then((result) => {
+            const uploadedImage = result.content.find(
+              (block) => block.type === "image"
+            );
+            const uploadedUrl = uploadedImage?.url?.trim() ?? "";
+            if (!uploadedUrl) {
+              throw new Error("Prompt image upload completed without url.");
+            }
+            const uploadedDraftImages = draftImagesRef.current.map((image) =>
+              image.id === draftImage.id
+                ? {
+                    id: image.id,
+                    name: image.name,
+                    mimeType: image.mimeType,
+                    url: uploadedUrl,
+                    previewUrl: uploadedUrl,
+                    uploading: false
+                  }
+                : image
+            );
+            draftImagesRef.current = uploadedDraftImages;
+            onDraftContentChange({
+              prompt: draftPromptRef.current,
+              images: uploadedDraftImages
+            });
+          })
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            const failedDraftImages = draftImagesRef.current.map((image) =>
+              image.id === draftImage.id
+                ? {
+                    ...image,
+                    uploading: false,
+                    uploadError: message
+                  }
+                : image
+            );
+            draftImagesRef.current = failedDraftImages;
+            onDraftContentChange({
+              prompt: draftPromptRef.current,
+              images: failedDraftImages
+            });
+          });
+      }
     },
     [
-      draftImages,
+      agentActivityRuntime,
       onDraftContentChange,
       onPromptImagesUnsupported,
-      promptImagesSupported
+      promptImagesSupported,
+      workspaceId
     ]
   );
 
@@ -1704,12 +1781,16 @@ export function AgentComposer({
 
   const removeDraftImage = useCallback(
     (id: string): void => {
+      const nextDraftImages = draftImagesRef.current.filter(
+        (image) => image.id !== id
+      );
+      draftImagesRef.current = nextDraftImages;
       onDraftContentChange({
         prompt: draftPromptRef.current,
-        images: draftImages.filter((image) => image.id !== id)
+        images: nextDraftImages
       });
     },
-    [draftImages, onDraftContentChange]
+    [onDraftContentChange]
   );
 
   const applyReferencePickResult = useCallback(
@@ -2028,6 +2109,8 @@ export function AgentComposer({
     [showFileMentionPalette, showFloatingCommandMenu]
   );
   const hasDraftContent = agentComposerDraftHasContent(draftContent);
+  const hasUploadingDraftImages = draftImages.some((image) => image.uploading);
+  const hasFailedDraftImages = draftImages.some((image) => image.uploadError);
   const isQueueMode = canQueueWhileBusy && hasDraftContent;
   const shouldShowStopButton = showStopButton && !isQueueMode;
   const sendButtonState = isQueueMode
@@ -2252,8 +2335,14 @@ export function AgentComposer({
                         className={cn(
                           "group relative aspect-square min-w-0 overflow-hidden rounded-[6px] border border-[var(--line-1)] bg-[var(--background-fronted)]",
                           "[&>[data-rmiz]]:block [&>[data-rmiz]]:size-full",
-                          "[&>[data-rmiz]>[data-rmiz-content]]:block [&>[data-rmiz]>[data-rmiz-content]]:size-full"
+                          "[&>[data-rmiz]>[data-rmiz-content]]:block [&>[data-rmiz]>[data-rmiz-content]]:size-full",
+                          image.uploadError &&
+                            "border-[color:color-mix(in_srgb,var(--danger)_55%,var(--line-1))]"
                         )}
+                        data-uploading={image.uploading ? "true" : undefined}
+                        data-upload-error={
+                          image.uploadError ? "true" : undefined
+                        }
                       >
                         <ZoomableImage
                           src={image.previewUrl}
@@ -2261,6 +2350,20 @@ export function AgentComposer({
                           className="size-full object-cover"
                           draggable={false}
                         />
+                        {image.uploading ? (
+                          <div
+                            className="absolute inset-0 grid place-items-center bg-[color-mix(in_srgb,var(--background-fronted)_62%,transparent)]"
+                            data-testid="agent-gui-composer-image-uploading"
+                          >
+                            <Spinner
+                              className="text-[var(--text-primary)]"
+                              size={18}
+                              strokeWidth={2.4}
+                              trackColor="var(--transparency-hover)"
+                              testId="agent-gui-composer-image-upload-spinner"
+                            />
+                          </div>
+                        ) : null}
                         {showingSubmittedImagePreview ? null : (
                           <button
                             type="button"
@@ -2582,6 +2685,8 @@ export function AgentComposer({
                     isSelectedProjectMissing ||
                     submitDisabled ||
                     !hasDraftContent ||
+                    hasUploadingDraftImages ||
+                    hasFailedDraftImages ||
                     sendButtonBusy
                   }
                   aria-label={labels.send}
