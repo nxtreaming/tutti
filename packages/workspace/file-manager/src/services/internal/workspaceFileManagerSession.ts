@@ -116,7 +116,7 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
     this.activationController = new WorkspaceFileManagerActivationController({
       copy: () => this.copy,
       host: input.host,
-      loadDirectory: (path) => this.navigationController.loadDirectory(path),
+      loadDirectory: (path) => this.loadDirectory(path),
       resolveErrorMessage: (error, overrides) =>
         this.resolveErrorMessage(error, overrides),
       resolveFileDefaultOpener: input.resolveFileDefaultOpener,
@@ -366,10 +366,12 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
 
   async goBack(): Promise<void> {
     await this.navigationController.goBack();
+    this.syncSelectedDirectoryLocation();
   }
 
   async goForward(): Promise<void> {
     await this.navigationController.goForward();
+    this.syncSelectedDirectoryLocation();
   }
 
   getPersistedState(): WorkspaceFileManagerPersistedState {
@@ -452,6 +454,7 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
 
   async loadDirectory(path = this.store.currentDirectoryPath): Promise<void> {
     await this.navigationController.loadDirectory(path);
+    this.syncSelectedDirectoryLocation();
   }
 
   openContextMenu(input: {
@@ -664,6 +667,7 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
 
   async revealPath(path: string): Promise<void> {
     await this.navigationController.revealPath(path);
+    this.syncSelectedDirectoryLocation();
   }
 
   resetDragDepth(): void {
@@ -763,17 +767,31 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
     sections: WorkspaceFileLocationSection[];
   }): Promise<void> {
     const previousLocationId = this.store.selectedLocationId;
+    const previousLocation = findWorkspaceFileLocationById(
+      this.store.locationSections,
+      previousLocationId
+    );
     this.store.locationSections = input.sections;
     const nextLocationId = resolveWorkspaceFileLocationDefaultId({
       defaultLocationId: input.defaultLocationId,
       persistedLocationId: previousLocationId,
       sections: input.sections
     });
+    const nextLocation = findWorkspaceFileLocationById(
+      input.sections,
+      nextLocationId
+    );
     this.store.selectedLocationId = nextLocationId;
     if (!this.hasInitialized || !nextLocationId) {
       return;
     }
-    if (previousLocationId !== nextLocationId) {
+    const selectedLocationChanged =
+      previousLocationId !== nextLocationId ||
+      previousLocation?.kind !== nextLocation?.kind ||
+      (previousLocation?.kind === "directory" &&
+        nextLocation?.kind === "directory" &&
+        !areWorkspaceFilePathsEqual(previousLocation.path, nextLocation.path));
+    if (selectedLocationChanged) {
       await this.selectLocation(nextLocationId);
     }
   }
@@ -861,9 +879,7 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
       return;
     }
     await this.navigationController.loadDirectory(
-      selectedLocation?.kind === "directory"
-        ? selectedLocation.path
-        : this.store.currentDirectoryPath
+      this.resolveInitialDirectoryPath(selectedLocation)
     );
   }
 
@@ -904,6 +920,60 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
 
   private isRecentLocationSelected(): boolean {
     return isWorkspaceFileRecentLocation(this.selectedLocation());
+  }
+
+  private resolveInitialDirectoryPath(
+    selectedLocation: WorkspaceFileLocation | null
+  ): string {
+    if (selectedLocation?.kind !== "directory") {
+      return this.store.currentDirectoryPath;
+    }
+    return isWorkspaceFilePathWithinDirectory(
+      this.store.currentDirectoryPath,
+      selectedLocation.path
+    )
+      ? this.store.currentDirectoryPath
+      : selectedLocation.path;
+  }
+
+  private syncSelectedDirectoryLocation(): void {
+    if (this.store.error) {
+      return;
+    }
+    this.store.selectedLocationId = this.resolveDirectoryLocationIdForPath(
+      this.store.currentDirectoryPath
+    );
+  }
+
+  private resolveDirectoryLocationIdForPath(path: string): string | null {
+    let bestLocation: {
+      id: string;
+      path: string;
+    } | null = null;
+    for (const section of this.store.locationSections) {
+      for (const location of section.locations) {
+        if (location.kind !== "directory") {
+          continue;
+        }
+        const normalizedLocationPath = normalizeWorkspaceFilePath(
+          location.path,
+          this.store.root
+        );
+        if (!isWorkspaceFilePathWithinDirectory(path, normalizedLocationPath)) {
+          continue;
+        }
+        if (
+          !bestLocation ||
+          normalizedLocationPath.length > bestLocation.path.length
+        ) {
+          bestLocation = {
+            id: location.id,
+            path: normalizedLocationPath
+          };
+        }
+      }
+    }
+    return bestLocation?.id ?? null;
   }
 
   private async searchDirectoryEntries(
@@ -1082,4 +1152,21 @@ function serializePersistedState(
   state: WorkspaceFileManagerPersistedState
 ): string {
   return JSON.stringify(state);
+}
+
+function areWorkspaceFilePathsEqual(left: string, right: string): boolean {
+  return normalizeWorkspaceFilePath(left) === normalizeWorkspaceFilePath(right);
+}
+
+function isWorkspaceFilePathWithinDirectory(
+  path: string,
+  directoryPath: string
+): boolean {
+  const normalizedPath = normalizeWorkspaceFilePath(path);
+  const normalizedDirectoryPath = normalizeWorkspaceFilePath(directoryPath);
+  return (
+    normalizedPath === normalizedDirectoryPath ||
+    normalizedDirectoryPath === "/" ||
+    normalizedPath.startsWith(`${normalizedDirectoryPath}/`)
+  );
 }

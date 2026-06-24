@@ -132,6 +132,7 @@ test("desktop agent GUI workbench host input wires project references first", as
 
 test("desktop agent GUI workbench host input prefers active conversation project for reference target", () => {
   const project = userProject("project-2", "/Users/local/app", "App");
+  const composerProject = userProject("project-1", "/Users/local/repo", "Repo");
   const hostInput = createDesktopAgentGUIWorkbenchHostInput({
     hostFilesApi: createHostFilesApi(),
     tuttidClient: createTuttidClient(),
@@ -157,7 +158,8 @@ test("desktop agent GUI workbench host input prefers active conversation project
     },
     composerSelectedProjectPath: "/Users/local/repo",
     userProjects: [
-      agentGUIUserProject(userProject("project-1", "/Users/local/repo", "Repo"))
+      agentGUIUserProject(composerProject),
+      agentGUIUserProject(project)
     ]
   };
 
@@ -168,6 +170,46 @@ test("desktop agent GUI workbench host input prefers active conversation project
       projectPath: "/Users/local/app"
     }
   });
+});
+
+test("desktop agent GUI workbench host input ignores stale active conversation project", () => {
+  const composerProject = userProject("project-1", "/Users/local/repo", "Repo");
+  const staleProject = userProject("project-2", "/Users/local/app", "App");
+  const hostInput = createDesktopAgentGUIWorkbenchHostInput({
+    hostFilesApi: createHostFilesApi(),
+    tuttidClient: createTuttidClient(),
+    platformApi: createPlatformApi(),
+    richTextAtService: createRichTextAtService(),
+    runtimeApi: createRuntimeApi(),
+    workspaceAgentActivityService: createWorkspaceAgentActivityService([]),
+    workspaceUserProjectService: createWorkspaceUserProjectService([
+      composerProject
+    ]),
+    workspaceId
+  });
+
+  assert.deepEqual(
+    hostInput.resolveWorkspaceReferenceInitialTarget({
+      activeConversation: {
+        cwd: "/Users/local/app",
+        id: "session-1",
+        project: agentGUIUserProject(staleProject),
+        provider: "codex",
+        status: "ready",
+        title: "Session",
+        updatedAtUnixMs: 1
+      },
+      composerSelectedProjectPath: "/Users/local/repo",
+      userProjects: [agentGUIUserProject(composerProject)]
+    }),
+    {
+      sourceId: USER_PROJECT_REFERENCE_SOURCE_ID,
+      params: {
+        projectId: "project-1",
+        projectPath: "/Users/local/repo"
+      }
+    }
+  );
 });
 
 test("desktop agent GUI workbench host input falls back to local home reference target", () => {

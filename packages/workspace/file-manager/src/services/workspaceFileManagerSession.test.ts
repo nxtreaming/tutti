@@ -598,6 +598,54 @@ test("location default selection initializes from the preferred directory", asyn
   session.dispose();
 });
 
+test("directory location restore initializes from the persisted child directory", async () => {
+  const listedPaths: string[] = [];
+  const session = createWorkspaceFileManagerService().createSession({
+    host: {
+      async listDirectory(input) {
+        listedPaths.push(input.path);
+        return {
+          directoryPath: input.path,
+          entries: [],
+          root: "/Users/demo",
+          workspaceID: input.workspaceID
+        };
+      }
+    },
+    i18n: createTestI18nRuntime(),
+    locationSections: [
+      {
+        id: "project",
+        label: "Project",
+        locations: [
+          {
+            id: "project:repo",
+            kind: "directory",
+            label: "Repo",
+            path: "/Users/demo/repo",
+            referenceNodeId: "/Users/demo/repo"
+          }
+        ]
+      }
+    ],
+    persistedState: {
+      currentDirectoryPath: "/Users/demo/repo/docs",
+      navigationBackStack: ["/Users/demo/repo"],
+      navigationForwardStack: [],
+      selectedLocationId: "project:repo",
+      schemaVersion: 3
+    },
+    workspaceID: "workspace-1"
+  });
+
+  await session.initialize();
+
+  assert.deepEqual(listedPaths, ["/Users/demo/repo/docs"]);
+  assert.equal(session.store.currentDirectoryPath, "/Users/demo/repo/docs");
+  assert.equal(session.store.selectedLocationId, "project:repo");
+  session.dispose();
+});
+
 test("v2 persisted file manager state migrates to v3 without a selected location", () => {
   const session = createWorkspaceFileManagerService().createSession({
     host: {
@@ -703,6 +751,66 @@ test("selectLocation loads directory locations and falls back when locations are
   session.dispose();
 });
 
+test("setLocations reloads the selected directory when its path changes", async () => {
+  const listedPaths: string[] = [];
+  const session = createWorkspaceFileManagerService().createSession({
+    host: {
+      async listDirectory(input) {
+        listedPaths.push(input.path);
+        return {
+          directoryPath: input.path,
+          entries: [],
+          root: "/Users/demo",
+          workspaceID: input.workspaceID
+        };
+      }
+    },
+    i18n: createTestI18nRuntime(),
+    defaultLocationId: "project:repo",
+    locationSections: [
+      {
+        id: "project",
+        label: "Project",
+        locations: [
+          {
+            id: "project:repo",
+            kind: "directory",
+            label: "Repo",
+            path: "/Users/demo/repo",
+            referenceNodeId: "/Users/demo/repo"
+          }
+        ]
+      }
+    ],
+    workspaceID: "workspace-1"
+  });
+
+  await session.initialize();
+  await session.setLocations({
+    defaultLocationId: "project:repo",
+    sections: [
+      {
+        id: "project",
+        label: "Project",
+        locations: [
+          {
+            id: "project:repo",
+            kind: "directory",
+            label: "Repo",
+            path: "/Users/demo/repo-moved",
+            referenceNodeId: "/Users/demo/repo-moved"
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(session.store.selectedLocationId, "project:repo");
+  assert.equal(session.store.currentDirectoryPath, "/Users/demo/repo-moved");
+  assert.deepEqual(listedPaths, ["/Users/demo/repo", "/Users/demo/repo-moved"]);
+  session.dispose();
+});
+
 test("recent locations load recent entries, search locally, and block mutations", async () => {
   let createFileCalls = 0;
   let hostSearchCalls = 0;
@@ -797,6 +905,80 @@ test("recent locations load recent entries, search locally, and block mutations"
   assert.equal(listDirectoryCalls, 0);
   assert.equal(listRecentCalls, 3);
   assert.equal(importResult.supported, false);
+  session.dispose();
+});
+
+test("explicit directory loads leave recent read-only mode", async () => {
+  let createFileCalls = 0;
+  const listedPaths: string[] = [];
+  const session = createWorkspaceFileManagerService().createSession({
+    host: {
+      async listDirectory(input) {
+        listedPaths.push(input.path);
+        return {
+          directoryPath: input.path,
+          entries: [],
+          root: "/Users/demo",
+          workspaceID: input.workspaceID
+        };
+      },
+      async listRecentEntries(input) {
+        return {
+          directoryPath: "/Users/demo",
+          entries: [],
+          root: "/Users/demo",
+          workspaceID: input.workspaceID
+        };
+      },
+      async createFile(input) {
+        createFileCalls += 1;
+        return {
+          hasChildren: false,
+          kind: "file",
+          mtimeMs: null,
+          name: "new.txt",
+          path: input.path,
+          sizeBytes: 0
+        };
+      }
+    },
+    i18n: createTestI18nRuntime(),
+    defaultLocationId: "local:recent",
+    locationSections: [
+      {
+        id: "local",
+        label: "Local",
+        locations: [
+          {
+            id: "local:recent",
+            kind: "recent",
+            label: "Recent"
+          },
+          {
+            id: "local:home",
+            kind: "directory",
+            label: "Home",
+            path: "/Users/demo",
+            referenceNodeId: "/Users/demo"
+          }
+        ]
+      }
+    ],
+    workspaceID: "workspace-1"
+  });
+
+  await session.initialize();
+  await session.applyRevealIntent({
+    mode: "open-directory",
+    path: "/Users/demo/project",
+    requestID: "open-directory-from-recent"
+  });
+  await session.createFile("/Users/demo/project/new.txt");
+
+  assert.equal(session.store.selectedLocationId, "local:home");
+  assert.equal(session.store.currentDirectoryPath, "/Users/demo/project");
+  assert.equal(createFileCalls, 1);
+  assert.deepEqual(listedPaths, ["/Users/demo/project", "/Users/demo/project"]);
   session.dispose();
 });
 

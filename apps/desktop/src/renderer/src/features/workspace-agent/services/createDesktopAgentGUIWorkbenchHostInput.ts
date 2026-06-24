@@ -218,9 +218,13 @@ export function createDesktopAgentGUIWorkbenchHostInput({
 const resolveWorkspaceReferenceInitialTarget: NonNullable<
   AgentGUIProps["resolveWorkspaceReferenceInitialTarget"]
 > = ({ activeConversation, composerSelectedProjectPath, userProjects }) => {
+  const activeConversationProject = findUserProjectByIdentity(
+    userProjects,
+    activeConversation?.project
+  );
   const locationId = resolveDesktopWorkspaceFileDefaultLocationId({
     composerSelectedProjectPath,
-    preferredProject: activeConversation?.project ?? null,
+    preferredProject: activeConversationProject,
     projects: userProjects
   });
   if (locationId === DESKTOP_WORKSPACE_FILE_HOME_LOCATION_ID) {
@@ -231,7 +235,7 @@ const resolveWorkspaceReferenceInitialTarget: NonNullable<
     };
   }
   const project =
-    activeConversation?.project ??
+    activeConversationProject ??
     findUserProjectByPath(userProjects, composerSelectedProjectPath) ??
     userProjects[0] ??
     null;
@@ -244,6 +248,33 @@ const resolveWorkspaceReferenceInitialTarget: NonNullable<
     params
   };
 };
+
+function findUserProjectByIdentity<
+  T extends {
+    id?: string | null;
+    path: string;
+  }
+>(
+  projects: readonly T[],
+  project:
+    | {
+        id?: string | null;
+        path?: string | null;
+      }
+    | null
+    | undefined
+): T | null {
+  if (!project) {
+    return null;
+  }
+  if (project.id) {
+    const byId = projects.find((candidate) => candidate.id === project.id);
+    if (byId) {
+      return byId;
+    }
+  }
+  return findUserProjectByPath(projects, project.path);
+}
 
 function findUserProjectByPath<
   T extends {

@@ -233,7 +233,10 @@ export function resolveWorkspaceFileManagerContextMenuViewState(input: {
     isBusy: state.busyAction !== null,
     isLoading: state.isLoading,
     isMutating: state.isMutating,
-    showCreateAction: !isRecentLocation,
+    showCreateAction:
+      !isRecentLocation &&
+      (state.capabilities.canCreateDirectory ||
+        state.capabilities.canCreateFile),
     showCopyAction: state.capabilities.canCopy,
     showDeleteAction: state.capabilities.canDelete && !isRecentLocation,
     showExportAction: state.capabilities.canExport,

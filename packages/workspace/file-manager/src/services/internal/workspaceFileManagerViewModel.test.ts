@@ -163,23 +163,15 @@ test("maps context-menu state without depending on unrelated fields", () => {
 });
 
 test("hides open-with actions for directory context-menu entries", () => {
-  const store = createStore({
-    canCopy: true,
-    canCreateDirectory: true,
-    canCreateFile: true,
-    canDelete: true,
-    canExport: true,
-    canImportFromDrop: true,
-    canImportFromPicker: true,
-    canMove: true,
-    canOpenInAppBrowser: true,
-    canOpenInDefaultBrowser: true,
-    canOpenWith: true,
-    canPickOtherOpenWithApplication: true,
-    canRevealInFolder: true,
-    canRename: true,
-    canSearch: true
-  });
+  const store = createStore(
+    createCapabilities({
+      canOpenInAppBrowser: true,
+      canOpenInDefaultBrowser: true,
+      canOpenWith: true,
+      canPickOtherOpenWithApplication: true,
+      canRevealInFolder: true
+    })
+  );
   const fileEntry = {
     hasChildren: false,
     kind: "file" as const,
@@ -224,6 +216,27 @@ test("hides open-with actions for directory context-menu entries", () => {
   assert.equal(directoryContextMenuView.showOpenWithOtherAction, false);
 });
 
+test("keeps create context-menu action behind create capabilities", () => {
+  const store = createStore(
+    createCapabilities({
+      canCreateDirectory: false,
+      canCreateFile: false
+    })
+  );
+
+  const withoutCreateCapabilities =
+    resolveWorkspaceFileManagerContextMenuViewState({
+      state: store
+    });
+  assert.equal(withoutCreateCapabilities.showCreateAction, false);
+
+  store.capabilities.canCreateFile = true;
+  const withCreateCapability = resolveWorkspaceFileManagerContextMenuViewState({
+    state: store
+  });
+  assert.equal(withCreateCapability.showCreateAction, true);
+});
+
 function createCopy() {
   return createWorkspaceFileManagerI18nRuntime(
     createI18nRuntime({
@@ -237,7 +250,18 @@ function createCopy() {
 }
 
 function createStore(
-  capabilities: WorkspaceFileManagerCapabilities = {
+  capabilities: WorkspaceFileManagerCapabilities = createCapabilities()
+) {
+  return createWorkspaceFileManagerStore({
+    capabilities,
+    workspaceID: "workspace-1"
+  });
+}
+
+function createCapabilities(
+  overrides: Partial<WorkspaceFileManagerCapabilities> = {}
+): WorkspaceFileManagerCapabilities {
+  return {
     canCopy: true,
     canCreateDirectory: true,
     canCreateFile: true,
@@ -252,11 +276,7 @@ function createStore(
     canPickOtherOpenWithApplication: false,
     canRevealInFolder: false,
     canRename: true,
-    canSearch: true
-  }
-) {
-  return createWorkspaceFileManagerStore({
-    capabilities,
-    workspaceID: "workspace-1"
-  });
+    canSearch: true,
+    ...overrides
+  };
 }
