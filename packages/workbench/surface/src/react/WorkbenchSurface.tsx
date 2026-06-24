@@ -15,9 +15,11 @@ import {
   WorkbenchProvider,
   useWorkbenchController
 } from "./WorkbenchProvider.tsx";
+import type { WorkbenchDebugDiagnostics } from "../store/types.ts";
 import { useWorkbenchShortcuts } from "./hooks/useWorkbenchShortcuts.ts";
 import { useWorkbenchSurfaceSize } from "./hooks/useWorkbenchSurfaceSize.ts";
 import { useWorkbenchGenieAnimation } from "./useWorkbenchGenieAnimation.tsx";
+import type { WorkbenchNodeGeniePreviewRenderer } from "./useWorkbenchGenieAnimation.tsx";
 import type {
   WorkbenchDockContext,
   WorkbenchDockPlacement,
@@ -43,6 +45,7 @@ export interface WorkbenchSurfaceProps<TData = unknown> {
   ) => Promise<string | null> | string | null;
   className?: string;
   controller: WorkbenchController<TData>;
+  debugDiagnostics?: WorkbenchDebugDiagnostics;
   dockPreviewCache?: WorkbenchDockPreviewCache;
   dockPlacement?: WorkbenchDockPlacement;
   interactive?: boolean;
@@ -54,6 +57,7 @@ export interface WorkbenchSurfaceProps<TData = unknown> {
   renderBottomChrome?: () => ReactNode;
   renderDock?: (context: WorkbenchDockContext<TData>) => ReactNode;
   renderNode: WorkbenchRenderNode<TData>;
+  renderNodeGeniePreview?: WorkbenchNodeGeniePreviewRenderer<TData>;
   renderOverlay?: () => ReactNode;
   renderTopChrome?: () => ReactNode;
   renderWindowActions?: WorkbenchRenderWindowActions<TData>;
@@ -99,6 +103,7 @@ export function WorkbenchSurface<TData>({
   renderBottomChrome,
   renderDock,
   renderNode,
+  renderNodeGeniePreview,
   renderOverlay,
   renderTopChrome,
   renderWindowActions,
@@ -129,6 +134,7 @@ export function WorkbenchSurface<TData>({
         renderBottomChrome={renderBottomChrome}
         renderDock={renderDock}
         renderNode={renderNode}
+        renderNodeGeniePreview={renderNodeGeniePreview}
         renderOverlay={renderOverlay}
         renderTopChrome={renderTopChrome}
         renderWindowActions={renderWindowActions}
@@ -161,6 +167,7 @@ function WorkbenchSurfaceInner<TData>({
   renderBottomChrome,
   renderDock,
   renderNode,
+  renderNodeGeniePreview,
   renderOverlay,
   renderTopChrome,
   renderWindowActions,
@@ -188,6 +195,7 @@ function WorkbenchSurfaceInner<TData>({
     controller,
     dockPreviewCache,
     minimizeAnimation,
+    renderNodeGeniePreview,
     resolveDockAnchorKey,
     resolveDockPreviewCacheKey,
     shouldCaptureNodePreviewImage

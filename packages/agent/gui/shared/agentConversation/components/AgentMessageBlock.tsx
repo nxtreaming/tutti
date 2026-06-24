@@ -46,6 +46,7 @@ interface AgentMessageBlockProps {
   onAuthLogin?: (provider?: string | null) => void;
   availableSkills?: readonly AgentGUIProviderSkillOption[];
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
+  previewMode?: boolean;
   showRawTimelineJson?: boolean;
   rawTimelineJsonLabel?: string;
 }
@@ -59,6 +60,7 @@ export function AgentMessageBlock({
   onAuthLogin,
   availableSkills,
   workspaceAppIcons,
+  previewMode = false,
   showRawTimelineJson = false,
   rawTimelineJsonLabel = ""
 }: AgentMessageBlockProps): JSX.Element {
@@ -112,6 +114,7 @@ export function AgentMessageBlock({
           thinking={thinking}
           label={thinkingLabel}
           onLinkClick={handleLinkClick}
+          previewMode={previewMode}
           showRawTimelineJson={showRawTimelineJson}
           rawTimelineJsonLabel={rawTimelineJsonLabel}
         />
@@ -159,6 +162,7 @@ export function AgentMessageBlock({
               basePath={basePath}
               onLinkAction={onLinkAction}
               workspaceAppIcons={workspaceAppIcons}
+              previewMode={previewMode}
             />
           ) : (
             <AgentMessageMarkdown
@@ -173,6 +177,7 @@ export function AgentMessageBlock({
               workspaceAppIcons={workspaceAppIcons}
               deferLongContentRender
               enableImageZoom
+              previewMode={previewMode}
               streaming={message.statusKind === "working"}
             />
           );
@@ -426,13 +431,15 @@ function AgentPlanCardMessage({
   workspaceRoot,
   basePath,
   onLinkAction,
-  workspaceAppIcons
+  workspaceAppIcons,
+  previewMode = false
 }: {
   message: AgentMessageContentVM;
   workspaceRoot: string | null;
   basePath: string;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
+  previewMode?: boolean;
 }): JSX.Element {
   "use memo";
   return (
@@ -449,6 +456,7 @@ function AgentPlanCardMessage({
         workspaceAppIcons={workspaceAppIcons}
         deferLongContentRender
         enableImageZoom
+        previewMode={previewMode}
       />
     </AgentPlanCard>
   );

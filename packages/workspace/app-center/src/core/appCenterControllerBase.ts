@@ -24,6 +24,10 @@ export abstract class WorkspaceAppCenterControllerBase {
     string,
     ReturnType<typeof setTimeout>
   >();
+  protected activeInstallRefreshTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   protected transientRuntimeRefreshAttempts = 0;
   protected transientRuntimeRefreshTimer: ReturnType<typeof setTimeout> | null =
     null;
@@ -70,6 +74,7 @@ export abstract class WorkspaceAppCenterControllerBase {
     }
     this.clearCatalogRefreshTimer();
     this.clearInstallRefreshTimers();
+    this.clearActiveInstallRefreshTimers();
     this.clearTransientRuntimeRefreshTimer();
     this.pollingWorkspaceId = normalizedWorkspaceId;
   }
@@ -81,6 +86,7 @@ export abstract class WorkspaceAppCenterControllerBase {
     this.pollingWorkspaceId = null;
     this.clearCatalogRefreshTimer();
     this.clearInstallRefreshTimers();
+    this.clearActiveInstallRefreshTimers();
     this.clearTransientRuntimeRefreshTimer();
   }
 
@@ -173,6 +179,26 @@ export abstract class WorkspaceAppCenterControllerBase {
     this.installRefreshTimers.clear();
     this.pendingInstallKeys.clear();
     this.pendingInstallReportKeys.clear();
+  }
+
+  protected clearActiveInstallRefreshTimer(
+    workspaceId: string,
+    appId: string
+  ): void {
+    const key = appRuntimeKey(workspaceId, appId);
+    const timer = this.activeInstallRefreshTimers.get(key);
+    if (!timer) {
+      return;
+    }
+    clearTimeout(timer);
+    this.activeInstallRefreshTimers.delete(key);
+  }
+
+  protected clearActiveInstallRefreshTimers(): void {
+    for (const timer of this.activeInstallRefreshTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.activeInstallRefreshTimers.clear();
   }
 
   protected clearTransientRuntimeRefreshTimer(): void {
