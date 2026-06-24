@@ -4,9 +4,13 @@ import type { WorkbenchNode } from "../../core/types.ts";
 import { useWorkbenchController } from "../WorkbenchProvider.tsx";
 import { useWorkbenchSnap } from "./useWorkbenchSnap.ts";
 
-export function useWorkbenchDrag<TData>(node: WorkbenchNode<TData>) {
+export function useWorkbenchDrag<TData>(
+  node: WorkbenchNode<TData>,
+  options: { edgeSnapEnabled?: boolean } = {}
+) {
   const controller = useWorkbenchController<TData>();
   const updateSnap = useWorkbenchSnap<TData>();
+  const edgeSnapEnabled = options.edgeSnapEnabled === true;
 
   return useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
@@ -31,7 +35,7 @@ export function useWorkbenchDrag<TData>(node: WorkbenchNode<TData>) {
         };
         updateSnap(
           { x: moveEvent.clientX, y: moveEvent.clientY },
-          { edgeSnapEnabled: true }
+          { edgeSnapEnabled }
         );
         controller.commands.dragNode(node.id, nextFrame);
       };
@@ -48,7 +52,7 @@ export function useWorkbenchDrag<TData>(node: WorkbenchNode<TData>) {
         if (
           updateSnap(
             { x: upEvent.clientX, y: upEvent.clientY },
-            { edgeSnapEnabled: true }
+            { edgeSnapEnabled }
           ) !== null
         ) {
           controller.commands.applyActiveSnapTarget(node.id);
@@ -64,6 +68,6 @@ export function useWorkbenchDrag<TData>(node: WorkbenchNode<TData>) {
       window.addEventListener("pointerup", finishDrag);
       window.addEventListener("pointercancel", cancelDrag);
     },
-    [controller, node.frame, node.id, updateSnap]
+    [controller, edgeSnapEnabled, node.frame, node.id, updateSnap]
   );
 }

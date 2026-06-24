@@ -1,10 +1,21 @@
 import { useEffect } from "react";
 import { selectFocusedWorkbenchNode } from "../../core/selectors.ts";
 import { useWorkbenchController } from "../WorkbenchProvider.tsx";
-import { resolveWorkbenchShortcutIntent } from "./workbenchShortcutIntent.ts";
+import {
+  resolveWorkbenchShortcutIntent,
+  type WorkbenchWindowManagementShortcutPreset
+} from "./workbenchShortcutIntent.ts";
 
-export function useWorkbenchShortcuts<TData = unknown>(enabled = true): void {
+export function useWorkbenchShortcuts<TData = unknown>(
+  options: {
+    enabled?: boolean;
+    windowManagementShortcutPreset?: WorkbenchWindowManagementShortcutPreset | null;
+  } = {}
+): void {
   const controller = useWorkbenchController<TData>();
+  const enabled = options.enabled ?? true;
+  const windowManagementShortcutPreset =
+    options.windowManagementShortcutPreset ?? null;
 
   useEffect(() => {
     if (!enabled) {
@@ -12,7 +23,9 @@ export function useWorkbenchShortcuts<TData = unknown>(enabled = true): void {
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      const intent = resolveWorkbenchShortcutIntent(event);
+      const intent = resolveWorkbenchShortcutIntent(event, {
+        windowManagementShortcutPreset
+      });
       if (!intent) {
         return;
       }
@@ -52,5 +65,5 @@ export function useWorkbenchShortcuts<TData = unknown>(enabled = true): void {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [controller, enabled]);
+  }, [controller, enabled, windowManagementShortcutPreset]);
 }

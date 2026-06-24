@@ -577,6 +577,69 @@ test("DesktopPreferencesService publishes dock placement preference writes", asy
   service.dispose();
 });
 
+test("DesktopPreferencesService publishes workbench window snapping preference writes", async () => {
+  const client = createDesktopPreferencesClient({});
+
+  const service = new DesktopPreferencesService({
+    applyLocale() {},
+    applyTheme() {},
+    client,
+    initialLocale: "en",
+    initialTheme: {
+      appearance: "light",
+      source: "system"
+    },
+    resolveTheme
+  });
+
+  await settle();
+  const savedPreferencePromise = service.setWorkbenchWindowSnapping({
+    enabled: true,
+    shortcutPreset: "commandShiftArrows"
+  });
+
+  assert.deepEqual(client.updatedRequests, [
+    {
+      agentComposerDefaultsByProvider: {},
+      agentGuiConversationRailCollapsedByProvider: {},
+      appCatalogChannel: "production",
+      browserUseConnectionMode: "isolated",
+      defaultAgentProvider: "codex",
+
+      dockIconStyle: "default",
+      dockPlacement: "bottom",
+      fileDefaultOpenersByExtension: { html: "defaultBrowser" },
+      locale: "en",
+      minimizeAnimation: "scale",
+      sleepPreventionMode: "never",
+      themeSource: "system",
+      updateChannel: "stable",
+      updatePolicy: "prompt",
+      workbenchWindowSnapping: {
+        enabled: true,
+        shortcutPreset: "commandShiftArrows"
+      }
+    }
+  ]);
+  assert.deepEqual(service.store.workbenchWindowSnapping, {
+    enabled: true,
+    shortcutPreset: "commandShiftArrows"
+  });
+
+  client.emitDesktopPreferencesUpdated(client.updatedRequests.at(-1)!);
+
+  assert.deepEqual(await savedPreferencePromise, {
+    enabled: true,
+    shortcutPreset: "commandShiftArrows"
+  });
+  assert.deepEqual(service.store.workbenchWindowSnapping, {
+    enabled: true,
+    shortcutPreset: "commandShiftArrows"
+  });
+
+  service.dispose();
+});
+
 test("DesktopPreferencesService applies HTTP-confirmed authoritative preferences to store", async () => {
   const tuttidClient = createSequentialTuttidClient([
     {
@@ -905,7 +968,9 @@ function createDesktopPreferencesClient(
             preferences.sleepPreventionMode ||
           pendingUpdate.request.themeSource !== preferences.themeSource ||
           pendingUpdate.request.updateChannel !== preferences.updateChannel ||
-          pendingUpdate.request.updatePolicy !== preferences.updatePolicy
+          pendingUpdate.request.updatePolicy !== preferences.updatePolicy ||
+          JSON.stringify(pendingUpdate.request.workbenchWindowSnapping) !==
+            JSON.stringify(preferences.workbenchWindowSnapping)
         ) {
           continue;
         }

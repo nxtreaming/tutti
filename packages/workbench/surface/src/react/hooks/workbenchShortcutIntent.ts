@@ -19,6 +19,10 @@ export type WorkbenchShortcutIntent =
       preset: WorkbenchLayoutPreset;
     };
 
+export type WorkbenchWindowManagementShortcutPreset =
+  | "commandArrows"
+  | "commandShiftArrows";
+
 interface WorkbenchShortcutEventLike {
   altKey?: boolean;
   ctrlKey?: boolean;
@@ -30,7 +34,10 @@ interface WorkbenchShortcutEventLike {
 }
 
 export function resolveWorkbenchShortcutIntent(
-  event: WorkbenchShortcutEventLike
+  event: WorkbenchShortcutEventLike,
+  options: {
+    windowManagementShortcutPreset?: WorkbenchWindowManagementShortcutPreset | null;
+  } = {}
 ): WorkbenchShortcutIntent | null {
   if (
     event.defaultPrevented ||
@@ -49,7 +56,12 @@ export function resolveWorkbenchShortcutIntent(
     return { type: "exitFullscreen" };
   }
 
-  if (!event.metaKey || event.shiftKey || event.ctrlKey || event.altKey) {
+  if (
+    !matchesWindowManagementShortcutPreset(
+      event,
+      options.windowManagementShortcutPreset ?? null
+    )
+  ) {
     return null;
   }
 
@@ -69,6 +81,24 @@ export function resolveWorkbenchShortcutIntent(
       };
     default:
       return null;
+  }
+}
+
+function matchesWindowManagementShortcutPreset(
+  event: WorkbenchShortcutEventLike,
+  preset: WorkbenchWindowManagementShortcutPreset | null
+): boolean {
+  if (preset === null) {
+    return false;
+  }
+  if (!event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+  switch (preset) {
+    case "commandArrows":
+      return !event.shiftKey;
+    case "commandShiftArrows":
+      return event.shiftKey === true;
   }
 }
 

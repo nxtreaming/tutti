@@ -34,6 +34,8 @@ type PutInput struct {
 	ThemeSource                                 string
 	UpdateChannel                               string
 	UpdatePolicy                                string
+	WindowSnappingEnabled                       bool
+	WindowSnappingShortcutPreset                string
 }
 
 func (s Service) Get(ctx context.Context) (preferencesbiz.DesktopPreferences, error) {
@@ -65,6 +67,8 @@ func (s Service) Put(ctx context.Context, input PutInput) (preferencesbiz.Deskto
 		ThemeSource:                                 strings.TrimSpace(input.ThemeSource),
 		UpdateChannel:                               strings.TrimSpace(input.UpdateChannel),
 		UpdatePolicy:                                strings.TrimSpace(input.UpdatePolicy),
+		WindowSnappingEnabled:                       input.WindowSnappingEnabled,
+		WindowSnappingShortcutPreset:                normalizeWindowSnappingShortcutPreset(input.WindowSnappingShortcutPreset),
 	})
 	if err != nil {
 		return preferencesbiz.DesktopPreferences{}, err
@@ -116,6 +120,14 @@ func normalizeMinimizeAnimation(value string) string {
 		return normalized
 	}
 	return preferencesbiz.DefaultDesktopMinimizeAnimation
+}
+
+func normalizeWindowSnappingShortcutPreset(value string) string {
+	normalized := strings.TrimSpace(value)
+	if preferencesbiz.IsDesktopWindowSnappingShortcutPreset(normalized) {
+		return normalized
+	}
+	return preferencesbiz.DefaultDesktopWindowSnappingShortcut
 }
 
 func normalizeAgentGUIConversationRailCollapsedByProvider(input map[string]bool) map[string]bool {
