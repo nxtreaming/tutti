@@ -71,7 +71,7 @@ const mockPreflightUpload = vi.fn();
 let mockViewModel: AgentGUINodeViewModel;
 
 function createDraft(prompt: string): AgentComposerDraft {
-  return { prompt, images: [] };
+  return { prompt, images: [], files: [] };
 }
 
 function textQueuedPrompt(
@@ -490,6 +490,7 @@ vi.mock("../../i18n/index", () => ({
       "agentHost.agentGui.contextPickerBrowseIssueHint":
         "输入内容以搜索当前房间内的 Issue",
       "agentHost.agentGui.fileMentionSwitchCategory": "切换分类",
+      "agentHost.agentGui.fileMentionNavigateHierarchy": "进入/返回文件夹",
       "agentHost.agentGui.fileMentionSwitchSelection": "切换选中"
     };
     if (mentionLabels[key]) {

@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import type { AgentSessionCommand } from "../../shared/agentSessionTypes";
 import type {
   AgentComposerDraft,
+  AgentComposerDraftFile,
   AgentComposerDraftImage,
   AgentGUIComposerSettingsVM,
   AgentGUIProviderSkillOption,
@@ -150,6 +151,13 @@ export { formatSlashStatusTokenCount };
 export interface WorkspaceReferencePickResult {
   files: readonly WorkspaceFileReference[];
   mentionItems: readonly AgentContextMentionItem[];
+  hostAttachments?: readonly AgentComposerHostAttachment[];
+}
+
+export interface AgentComposerHostAttachment {
+  hostPath: string;
+  name: string;
+  mimeType?: string | null;
 }
 
 export interface AgentComposerProps {
@@ -605,6 +613,8 @@ const MENTION_PALETTE_MIN_HEIGHT_PX = 280;
 const MENTION_PALETTE_MAX_HEIGHT_PX = 320;
 const MENTION_PALETTE_GAP_PX = 8;
 const MENTION_PALETTE_VIEWPORT_PADDING_PX = 8;
+const promptFileUploadUnsupportedError =
+  "Prompt file uploads are not supported by this agent runtime.";
 const EMPTY_CONTEXT_MENTION_PROVIDERS: readonly AgentContextMentionProvider[] =
   [];
 const EMPTY_PROMPT_TIPS: readonly AgentComposerPromptTip[] = [];
@@ -724,6 +734,7 @@ export function AgentComposer({
   "use memo";
   const draftPrompt = draftContent.prompt;
   const draftImages = draftContent.images;
+  const draftFiles = draftContent.files ?? [];
   const agentActivityRuntime = useOptionalAgentActivityRuntime();
   const [isPaletteOpen, setIsPaletteOpen] = useState(true);
   const [isReviewPickerOpen, setIsReviewPickerOpen] = useState(false);
@@ -742,9 +753,6 @@ export function AgentComposer({
     useState<AgentFileMentionSuggestionState | null>(null);
   const [isSelectedProjectMissing, setIsSelectedProjectMissing] =
     useState(false);
-  const [submittedImagePreview, setSubmittedImagePreview] = useState<
-    AgentComposerDraftImage[]
-  >([]);
   const [isSlashStatusPanelOpen, setIsSlashStatusPanelOpen] = useState(false);
   const slashStatusAgentSessionId = slashStatus?.agentSessionId ?? null;
   const previousSlashStatusAgentSessionIdRef = useRef<string | null>(
@@ -769,7 +777,7 @@ export function AgentComposer({
   const paletteContentRef = useRef<HTMLDivElement | null>(null);
   const draftPromptRef = useRef(draftPrompt);
   const draftImagesRef = useRef<AgentComposerDraftImage[]>(draftImages);
-  const submittedImagePreviewObservedBusyRef = useRef(false);
+  const draftFilesRef = useRef<AgentComposerDraftFile[]>(draftFiles);
   const promptTipRef = useRef<HTMLSpanElement | null>(null);
   const mentionControllerRef = useRef<AgentMentionSearchController | null>(
     null
@@ -1038,6 +1046,10 @@ export function AgentComposer({
   }, [draftImages]);
 
   useEffect(() => {
+    draftFilesRef.current = draftFiles;
+  }, [draftFiles]);
+
+  useEffect(() => {
     if (
       previousSlashStatusAgentSessionIdRef.current === slashStatusAgentSessionId
     ) {
@@ -1249,11 +1261,15 @@ export function AgentComposer({
     const canSubmitWhileSending = canQueueWhileBusy && isSendingTurn;
     const hasUploadingImages = draftImages.some((image) => image.uploading);
     const hasFailedImages = draftImages.some((image) => image.uploadError);
+    const hasUploadingFiles = draftFiles.some((file) => file.uploading);
+    const hasFailedFiles = draftFiles.some((file) => file.uploadError);
     if (
       isSelectedProjectMissing ||
       submitDisabled ||
       hasUploadingImages ||
       hasFailedImages ||
+      hasUploadingFiles ||
+      hasFailedFiles ||
       (disabled && !canQueueWhileBusy) ||
       (isSendingTurn && !canSubmitWhileSending)
     ) {
@@ -1295,13 +1311,6 @@ export function AgentComposer({
       skills: availableSkills
     });
     onSubmit(submitContent);
-    if (draftImages.length > 0 && !canQueueWhileBusy) {
-      setSubmittedImagePreview(draftImages);
-      submittedImagePreviewObservedBusyRef.current = false;
-    } else {
-      setSubmittedImagePreview([]);
-      submittedImagePreviewObservedBusyRef.current = false;
-    }
     draftPromptRef.current = "";
     setPaletteDraftPrompt("");
     onDraftContentChange(emptyAgentComposerDraft());
@@ -1373,6 +1382,8 @@ export function AgentComposer({
   const selectFileMention = useCallback(
     (entry: AgentContextMentionItem): void => {
       if (
+        entry.kind === "file" &&
+        entry.mentionNavigation === "agent-generated-folder-back" &&
         mentionControllerRef.current?.selectAgentGeneratedMentionItem(entry)
       ) {
         return;
@@ -1458,6 +1469,28 @@ export function AgentComposer({
     [createFileMentionPaletteAdapter]
   );
 
+  const navigateFileMentionHierarchy = useCallback(
+    (delta: 1 | -1): boolean => {
+      if (delta === -1) {
+        return (
+          mentionControllerRef.current?.exitAgentGeneratedBrowse() ?? false
+        );
+      }
+      const item = createFileMentionPaletteAdapter().selectedItem;
+      if (!item || item.kind !== "file") {
+        return false;
+      }
+      if (item.mentionNavigation !== "agent-generated-folder") {
+        return false;
+      }
+      return (
+        mentionControllerRef.current?.selectAgentGeneratedMentionItem(item) ??
+        false
+      );
+    },
+    [createFileMentionPaletteAdapter]
+  );
+
   const handleFileMentionKeyDown = useCallback(
     (event: KeyboardEvent): boolean => {
       if (!showFileMentionPalette) {
@@ -1469,7 +1502,8 @@ export function AgentComposer({
           createFileMentionPaletteAdapter().commitHighlighted();
         },
         cycleFilter: cycleFileMentionFilter,
-        moveSelection: moveFileMentionSelection
+        moveSelection: moveFileMentionSelection,
+        navigateHierarchy: navigateFileMentionHierarchy
       })(event);
     },
     [
@@ -1477,6 +1511,7 @@ export function AgentComposer({
       createFileMentionPaletteAdapter,
       cycleFileMentionFilter,
       moveFileMentionSelection,
+      navigateFileMentionHierarchy,
       showFileMentionPalette
     ]
   );
@@ -1646,8 +1681,6 @@ export function AgentComposer({
       draftPromptRef.current = nextDraft;
       setPaletteDraftPrompt(nextDraft);
       setIsPaletteOpen(true);
-      setSubmittedImagePreview([]);
-      submittedImagePreviewObservedBusyRef.current = false;
       onDraftContentChange({ ...draftContent, prompt: nextDraft });
     }
   );
@@ -1661,8 +1694,6 @@ export function AgentComposer({
         onPromptImagesUnsupported?.();
         return;
       }
-      setSubmittedImagePreview([]);
-      submittedImagePreviewObservedBusyRef.current = false;
       const currentDraftImages = draftImagesRef.current;
       const remainingSlots = Math.max(
         0,
@@ -1684,7 +1715,8 @@ export function AgentComposer({
       draftImagesRef.current = nextDraftImages;
       onDraftContentChange({
         prompt: draftPromptRef.current,
-        images: nextDraftImages
+        images: nextDraftImages,
+        files: draftFilesRef.current
       });
       if (!uploadPromptContent) {
         return;
@@ -1724,7 +1756,8 @@ export function AgentComposer({
             draftImagesRef.current = uploadedDraftImages;
             onDraftContentChange({
               prompt: draftPromptRef.current,
-              images: uploadedDraftImages
+              images: uploadedDraftImages,
+              files: draftFilesRef.current
             });
           })
           .catch((error: unknown) => {
@@ -1742,7 +1775,8 @@ export function AgentComposer({
             draftImagesRef.current = failedDraftImages;
             onDraftContentChange({
               prompt: draftPromptRef.current,
-              images: failedDraftImages
+              images: failedDraftImages,
+              files: draftFilesRef.current
             });
           });
       }
@@ -1771,7 +1805,115 @@ export function AgentComposer({
       draftImagesRef.current = nextDraftImages;
       onDraftContentChange({
         prompt: draftPromptRef.current,
-        images: nextDraftImages
+        images: nextDraftImages,
+        files: draftFilesRef.current
+      });
+    },
+    [onDraftContentChange]
+  );
+
+  const addDraftFiles = useCallback(
+    (attachments: readonly AgentComposerHostAttachment[]): void => {
+      if (attachments.length === 0) {
+        return;
+      }
+      const uploadPromptContent = agentActivityRuntime?.uploadPromptContent;
+      const nextFiles = attachments.map((attachment) => ({
+        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+        name: attachment.name,
+        mimeType: attachment.mimeType?.trim() || "application/octet-stream",
+        hostPath: attachment.hostPath,
+        uploading: Boolean(uploadPromptContent),
+        ...(uploadPromptContent
+          ? {}
+          : { uploadError: promptFileUploadUnsupportedError })
+      }));
+      const nextDraftFiles = [...draftFilesRef.current, ...nextFiles];
+      draftFilesRef.current = nextDraftFiles;
+      onDraftContentChange({
+        prompt: draftPromptRef.current,
+        images: draftImagesRef.current,
+        files: nextDraftFiles
+      });
+      if (!uploadPromptContent) {
+        return;
+      }
+      for (const draftFile of nextFiles) {
+        void uploadPromptContent({
+          workspaceId,
+          content: [
+            {
+              type: "file",
+              mimeType: draftFile.mimeType,
+              hostPath: draftFile.hostPath,
+              name: draftFile.name,
+              kind: "file"
+            }
+          ]
+        })
+          .then((result) => {
+            const uploadedFile = result.content.find(
+              (block) => block.type === "file"
+            );
+            const uploadedPath = uploadedFile?.path?.trim() ?? "";
+            if (!uploadedPath) {
+              throw new Error("Prompt file upload completed without path.");
+            }
+            const uploadedDraftFiles = draftFilesRef.current.map((file) =>
+              file.id === draftFile.id
+                ? {
+                    id: file.id,
+                    name: uploadedFile?.name ?? file.name,
+                    mimeType: uploadedFile?.mimeType ?? file.mimeType,
+                    path: uploadedPath,
+                    hostPath: uploadedFile?.hostPath ?? file.hostPath,
+                    assetId: uploadedFile?.assetId,
+                    sizeBytes: uploadedFile?.sizeBytes,
+                    uploading: false
+                  }
+                : file
+            );
+            draftFilesRef.current = uploadedDraftFiles;
+            onDraftContentChange({
+              prompt: draftPromptRef.current,
+              images: draftImagesRef.current,
+              files: uploadedDraftFiles
+            });
+          })
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            const failedDraftFiles = draftFilesRef.current.map((file) =>
+              file.id === draftFile.id
+                ? {
+                    ...file,
+                    uploading: false,
+                    uploadError: message
+                  }
+                : file
+            );
+            draftFilesRef.current = failedDraftFiles;
+            onDraftContentChange({
+              prompt: draftPromptRef.current,
+              images: draftImagesRef.current,
+              files: failedDraftFiles
+            });
+          });
+      }
+    },
+    [agentActivityRuntime, onDraftContentChange, workspaceId]
+  );
+
+  const removeDraftFile = useCallback(
+    (id: string): void => {
+      const nextDraftFiles = draftFilesRef.current.filter(
+        (file) => file.id !== id
+      );
+      draftFilesRef.current = nextDraftFiles;
+      onDraftContentChange({
+        prompt: draftPromptRef.current,
+        images: draftImagesRef.current,
+        files: nextDraftFiles
       });
     },
     [onDraftContentChange]
@@ -1785,8 +1927,11 @@ export function AgentComposer({
       if (result.mentionItems.length > 0) {
         editorHandleRef.current?.insertMentionItems(result.mentionItems);
       }
+      if (result.hostAttachments && result.hostAttachments.length > 0) {
+        addDraftFiles(result.hostAttachments);
+      }
     },
-    []
+    [addDraftFiles]
   );
 
   const handleWorkspaceReferencePicker = useCallback(async () => {
@@ -2104,6 +2249,8 @@ export function AgentComposer({
   const hasDraftContent = agentComposerDraftHasContent(draftContent);
   const hasUploadingDraftImages = draftImages.some((image) => image.uploading);
   const hasFailedDraftImages = draftImages.some((image) => image.uploadError);
+  const hasUploadingDraftFiles = draftFiles.some((file) => file.uploading);
+  const hasFailedDraftFiles = draftFiles.some((file) => file.uploadError);
   const isQueueMode = canQueueWhileBusy && hasDraftContent;
   const shouldShowStopButton = showStopButton && !isQueueMode;
   const sendButtonState = isQueueMode
@@ -2126,27 +2273,7 @@ export function AgentComposer({
       : null;
   const disabledReasonText = disabledReason?.trim() ?? "";
   const effectivePlaceholder = disabledReasonText || placeholder;
-  const showingSubmittedImagePreview =
-    draftImages.length === 0 && submittedImagePreview.length > 0;
-  const visibleDraftImages =
-    draftImages.length > 0 ? draftImages : submittedImagePreview;
-
-  useEffect(() => {
-    if (submittedImagePreview.length === 0) {
-      submittedImagePreviewObservedBusyRef.current = false;
-      return;
-    }
-    const busy = isSubmittingPrompt || isSendingTurn;
-    if (busy) {
-      submittedImagePreviewObservedBusyRef.current = true;
-      return;
-    }
-    if (submittedImagePreviewObservedBusyRef.current) {
-      submittedImagePreviewObservedBusyRef.current = false;
-      setSubmittedImagePreview([]);
-    }
-  }, [isSendingTurn, isSubmittingPrompt, submittedImagePreview.length]);
-
+  const visibleDraftFiles = draftFiles;
   useEffect(() => {
     if (previousSelectedProjectPathRef.current === selectedProjectPath) {
       return;
@@ -2315,15 +2442,12 @@ export function AgentComposer({
           >
             <PopoverAnchor asChild>
               <div ref={promptInputAreaRef} className="min-w-0 self-start">
-                {visibleDraftImages.length > 0 ? (
+                {draftImages.length > 0 ? (
                   <div
                     className="mb-2 grid max-w-[320px] grid-cols-[repeat(auto-fill,minmax(56px,1fr))] gap-2"
                     data-testid="agent-gui-composer-image-drafts"
-                    data-submitted-preview={
-                      showingSubmittedImagePreview ? "true" : undefined
-                    }
                   >
-                    {visibleDraftImages.map((image) => (
+                    {draftImages.map((image) => (
                       <div
                         key={image.id}
                         className={cn(
@@ -2358,17 +2482,64 @@ export function AgentComposer({
                             />
                           </div>
                         ) : null}
-                        {showingSubmittedImagePreview ? null : (
-                          <button
-                            type="button"
-                            className="absolute right-1 top-1 inline-flex size-5 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--text-primary)_16%,transparent)] bg-[color-mix(in_srgb,var(--background-fronted)_88%,transparent)] text-[var(--text-primary)] opacity-90 shadow-sm transition hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--text-primary)_34%,transparent)]"
-                            aria-label={labels.removeMention}
-                            title={labels.removeMention}
-                            onClick={() => removeDraftImage(image.id)}
-                          >
-                            <X size={12} strokeWidth={2.4} aria-hidden />
-                          </button>
+                        <button
+                          type="button"
+                          className="absolute right-1 top-1 inline-flex size-5 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--text-primary)_16%,transparent)] bg-[color-mix(in_srgb,var(--background-fronted)_88%,transparent)] text-[var(--text-primary)] opacity-90 shadow-sm transition hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--text-primary)_34%,transparent)]"
+                          aria-label={labels.removeMention}
+                          title={labels.removeMention}
+                          onClick={() => removeDraftImage(image.id)}
+                        >
+                          <X size={12} strokeWidth={2.4} aria-hidden />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {visibleDraftFiles.length > 0 ? (
+                  <div
+                    className="mb-2 flex max-w-[520px] flex-wrap gap-2"
+                    data-testid="agent-gui-composer-file-drafts"
+                  >
+                    {visibleDraftFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        className={cn(
+                          "group inline-flex max-w-full items-center gap-2 rounded-[6px] border border-[var(--line-1)] bg-[var(--background-fronted)] px-2 py-1 text-xs text-[var(--text-primary)]",
+                          file.uploadError &&
+                            "border-[color:color-mix(in_srgb,var(--danger)_55%,var(--line-1))]"
                         )}
+                        data-uploading={file.uploading ? "true" : undefined}
+                        data-upload-error={
+                          file.uploadError ? "true" : undefined
+                        }
+                        title={file.hostPath ?? file.path ?? file.name}
+                      >
+                        {file.uploading ? (
+                          <Spinner
+                            className="shrink-0 text-[var(--text-primary)]"
+                            size={14}
+                            strokeWidth={2.4}
+                            trackColor="var(--transparency-hover)"
+                            testId="agent-gui-composer-file-upload-spinner"
+                          />
+                        ) : (
+                          <span
+                            className="size-2 shrink-0 rounded-full bg-[var(--text-tertiary)]"
+                            aria-hidden
+                          />
+                        )}
+                        <span className="min-w-0 max-w-[220px] truncate">
+                          {file.name}
+                        </span>
+                        <button
+                          type="button"
+                          className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition hover:bg-[var(--transparency-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--text-primary)_34%,transparent)]"
+                          aria-label={labels.removeMention}
+                          title={labels.removeMention}
+                          onClick={() => removeDraftFile(file.id)}
+                        >
+                          <X size={12} strokeWidth={2.4} aria-hidden />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -2428,6 +2599,7 @@ export function AgentComposer({
                       onExpandGroup={(groupId) =>
                         mentionControllerRef.current?.expandGroup(groupId)
                       }
+                      onNavigateHierarchy={navigateFileMentionHierarchy}
                       onOpenReferences={
                         onRequestWorkspaceReferences
                           ? handleOpenReferencesForEntity
@@ -2701,6 +2873,8 @@ export function AgentComposer({
                     !hasDraftContent ||
                     hasUploadingDraftImages ||
                     hasFailedDraftImages ||
+                    hasUploadingDraftFiles ||
+                    hasFailedDraftFiles ||
                     sendButtonBusy
                   }
                   aria-label={labels.send}
