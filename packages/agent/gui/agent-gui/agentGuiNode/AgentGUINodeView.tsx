@@ -570,6 +570,16 @@ function numberValue(value: unknown): number | null {
   return null;
 }
 
+function isAppServerStartupLoading(
+  rawState: AgentGUISessionChrome["rawState"],
+  key: "models" | "rateLimits"
+): boolean {
+  return (
+    objectRecord(rawState?.runtimeContext?.appServerStartup)?.[key] ===
+    "loading"
+  );
+}
+
 function resolveSlashStatus({
   rawState,
   limits,
@@ -604,7 +614,8 @@ function resolveSlashStatus({
     agentSessionId: rawState?.agentSessionId ?? null,
     baseUrl: stringValue(providerConfig?.baseUrl) || null,
     limits,
-    limitsLoading,
+    limitsLoading:
+      limitsLoading || isAppServerStartupLoading(rawState, "rateLimits"),
     contextWindow: contextWindow
       ? {
           usedTokens:
@@ -914,6 +925,17 @@ export function AgentGUINodeView({
   // mention 插入。agent 收到 `mention://workspace-reference/...` 后经 skill+CLI 按需解析。
   const confirmWorkspaceReferenceBundles = useCallback(
     (result: ReferenceGroupedSelection) => {
+      const hostSourceRefs = result.files.filter(
+        (ref) => ref.sourceId === hostLocalFileSourceId && ref.kind === "file"
+      );
+      const workspaceRefs = result.files.filter(
+        (ref) => ref.sourceId !== hostLocalFileSourceId
+      );
+      const hostAttachments = hostSourceRefs.map((file) => ({
+        hostPath: file.path,
+        name: file.displayName || file.path.split("/").pop() || file.path,
+        mimeType: null
+      }));
       const mentionItems: AgentMentionWorkspaceReferenceItem[] = result.bundles
         .filter((bundle) => bundle.handle != null)
         .map((bundle) => {
@@ -948,11 +970,11 @@ export function AgentGUINodeView({
         });
       // bundle 不再展开文件,仅松散文件计入「最近引用」跟踪。
       settleReferencePicker(
-        { files: result.files, mentionItems, hostAttachments: [] },
-        result.files
+        { files: workspaceRefs, mentionItems, hostAttachments },
+        workspaceRefs
       );
     },
-    [settleReferencePicker]
+    [hostLocalFileSourceId, settleReferencePicker]
   );
   const openclawGateway = useMemo(
     () =>
