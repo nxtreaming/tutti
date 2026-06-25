@@ -1013,7 +1013,13 @@ export function AgentGUINodeView({
       const wantsHostFiles = refs.some(
         (ref) => ref.path === hostLocalFileActionPath
       );
-      if (!wantsHostFiles) {
+      const hostSourceRefs = refs.filter(
+        (ref) =>
+          ref.sourceId === "host-local-file" &&
+          ref.path !== hostLocalFileActionPath &&
+          ref.kind === "file"
+      );
+      if (!wantsHostFiles && hostSourceRefs.length === 0) {
         settleReferencePicker(
           { files: refs, mentionItems: [], hostAttachments: [] },
           refs
@@ -1021,18 +1027,34 @@ export function AgentGUINodeView({
         return;
       }
       const workspaceRefs = refs.filter(
-        (ref) => ref.path !== hostLocalFileActionPath
+        (ref) =>
+          ref.path !== hostLocalFileActionPath &&
+          ref.sourceId !== "host-local-file"
       );
-      const selected = await agentHostApi.workspace.selectFiles({
-        allowDirectories: false
-      });
-      const hostAttachments = selected.map((file) => ({
+      const selected = wantsHostFiles
+        ? await agentHostApi.workspace.selectFiles({
+            allowDirectories: false
+          })
+        : [];
+      const selectedHostAttachments = selected.map((file) => ({
         hostPath: file.path,
         name: file.name || file.path.split("/").pop() || file.path,
         mimeType: null
       }));
+      const browsedHostAttachments = hostSourceRefs.map((file) => ({
+        hostPath: file.path,
+        name: file.displayName || file.path.split("/").pop() || file.path,
+        mimeType: null
+      }));
       settleReferencePicker(
-        { files: workspaceRefs, mentionItems: [], hostAttachments },
+        {
+          files: workspaceRefs,
+          mentionItems: [],
+          hostAttachments: [
+            ...selectedHostAttachments,
+            ...browsedHostAttachments
+          ]
+        },
         workspaceRefs
       );
     },

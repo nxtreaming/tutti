@@ -171,5 +171,9 @@ test("aggregator 委派 resolveSelection 到对应源", async () => {
   const agg = createReferenceSourceAggregator(registry);
   await agg.listRoot(scope);
   const selected = agg.resolveSelection(fileNode("workspace-file", "a.md"));
-  assert.deepEqual(selected, { path: "/workspace/a.md", kind: "file" });
+  assert.deepEqual(selected, {
+    path: "/workspace/a.md",
+    kind: "file",
+    sourceId: "workspace-file"
+  });
 });
