@@ -556,8 +556,7 @@ function systemNoticeTitle(message: AgentMessageContentVM): string {
 }
 
 function AgentVisibleErrorMessage({
-  message,
-  onAuthLogin
+  message
 }: {
   message: AgentMessageContentVM;
   onAuthLogin?: (provider?: string | null) => void;
@@ -611,7 +610,6 @@ function AgentVisibleErrorMessage({
   // …) that have not yet been migrated to structured domain codes (片4).
   const title = visibleErrorTitle(message);
   const hint = visibleErrorHint(message);
-  const showAuthLogin = error?.code === "auth_required" && onAuthLogin;
   return (
     <section
       role="alert"
@@ -629,13 +627,18 @@ function AgentVisibleErrorMessage({
             <AgentMessageDetailsDisclosure detail={detail} className="mt-1" />
           ) : null}
         </div>
-        {showAuthLogin ? (
+        {error?.code === "auth_required" ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="mt-0.5 shrink-0"
-            onClick={() => onAuthLogin(error?.provider ?? null)}
+            onClick={() =>
+              openAgentEnvPanel({
+                provider: error?.provider ?? "codex",
+                focus: "auth"
+              })
+            }
           >
             {translate("agentHost.agentGui.authLogin")}
           </Button>

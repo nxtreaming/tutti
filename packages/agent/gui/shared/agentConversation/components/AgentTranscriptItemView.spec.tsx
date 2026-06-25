@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { getAgentEnvPanelStore } from "../../agentEnv/agentEnvPanelStore";
 import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
 import { AgentMessageBlock } from "./AgentMessageBlock";
 import { AgentTranscriptItemView } from "./AgentTranscriptItemView";
@@ -563,13 +564,12 @@ describe("AgentTranscriptItemView render stability", () => {
   });
 
   it("shows local agent sign-in guidance for auth errors", () => {
-    const onAuthLogin = vi.fn();
+    getAgentEnvPanelStore().open = false;
     const { getByText } = render(
       <AgentMessageBlock
         workspaceRoot="/workspace/demo"
         basePath="/workspace/demo"
         row={assistantMessageRow(claudeCodeAuthErrorMessage())}
-        onAuthLogin={onAuthLogin}
         thinkingLabel="Thought process"
       />
     );
@@ -581,7 +581,10 @@ describe("AgentTranscriptItemView render stability", () => {
       getByText("agentHost.agentGui.visibleErrorAuthRequiredLocalAgentHint")
     ).toBeTruthy();
     fireEvent.click(getByText("agentHost.agentGui.authLogin"));
-    expect(onAuthLogin).toHaveBeenCalledWith("claude-code");
+    const store = getAgentEnvPanelStore();
+    expect(store.open).toBe(true);
+    expect(store.provider).toBe("claude-code");
+    expect(store.focus).toBe("auth");
   });
 
   it("shows transport retry notices separately from markdown answers", () => {
