@@ -63,15 +63,20 @@ import { loadTuttiAgentSkillContext } from "@tutti-os/agent-acp-kit/tutti";
 const tuttiContext = await loadTuttiAgentSkillContext({
   provider,
   agentSessionId: runId,
-  cwd: workspaceCwd,
-  systemPrompt: appSystemPrompt,
-  systemPromptMode: "append-recommended"
+  cwd: workspaceCwd
 });
+
+const systemPrompt = [
+  appSystemPrompt,
+  tuttiContext.recommendedSystemPrompt?.content
+]
+  .filter(Boolean)
+  .join("\n\n");
 
 const skillManifest = [...appSkillManifest, ...tuttiContext.skillManifest];
 ```
 
-The app still owns policy. Use `systemPromptMode: "append-recommended"` only when the app intentionally wants Tutti's recommended prompt appended; otherwise omit it or use `"ignore"`. Do not silently append the recommended prompt, and do not hand-roll `$TUTTI_CLI agent tutti-cli-skill-bundle --json` parsing unless the installed `@tutti-os/agent-acp-kit` version lacks the helper.
+The app still owns policy. `tuttiContext.recommendedSystemPrompt?.content` is raw advisory prompt content: merge it, edit it, place it elsewhere, or ignore it according to the app's prompt strategy. Do not silently append the recommended prompt, and do not hand-roll `$TUTTI_CLI agent tutti-cli-skill-bundle --json` parsing unless the installed `@tutti-os/agent-acp-kit` version lacks the helper.
 
 Skeleton:
 
@@ -81,7 +86,7 @@ for await (const event of localAgentRuntime.run({
   provider,
   cwd: runDir,
   prompt,
-  systemPrompt: tuttiContext.systemPrompt,
+  systemPrompt,
   model,
   runtimeKind: "local-agent",
   runtimeProvider: provider,
