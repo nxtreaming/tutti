@@ -525,7 +525,7 @@ func (a *CodexAdapter) Exec(
 		session.Title = fallbackTitle
 	}
 	startEvents = append(startEvents,
-		newTurnActivityEvent(session, EventMessage, turnID, "", RoleUser, visibleText, userPromptActivityPayload(content, explicitDisplayPrompt, nil)),
+		newTurnActivityEvent(session, EventMessage, turnID, "", RoleUser, visibleText, userPromptActivityPayload(content, explicitDisplayPrompt, userPromptActivityPayloadExtraFromExecMetadata(ctx, nil))),
 		newTurnActivityEvent(session, EventTurnStarted, turnID, SessionStatusWorking, "", "", nil),
 	)
 	emitEvents(startEvents)
@@ -1834,6 +1834,7 @@ func acpSystemNoticeEvent(session Session, turnID string, update map[string]any,
 	copyStringPayload(payload, notice, "source")
 	copyStringPayload(payload, notice, "title")
 	copyStringPayload(payload, notice, "detail")
+	copyStringPayload(payload, notice, "code")
 	copyBoolPayload(payload, notice, "retryable")
 	if extra := clonePayloadValue(notice["extra"]); extra != nil {
 		payload["extra"] = extra

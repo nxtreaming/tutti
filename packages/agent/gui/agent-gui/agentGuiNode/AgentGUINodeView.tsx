@@ -13,9 +13,9 @@ import {
 } from "react";
 import { useSnapshot } from "valtio";
 import { proxy } from "valtio/vanilla";
-import { ChevronRight, ExternalLink, Info, X } from "lucide-react";
+import { ChevronRight, ExternalLink, Info, Wrench, X } from "lucide-react";
+import { openAgentEnvPanel } from "../../shared/agentEnv/agentEnvPanelStore";
 import type {
-  NodeRef,
   ReferenceLocateTarget,
   ReferenceNode,
   WorkspaceFileReference,
@@ -35,6 +35,7 @@ import {
   TooltipTrigger,
   NewWorkspaceLinedIcon,
   ConfirmationDialog,
+  toastVariants,
   cn
 } from "@tutti-os/ui-system";
 import { WorkspaceUserProjectSelect } from "@tutti-os/workspace-user-project/ui";
@@ -42,7 +43,7 @@ import type { WorkspaceUserProjectI18nRuntime } from "@tutti-os/workspace-user-p
 import { BareIconButton, ScrollArea } from "@tutti-os/ui-system/components";
 import { Button } from "../../app/renderer/components/ui/button";
 import {
-  EditIcon,
+  CreateChatIcon,
   FolderIcon,
   MoreHorizontalIcon
 } from "@tutti-os/ui-system/icons";
@@ -207,6 +208,7 @@ export interface AgentGUIViewLabels {
   initialPlaceholder: string;
   followupPlaceholder: string;
   installRequiredPlaceholder: string;
+  installRequiredAction: string;
   collaboratorSessionReadOnlyPlaceholder: string;
   send: string;
   modelLabel: string;
@@ -258,6 +260,7 @@ export interface AgentGUIViewLabels {
   emptyProvider?: string;
   conversations: string;
   newConversation: string;
+  agentEnvSetup: string;
   noConversations: string;
   emptyProjectConversations: string;
   startConversation: string;
@@ -290,6 +293,7 @@ export interface AgentGUIViewLabels {
   authRequired: string;
   authLogin: string;
   activatingSession: string;
+  cancellingSession: string;
   retryActivation: string;
   continueInNewConversation: string;
   goalLabel: string;
@@ -573,6 +577,16 @@ function numberValue(value: unknown): number | null {
   return null;
 }
 
+function isAppServerStartupLoading(
+  rawState: AgentGUISessionChrome["rawState"],
+  key: "models" | "rateLimits"
+): boolean {
+  return (
+    objectRecord(rawState?.runtimeContext?.appServerStartup)?.[key] ===
+    "loading"
+  );
+}
+
 function resolveSlashStatus({
   rawState,
   limits,
@@ -607,7 +621,8 @@ function resolveSlashStatus({
     agentSessionId: rawState?.agentSessionId ?? null,
     baseUrl: stringValue(providerConfig?.baseUrl) || null,
     limits,
-    limitsLoading,
+    limitsLoading:
+      limitsLoading || isAppServerStartupLoading(rawState, "rateLimits"),
     contextWindow: contextWindow
       ? {
           usedTokens:
@@ -802,7 +817,6 @@ export function AgentGUINodeView({
   workspaceAppIcons = EMPTY_WORKSPACE_APP_ICONS
 }: AgentGUINodeViewProps): React.JSX.Element {
   "use memo";
-  const agentHostApi = useAgentHostApi();
   const layoutElementRef = useRef<HTMLDivElement | null>(null);
   const railResizeInteractionRef = useRef<{
     lastWidthPx: number;
@@ -830,126 +844,10 @@ export function AgentGUINodeView({
     ((result: WorkspaceReferencePickResult) => void) | null
   >(null);
   const emptyReferencePickResult: WorkspaceReferencePickResult = useMemo(
-    () => ({ files: [], mentionItems: [], hostAttachments: [] }),
+    () => ({ files: [], mentionItems: [] }),
     []
   );
-  const hostLocalFileLabel =
-    uiLanguage === "zh-CN" ? "本地文件(宿主机)" : "Local files (Host)";
-  const hostLocalFileSelectLabel =
-    uiLanguage === "zh-CN" ? "从电脑选择…" : "Choose from computer…";
   const hostLocalFileSourceId = "host-local-file";
-  const hostLocalFileActionPath = "host-local-file://select";
-  const referenceSourceAggregatorWithHostLocalFile = useMemo(() => {
-    if (!referenceSourceAggregator) {
-      return null;
-    }
-    const sourceId = hostLocalFileSourceId;
-    const actionNode: ReferenceNode = {
-      ref: { sourceId, nodeId: "select-files" },
-      kind: "file",
-      displayName: hostLocalFileSelectLabel
-    };
-    const rootNode: ReferenceNode = {
-      ref: { sourceId, nodeId: "\u0000source-root" },
-      kind: "folder",
-      displayName: hostLocalFileLabel,
-      hasChildren: true
-    };
-    let hostProvidedLocalFileSource = false;
-    return {
-      ...referenceSourceAggregator,
-      async listSources(scope) {
-        const sources = await referenceSourceAggregator.listSources(scope);
-        hostProvidedLocalFileSource = sources.some(
-          (source) => source.sourceId === sourceId
-        );
-        if (hostProvidedLocalFileSource) {
-          return sources;
-        }
-        return [
-          ...sources,
-          {
-            sourceId,
-            label: hostLocalFileLabel,
-            icon: "file",
-            capabilities: {
-              searchable: false,
-              previewable: false,
-              paginated: false,
-              navigable: false,
-              filterable: false
-            }
-          }
-        ];
-      },
-      async listRoot(scope) {
-        const root = await referenceSourceAggregator.listRoot(scope);
-        if (hostProvidedLocalFileSource) {
-          return root;
-        }
-        return [...root, rootNode];
-      },
-      async listChildren(scope, node: NodeRef, input) {
-        if (node.sourceId === sourceId && !hostProvidedLocalFileSource) {
-          return { entries: [actionNode], nextCursor: null };
-        }
-        return await referenceSourceAggregator.listChildren(scope, node, input);
-      },
-      async search(scope, currentSourceId, input) {
-        if (currentSourceId === sourceId && !hostProvidedLocalFileSource) {
-          return { entries: [], nextCursor: null };
-        }
-        return await referenceSourceAggregator.search(
-          scope,
-          currentSourceId,
-          input
-        );
-      },
-      async open(scope, node) {
-        if (node.ref.sourceId === sourceId && !hostProvidedLocalFileSource) {
-          return;
-        }
-        await referenceSourceAggregator.open(scope, node);
-      },
-      async readPreview(scope, node) {
-        if (node.ref.sourceId === sourceId && !hostProvidedLocalFileSource) {
-          return null;
-        }
-        return await referenceSourceAggregator.readPreview(scope, node);
-      },
-      resolveSelection(node) {
-        if (node.ref.sourceId === sourceId && !hostProvidedLocalFileSource) {
-          return {
-            path: hostLocalFileActionPath,
-            kind: "file",
-            displayName: actionNode.displayName
-          };
-        }
-        return referenceSourceAggregator.resolveSelection(node);
-      },
-      async locateTarget(scope, currentSourceId, params) {
-        if (currentSourceId === sourceId && !hostProvidedLocalFileSource) {
-          return null;
-        }
-        return await referenceSourceAggregator.locateTarget(
-          scope,
-          currentSourceId,
-          params
-        );
-      },
-      getLoadedSource(currentSourceId) {
-        if (currentSourceId === sourceId && !hostProvidedLocalFileSource) {
-          return undefined;
-        }
-        return referenceSourceAggregator.getLoadedSource(currentSourceId);
-      }
-    } satisfies ReferenceSourceAggregator;
-  }, [
-    hostLocalFileLabel,
-    hostLocalFileSelectLabel,
-    hostLocalFileSourceId,
-    referenceSourceAggregator
-  ]);
   const isWorkspaceReferencePickerNodeSelectable = useCallback(
     (node: ReferenceNode) =>
       node.ref.sourceId !== hostLocalFileSourceId || node.kind === "file",
@@ -962,18 +860,14 @@ export function AgentGUINodeView({
       if (previewMode) {
         return emptyReferencePickResult;
       }
-      if (
-        (!workspaceFileReferenceAdapter &&
-          !referenceSourceAggregatorWithHostLocalFile) ||
-        !workspaceFileReferenceCopy
-      ) {
+      if (!workspaceFileReferenceAdapter && !referenceSourceAggregator) {
         return emptyReferencePickResult;
       }
       // 仅多源 picker(referenceSourceAggregator)支持定位;本地 picker 不支持。
       const target =
-        entity && referenceSourceAggregatorWithHostLocalFile
+        entity && referenceSourceAggregator
           ? (resolveMentionReferenceTarget?.(entity) ?? null)
-          : referenceSourceAggregatorWithHostLocalFile
+          : referenceSourceAggregator
             ? (resolveWorkspaceReferenceInitialTarget?.({
                 activeConversation: viewModel.activeConversation,
                 composerSelectedProjectPath:
@@ -990,7 +884,7 @@ export function AgentGUINodeView({
     [
       emptyReferencePickResult,
       previewMode,
-      referenceSourceAggregatorWithHostLocalFile,
+      referenceSourceAggregator,
       resolveMentionReferenceTarget,
       resolveWorkspaceReferenceInitialTarget,
       viewModel.activeConversation,
@@ -1022,80 +916,19 @@ export function AgentGUINodeView({
     [onWorkspaceFileReferencesAdded]
   );
   const confirmWorkspaceReferencePicker = useCallback(
-    async (refs: WorkspaceFileReference[]) => {
-      const wantsHostFiles = refs.some(
-        (ref) => ref.path === hostLocalFileActionPath
-      );
-      const hostSourceRefs = refs.filter(
-        (ref) =>
-          ref.sourceId === hostLocalFileSourceId &&
-          ref.path !== hostLocalFileActionPath
-      );
-      const hostSourceFileRefs = hostSourceRefs.filter(
-        (ref) => ref.kind === "file"
-      );
-      if (!wantsHostFiles && hostSourceRefs.length === 0) {
-        settleReferencePicker(
-          { files: refs, mentionItems: [], hostAttachments: [] },
-          refs
-        );
-        return;
-      }
-      const workspaceRefs = refs.filter(
-        (ref) =>
-          ref.path !== hostLocalFileActionPath &&
-          ref.sourceId !== hostLocalFileSourceId
-      );
-      const selected = wantsHostFiles
-        ? await agentHostApi.workspace.selectFiles({
-            allowDirectories: false
-          })
-        : [];
-      const selectedHostAttachments = selected.map((file) => ({
-        hostPath: file.path,
-        name: file.name || file.path.split("/").pop() || file.path,
-        mimeType: null
-      }));
-      const browsedHostAttachments = hostSourceFileRefs.map((file) => ({
-        hostPath: file.path,
-        name: file.displayName || file.path.split("/").pop() || file.path,
-        mimeType: null
-      }));
-      settleReferencePicker(
-        {
-          files: workspaceRefs,
-          mentionItems: [],
-          hostAttachments: [
-            ...selectedHostAttachments,
-            ...browsedHostAttachments
-          ]
-        },
-        workspaceRefs
-      );
+    (refs: WorkspaceFileReference[]) => {
+      settleReferencePicker({ files: refs, mentionItems: [] }, refs);
     },
-    [
-      agentHostApi.workspace,
-      hostLocalFileActionPath,
-      hostLocalFileSourceId,
-      settleReferencePicker
-    ]
+    [settleReferencePicker]
   );
   // 「文件夹=一个 reference 节点」确认:navigable 源文件夹折叠成 workspace-reference
   // mention item(只携带可解析句柄 source+id+groupId,不展开文件);松散文件仍按 file
   // mention 插入。agent 收到 `mention://workspace-reference/...` 后经 skill+CLI 按需解析。
   const confirmWorkspaceReferenceBundles = useCallback(
     (result: ReferenceGroupedSelection) => {
-      const hostSourceRefs = result.files.filter(
-        (ref) => ref.sourceId === hostLocalFileSourceId && ref.kind === "file"
-      );
       const workspaceRefs = result.files.filter(
         (ref) => ref.sourceId !== hostLocalFileSourceId
       );
-      const hostAttachments = hostSourceRefs.map((file) => ({
-        hostPath: file.path,
-        name: file.displayName || file.path.split("/").pop() || file.path,
-        mimeType: null
-      }));
       const mentionItems: AgentMentionWorkspaceReferenceItem[] = result.bundles
         .filter((bundle) => bundle.handle != null)
         .map((bundle) => {
@@ -1129,7 +962,7 @@ export function AgentGUINodeView({
         });
       // bundle 不再展开文件,仅松散文件计入「最近引用」跟踪。
       settleReferencePicker(
-        { files: workspaceRefs, mentionItems, hostAttachments },
+        { files: result.files, mentionItems },
         workspaceRefs
       );
     },
@@ -1367,6 +1200,9 @@ export function AgentGUINodeView({
       ? "0 minmax(var(--agent-gui-detail-min-width), 1fr)"
       : "var(--agent-gui-conversation-rail-width) minmax(var(--agent-gui-detail-min-width), 1fr)"
   } as CSSProperties;
+  const openAgentEnvSetup = useCallback(() => {
+    openAgentEnvPanel({ provider: viewModel.data.provider, focus: null });
+  }, [viewModel.data.provider]);
   const conversationRailStoreState =
     useMemo<AgentGUIConversationRailStoreSnapshot>(
       () => ({
@@ -1386,6 +1222,7 @@ export function AgentGUINodeView({
         openclawGateway,
         isCollapsed: conversationRailCollapsed,
         onCreateConversation: requestCreateConversation,
+        onOpenAgentEnvSetup: openAgentEnvSetup,
         onRetryOpenclawGateway: retryOpenclawGateway,
         onSelectConversation: selectConversation,
         onToggleConversationPinned: toggleConversationPinned,
@@ -1404,6 +1241,7 @@ export function AgentGUINodeView({
         conversationRailCollapsed,
         createConversationDisabled,
         labels,
+        openAgentEnvSetup,
         openConversationWindow,
         openProjectFiles,
         openclawGateway,
@@ -1519,9 +1357,9 @@ export function AgentGUINodeView({
           />
         </section>
       </div>
-      {referenceSourceAggregatorWithHostLocalFile ? (
+      {referenceSourceAggregator ? (
         <ReferenceSourcePicker
-          aggregator={referenceSourceAggregatorWithHostLocalFile}
+          aggregator={referenceSourceAggregator}
           copy={
             workspaceFileReferenceCopy ?? fallbackWorkspaceFileReferenceCopy
           }
@@ -1889,16 +1727,22 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       approvalRequired: labels.approvalRequired,
       authRequired: labels.authRequired,
       authLogin: labels.authLogin,
-      activatingSession: labels.activatingSession,
+      // While connecting, if the user already requested a cancel that is waiting
+      // for the session to come up, show "cancelling" instead of "connecting".
+      activatingSession: viewModel.isCancelPending
+        ? labels.cancellingSession
+        : labels.activatingSession,
       retryActivation: labels.retryActivation,
       continueInNewConversation: labels.continueInNewConversation
     }),
     [
       labels.activatingSession,
+      labels.cancellingSession,
       labels.approvalRequired,
       labels.authRequired,
       labels.continueInNewConversation,
-      labels.retryActivation
+      labels.retryActivation,
+      viewModel.isCancelPending
     ]
   );
   const goalBannerLabels = useMemo<AgentGoalBannerLabels>(
@@ -2539,19 +2383,32 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       />
       {showProviderSetupNotice ? (
         <div
-          className={styles.providerSetupNotice}
+          className={cn(
+            toastVariants({ variant: "default" }),
+            styles.providerSetupNotice
+          )}
+          data-slot="toast"
           data-testid="agent-gui-provider-setup-notice"
           role="status"
         >
-          <Info
-            aria-hidden="true"
-            className={styles.providerSetupNoticeIcon}
-            size={15}
-            strokeWidth={2}
-          />
-          <span className={styles.providerSetupNoticeText}>
-            {labels.installRequiredPlaceholder}
+          <span className="inline-flex max-w-full items-center justify-center gap-[6px] text-center text-[13px] font-normal leading-normal">
+            <span className="min-w-0 break-words">
+              {labels.installRequiredPlaceholder}
+            </span>
           </span>
+          <button
+            type="button"
+            className={styles.providerSetupNoticeAction}
+            data-testid="agent-gui-provider-setup-notice-action"
+            onClick={() =>
+              openAgentEnvPanel({
+                provider: viewModel.data.provider,
+                focus: "detect"
+              })
+            }
+          >
+            {labels.installRequiredAction}
+          </button>
         </div>
       ) : null}
       <ScrollArea
@@ -3114,6 +2971,7 @@ interface AgentGUIConversationRailPaneProps {
   openclawGateway: OpenclawGatewayViewModel | null;
   isCollapsed: boolean;
   onCreateConversation: (options?: { projectPath?: string | null }) => void;
+  onOpenAgentEnvSetup: () => void;
   onRetryOpenclawGateway: () => void;
   onSelectConversation: (agentSessionId: string) => void;
   onToggleConversationPinned: (agentSessionId: string, pinned: boolean) => void;
@@ -3194,6 +3052,7 @@ function agentGUIConversationRailStoreSnapshotsEqual(
     current.openclawGateway === next.openclawGateway &&
     current.isCollapsed === next.isCollapsed &&
     current.onCreateConversation === next.onCreateConversation &&
+    current.onOpenAgentEnvSetup === next.onOpenAgentEnvSetup &&
     current.onRetryOpenclawGateway === next.onRetryOpenclawGateway &&
     current.onSelectConversation === next.onSelectConversation &&
     current.onToggleConversationPinned === next.onToggleConversationPinned &&
@@ -3400,6 +3259,7 @@ const AgentGUIConversationRailPane = memo(
     openclawGateway,
     isCollapsed,
     onCreateConversation,
+    onOpenAgentEnvSetup,
     onRetryOpenclawGateway,
     onSelectConversation,
     onToggleConversationPinned,
@@ -3538,12 +3398,13 @@ const AgentGUIConversationRailPane = memo(
           <Button
             type="button"
             variant="secondary"
+            size="dialog"
             className={styles.newConversationIconButton}
             title={labels.newConversation}
             disabled={createConversationDisabled}
             onClick={() => onCreateConversation()}
           >
-            <EditIcon aria-hidden="true" />
+            <CreateChatIcon aria-hidden="true" />
             <span>{labels.newConversation}</span>
           </Button>
         </div>
@@ -3651,6 +3512,19 @@ const AgentGUIConversationRailPane = memo(
             })
           )}
         </ScrollArea>
+        <div className="shrink-0 border-t border-[var(--border-1)] px-2 py-1.5">
+          <Button
+            type="button"
+            variant="ghost"
+            className="flex w-full items-center justify-start gap-2 text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            title={labels.agentEnvSetup}
+            disabled={previewMode}
+            onClick={() => onOpenAgentEnvSetup()}
+          >
+            <Wrench aria-hidden="true" size={16} strokeWidth={1.8} />
+            <span>{labels.agentEnvSetup}</span>
+          </Button>
+        </div>
         <ConfirmationDialog
           cancelLabel={labels.cancel}
           className={AGENT_GUI_CONFIRMATION_DIALOG_CLASS_NAME}
@@ -3837,44 +3711,88 @@ const AgentGUIConversationRailSection = memo(
           )}
           {canCreateConversationFromSection ? (
             <div className={styles.conversationSectionActions}>
-              <span className={styles.conversationSectionActionTooltipWrap}>
-                <BareIconButton
-                  className={styles.conversationSectionMoreButton}
-                  aria-label={createConversationLabel}
-                  size="sm"
-                  disabled={createConversationDisabled}
-                  onClick={handleCreateConversation}
-                >
-                  <EditIcon aria-hidden="true" />
-                </BareIconButton>
-                <span
-                  aria-hidden="true"
-                  className={styles.conversationSectionActionTooltip}
-                >
-                  {createConversationLabel}
+              {previewMode ? (
+                <span className={styles.conversationSectionActionTooltipWrap}>
+                  <BareIconButton
+                    className={styles.conversationSectionMoreButton}
+                    aria-label={createConversationLabel}
+                    size="sm"
+                    disabled={createConversationDisabled}
+                    onClick={handleCreateConversation}
+                  >
+                    <CreateChatIcon aria-hidden="true" />
+                  </BareIconButton>
                 </span>
-              </span>
-              {projectPath ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <span
                       className={styles.conversationSectionActionTooltipWrap}
                     >
                       <BareIconButton
                         className={styles.conversationSectionMoreButton}
-                        aria-label={labels.projectSectionMoreActions}
+                        aria-label={createConversationLabel}
                         size="sm"
+                        disabled={createConversationDisabled}
+                        onClick={handleCreateConversation}
                       >
-                        <MoreHorizontalIcon aria-hidden="true" />
+                        <CreateChatIcon aria-hidden="true" />
                       </BareIconButton>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="right"
+                    sideOffset={6}
+                    className={styles.conversationSectionActionTooltip}
+                  >
+                    {createConversationLabel}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {projectPath ? (
+                <DropdownMenu>
+                  {previewMode ? (
+                    <DropdownMenuTrigger asChild>
                       <span
-                        aria-hidden="true"
+                        className={styles.conversationSectionActionTooltipWrap}
+                      >
+                        <BareIconButton
+                          className={styles.conversationSectionMoreButton}
+                          aria-label={labels.projectSectionMoreActions}
+                          size="sm"
+                        >
+                          <MoreHorizontalIcon aria-hidden="true" />
+                        </BareIconButton>
+                      </span>
+                    </DropdownMenuTrigger>
+                  ) : (
+                    <Tooltip>
+                      <DropdownMenuTrigger asChild>
+                        <TooltipTrigger asChild>
+                          <span
+                            className={
+                              styles.conversationSectionActionTooltipWrap
+                            }
+                          >
+                            <BareIconButton
+                              className={styles.conversationSectionMoreButton}
+                              aria-label={labels.projectSectionMoreActions}
+                              size="sm"
+                            >
+                              <MoreHorizontalIcon aria-hidden="true" />
+                            </BareIconButton>
+                          </span>
+                        </TooltipTrigger>
+                      </DropdownMenuTrigger>
+                      <TooltipContent
+                        side="right"
+                        sideOffset={6}
                         className={styles.conversationSectionActionTooltip}
                       >
                         {labels.projectSectionMoreActions}
-                      </span>
-                    </span>
-                  </DropdownMenuTrigger>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                   <DropdownMenuContent
                     align="end"
                     className={`${styles.composerMenuContent} nodrag [-webkit-app-region:no-drag]`}

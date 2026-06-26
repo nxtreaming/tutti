@@ -42,13 +42,34 @@ export type ReferenceNodePreviewState =
   | { status: "empty" }
   | { node: ReferenceNode; status: "directory" }
   | { node: ReferenceNode; status: "loading" }
-  | { content: string; node: ReferenceNode; status: "text" }
-  | { content: string; node: ReferenceNode; status: "html" }
-  | { node: ReferenceNode; objectUrl: string; status: "image" }
-  | { node: ReferenceNode; objectUrl: string; status: "video" }
+  | {
+      content: string;
+      node: ReferenceNode;
+      previewSizeBytes?: number;
+      status: "text";
+    }
+  | {
+      content: string;
+      node: ReferenceNode;
+      previewSizeBytes?: number;
+      status: "html";
+    }
+  | {
+      node: ReferenceNode;
+      objectUrl: string;
+      previewSizeBytes?: number;
+      status: "image";
+    }
+  | {
+      node: ReferenceNode;
+      objectUrl: string;
+      previewSizeBytes?: number;
+      status: "video";
+    }
   | {
       maxSizeBytes?: number;
       node: ReferenceNode;
+      previewSizeBytes?: number;
       reason: WorkspaceFilePreviewReadonlyReason;
       status: "readonly";
     }
@@ -363,6 +384,13 @@ export function useReferenceSourcePickerView({
     [controller]
   );
 
+  const shouldRefreshChildrenOnEnter = useCallback(
+    (sourceId: string) =>
+      snapshot.tabs.find((tab) => tab.sourceId === sourceId)?.capabilities
+        .navigable ?? false,
+    [snapshot.tabs]
+  );
+
   const enterFolder = useCallback(
     (node: ReferenceNode) => {
       const sourceId = node.ref.sourceId;
@@ -373,7 +401,11 @@ export function useReferenceSourcePickerView({
       ) {
         return;
       }
-      controller.ensureChildren(node);
+      if (shouldRefreshChildrenOnEnter(sourceId)) {
+        controller.refreshChildren(node);
+      } else {
+        controller.ensureChildren(node);
+      }
       setBreadcrumbBySource((current) => {
         const stack = current[sourceId] ?? [];
         const index = stack.findIndex(
@@ -385,7 +417,7 @@ export function useReferenceSourcePickerView({
       });
       setFocusedNode(null);
     },
-    [controller]
+    [controller, shouldRefreshChildrenOnEnter]
   );
 
   // 进入某源时默认选中它的第一个二级分组,而非停在根列表:
@@ -438,10 +470,19 @@ export function useReferenceSourcePickerView({
         return { ...current, [activeSourceId]: stack.slice(0, index + 1) };
       });
       const target = (breadcrumbBySource[activeSourceId] ?? [])[index] ?? null;
-      controller.ensureChildren(target);
+      if (target && shouldRefreshChildrenOnEnter(target.ref.sourceId)) {
+        controller.refreshChildren(target);
+      } else {
+        controller.ensureChildren(target);
+      }
       setFocusedNode(null);
     },
-    [activeSourceId, breadcrumbBySource, controller]
+    [
+      activeSourceId,
+      breadcrumbBySource,
+      controller,
+      shouldRefreshChildrenOnEnter
+    ]
   );
 
   const navigateToRoot = useCallback(
@@ -468,18 +509,33 @@ export function useReferenceSourcePickerView({
       if (!sourceId) {
         return;
       }
+      const nextScopeNodeId =
+        node.ref.nodeId === WORKSPACE_ROOT_GROUP_NODE_ID
+          ? null
+          : node.ref.nodeId;
       if (sourceId !== snapshot.activeSourceId) {
-        controller.setActiveSource(sourceId);
+        controller.setActiveSource(sourceId, nextScopeNodeId);
       }
       if (node.ref.nodeId === WORKSPACE_ROOT_GROUP_NODE_ID) {
+        controller.setSearchScope(null);
         navigateToRoot(sourceId);
         return;
       }
-      controller.ensureChildren(node);
+      if (shouldRefreshChildrenOnEnter(sourceId)) {
+        controller.refreshChildren(node);
+      } else {
+        controller.ensureChildren(node);
+      }
+      controller.setSearchScope(nextScopeNodeId);
       setBreadcrumbBySource((current) => ({ ...current, [sourceId]: [node] }));
       setFocusedNode(null);
     },
-    [controller, snapshot.activeSourceId, navigateToRoot]
+    [
+      controller,
+      snapshot.activeSourceId,
+      navigateToRoot,
+      shouldRefreshChildrenOnEnter
+    ]
   );
 
   const isSelected = useCallback(
@@ -513,7 +569,7 @@ export function useReferenceSourcePickerView({
     setIsConfirming(true);
     try {
       if (onConfirmBundles) {
-        const grouped = await controller.confirmGrouped();
+        const grouped = await controller.confirmGrouped(selectableSelection);
         onConfirmBundles({
           files: grouped.files.map(selectedReferenceToWorkspaceFileReference),
           bundles: grouped.bundles.map((bundle) => ({
@@ -527,7 +583,8 @@ export function useReferenceSourcePickerView({
           }))
         });
       } else {
-        const selected: SelectedReference[] = await controller.confirm();
+        const selected: SelectedReference[] =
+          await controller.confirm(selectableSelection);
         onConfirm(selected.map(selectedReferenceToWorkspaceFileReference));
       }
       onClose();
@@ -540,7 +597,7 @@ export function useReferenceSourcePickerView({
     onClose,
     onConfirm,
     onConfirmBundles,
-    selectableSelection.length
+    selectableSelection
   ]);
 
   // 焦点节点预览:文件夹→directory;文件→走源 readPreview,字节经 file-preview 分类
@@ -590,6 +647,11 @@ export function useReferenceSourcePickerView({
           setPreviewState({ node, status: "unsupported" });
           return;
         }
+        const previewSizeBytes = preview.bytes.byteLength;
+        const loadedSizeBytes =
+          node.sizeBytes != null && node.sizeBytes > 0
+            ? node.sizeBytes
+            : previewSizeBytes;
         const loaded = createWorkspaceFilePreviewLoadedState({
           bytes: preview.bytes,
           contentType: preview.contentType,
@@ -598,7 +660,7 @@ export function useReferenceSourcePickerView({
             name: node.displayName,
             path: node.ref.nodeId,
             mtimeMs: node.mtimeMs ?? null,
-            sizeBytes: node.sizeBytes ?? null
+            sizeBytes: loadedSizeBytes
           },
           renderHtml: true,
           target: {
@@ -606,7 +668,7 @@ export function useReferenceSourcePickerView({
             name: node.displayName,
             path: node.ref.nodeId,
             mtimeMs: node.mtimeMs ?? null,
-            sizeBytes: node.sizeBytes ?? null
+            sizeBytes: loadedSizeBytes
           }
         });
         if (cancelled) {
@@ -617,7 +679,12 @@ export function useReferenceSourcePickerView({
             new Blob([loaded.bytes], { type: loaded.contentType })
           );
           previewObjectUrlRef.current = objectUrl;
-          setPreviewState({ node, objectUrl, status: "image" });
+          setPreviewState({
+            node,
+            objectUrl,
+            previewSizeBytes,
+            status: "image"
+          });
           return;
         }
         if (loaded.status === "video") {
@@ -625,19 +692,35 @@ export function useReferenceSourcePickerView({
             new Blob([loaded.bytes], { type: loaded.contentType })
           );
           previewObjectUrlRef.current = objectUrl;
-          setPreviewState({ node, objectUrl, status: "video" });
+          setPreviewState({
+            node,
+            objectUrl,
+            previewSizeBytes,
+            status: "video"
+          });
           return;
         }
         if (loaded.status === "text") {
-          setPreviewState({ content: loaded.content, node, status: "text" });
+          setPreviewState({
+            content: loaded.content,
+            node,
+            previewSizeBytes,
+            status: "text"
+          });
           return;
         }
         if (loaded.status === "html") {
-          setPreviewState({ content: loaded.content, node, status: "html" });
+          setPreviewState({
+            content: loaded.content,
+            node,
+            previewSizeBytes,
+            status: "html"
+          });
           return;
         }
         setPreviewState({
           node,
+          previewSizeBytes,
           reason: loaded.reason,
           ...(loaded.maxSizeBytes == null
             ? {}

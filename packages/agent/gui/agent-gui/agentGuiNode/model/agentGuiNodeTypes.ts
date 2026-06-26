@@ -128,6 +128,7 @@ export interface AgentGUIComposerSettingsVM {
   supportsBrowser?: boolean;
   supportsComputerUse?: boolean;
   isSettingsLoading: boolean;
+  isModelOptionsLoading?: boolean;
   modelUnavailable: boolean;
   reasoningUnavailable: boolean;
   speedUnavailable: boolean;
@@ -173,6 +174,7 @@ export interface AgentGUINodeViewModel {
   isCreatingConversation: boolean;
   isSubmitting: boolean;
   isInterrupting: boolean;
+  isCancelPending: boolean;
   isRespondingApproval: boolean;
   promptImagesSupported: boolean;
   compactSupported: boolean | null;

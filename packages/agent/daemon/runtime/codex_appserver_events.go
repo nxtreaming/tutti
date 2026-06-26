@@ -63,14 +63,14 @@ func (a *CodexAppServerAdapter) appServerNotificationEvents(
 		// Record the provider turn id (needed for turn/interrupt and
 		// turn/steer) only while a turn context is registered, so stray
 		// turns (for example compaction) cannot block future prompts.
-		if a.sessionActiveTurn(session.AgentSessionID) != nil {
+		if activeTurn := a.sessionActiveTurn(session.AgentSessionID); activeTurn != nil {
 			if turn := payloadObject(params["turn"]); turn != nil {
 				providerTurnID := asString(turn["id"])
 				if a.setSessionActiveTurnID(session.AgentSessionID, providerTurnID) {
 					a.interruptActiveTurnAsync(&codexAppServerSession{
 						client:   client,
 						threadID: firstNonEmpty(asString(params["threadId"]), session.ProviderSessionID),
-					}, session, providerTurnID, "queued cancel")
+					}, session, activeTurn, providerTurnID, "queued cancel")
 				}
 			}
 		}
@@ -530,21 +530,23 @@ func appServerTokenUsageState(params map[string]any) (acpUsageState, bool) {
 	}, true
 }
 
-func (a *CodexAppServerAdapter) applyRateLimits(agentSessionID string, snapshot map[string]any) {
+func (a *CodexAppServerAdapter) applyRateLimits(agentSessionID string, snapshot map[string]any) bool {
 	if len(snapshot) == 0 {
-		return
+		return false
 	}
 	quotas := appServerRateLimitQuotas(snapshot)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	appSession := a.sessions[strings.TrimSpace(agentSessionID)]
 	if appSession == nil {
-		return
+		return false
 	}
 	appSession.rateLimits = clonePayload(snapshot)
+	appSession.startupRateLimitsReady = true
 	if len(quotas) > 0 {
 		appSession.usage = mergeACPUsageState(appSession.usage, acpUsageState{quotas: quotas})
 	}
+	return true
 }
 
 func (a *CodexAppServerAdapter) applyAccountUpdate(agentSessionID string, params map[string]any) {
@@ -629,7 +631,7 @@ func appServerRateLimitQuotas(snapshot map[string]any) []map[string]any {
 	return quotas
 }
 
-func appServerSystemNoticeEvent(session Session, turnID string, noticeKind string, title string, detail string) activityshared.Event {
+func appServerSystemNoticeEvent(session Session, turnID string, noticeKind string, title string, detail string, metadata ...map[string]any) activityshared.Event {
 	update := map[string]any{
 		"sessionUpdate": "system_notice",
 		"kind":          "agent_system_notice",
@@ -638,8 +640,19 @@ func appServerSystemNoticeEvent(session Session, turnID string, noticeKind strin
 	if title != "" {
 		update["title"] = title
 	}
+	if title == "Context compacted." {
+		update["noticeCommand"] = "compact"
+		update["noticeCommandStatus"] = "completed"
+	}
 	if detail != "" {
 		update["detail"] = detail
+	}
+	for _, extra := range metadata {
+		for key, value := range extra {
+			if value != nil {
+				update[key] = value
+			}
+		}
 	}
 	event, _ := acpSystemNoticeEvent(session, turnID, update, "system_notice", true)
 	return event
@@ -1427,6 +1440,7 @@ func codexAppServerConfigOptionDescriptors(
 	}
 
 	modelOptions := make([]any, 0, len(models))
+	modelOptionValues := map[string]struct{}{}
 	var effortValues []string
 	for _, model := range models {
 		if hidden, _ := model["hidden"].(bool); hidden {
@@ -1440,6 +1454,7 @@ func codexAppServerConfigOptionDescriptors(
 			"value": value,
 			"name":  firstNonEmpty(asString(model["displayName"]), value),
 		})
+		modelOptionValues[value] = struct{}{}
 		if value == currentModel || (currentModel == "" && truthyBool(model["isDefault"])) {
 			effortValues = appServerSupportedEfforts(model)
 			if currentModel == "" {
@@ -1448,6 +1463,14 @@ func codexAppServerConfigOptionDescriptors(
 			if currentEffort == "" {
 				currentEffort = asString(model["defaultReasoningEffort"])
 			}
+		}
+	}
+	if currentModel != "" {
+		if _, ok := modelOptionValues[currentModel]; !ok {
+			modelOptions = append(modelOptions, map[string]any{
+				"value": currentModel,
+				"name":  currentModel,
+			})
 		}
 	}
 	if len(effortValues) == 0 {

@@ -76,6 +76,32 @@ Use this shape for new entries:
   [bootstrap.ts](../../apps/desktop/src/main/bootstrap.ts)
   [defaults.ts](../../apps/desktop/src/main/defaults.ts)
 
+### App Center list requests repeatedly log runtime preload
+
+- Symptom:
+  `tuttid` logs repeated `workspace app runtime preload started` and
+  `workspace app runtime preload completed` lines while App Center is merely
+  open or refreshing, even when the user is not installing an app.
+- Quick checks:
+  Trace the call path from `ListWorkspaceApps` to
+  `AppCenterService.List`. A list or catalog refresh request should not call
+  `AppRunner.PreloadRuntimeForProfile` or the managed runtime resolver.
+- Root cause:
+  Treating App Center list/read requests as an opportunity to prepare runtimes
+  gives a pure read operation hidden background side effects. Frequent renderer
+  refreshes then turn a fast idempotent runtime check into noisy repeated logs.
+- Fix:
+  Keep passive runtime preloading in daemon startup or another explicit
+  runtime-preparation workflow. Install, launch, retry, and enabled-app start
+  paths may still resolve runtimes because they actually need executable app
+  runtimes.
+- Validation:
+  Add or run service coverage that `AppCenterService.List` returns visible
+  uninstalled apps without invoking the runtime resolver.
+- References:
+  [apps.go](../../services/tuttid/service/workspace/apps.go)
+  [apps_test.go](../../services/tuttid/service/workspace/apps_test.go)
+
 ### Load unpacked project roots with source manifests
 
 - Symptom:
@@ -339,6 +365,41 @@ delimited by ---`, and the composer skill picker may show partial or
   [daemon_app_mentions.go](../../services/tuttid/api/daemon_app_mentions.go)
   [desktopRichTextAtService.ts](../../apps/desktop/src/renderer/src/features/rich-text-at/services/internal/desktopRichTextAtService.ts)
   [desktopAgentProviderStatusService.ts](../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/desktopAgentProviderStatusService.ts)
+
+### Agent GUI no-project sessions appear under a user project
+
+- Symptom:
+  A conversation started with the "No project" selection appears in the Agent
+  GUI rail under a parent user-project group such as the user's home directory.
+- Quick checks:
+  Inspect the session `cwd` from the activity snapshot. Generated no-project
+  sessions should resolve as no-project before `cwd` is matched against parent
+  user-project paths. Check both the in-memory `rememberNoProjectPath` path and
+  the restart fallback that recognizes `Documents/tutti/session-<uuid>`.
+- Root cause:
+  Conversation project grouping is a view-model join of `cwd x userProjects`.
+  If a generated no-project cwd is not recognized before prefix/parent project
+  matching, the longest-parent project match can assign the session to a broad
+  project such as `$HOME`. Keep generated-path recognition in the host
+  `isNoProjectPath` callback because it has the user home-directory context;
+  a package-level suffix check would misclassify real projects that contain a
+  `Documents/tutti/session-<uuid>` subdirectory.
+- Fix:
+  Treat exact user-project path matches as explicit user intent, then call the
+  host no-project resolver before parent project matching. The desktop resolver
+  should recognize generated `$HOME/Documents/tutti/session-<uuid>` cwd values
+  while allowing explicit registered projects to override them. Keep the project
+  field derived in the Agent GUI view-model rather than writing it back into the
+  conversation store.
+- Validation:
+  Run
+  `pnpm --filter @tutti-os/agent-gui test -- agent-gui/agentGuiNode/model/agentGuiConversationModel.spec.ts`,
+  `node --import ./test/register-asset-stub.mjs --test --experimental-strip-types ./src/renderer/src/features/workspace-user-project/services/internal/desktopWorkspaceUserProjectService.test.ts`
+  from `apps/desktop`, then run `pnpm check:changed`.
+- References:
+  [desktopWorkspaceUserProjectService.ts](../../apps/desktop/src/renderer/src/features/workspace-user-project/services/internal/desktopWorkspaceUserProjectService.ts)
+  [agentGuiConversationProjectResolver.ts](../../packages/agent/gui/agent-gui/agentGuiNode/model/agentGuiConversationProjectResolver.ts)
+  [agentGuiConversationListStore.ts](../../packages/agent/gui/contexts/workspace/presentation/renderer/agentGuiConversationList/agentGuiConversationListStore.ts)
 
 ### Electron main/preload crashes on a workspace package `.ts` export
 
@@ -874,3 +935,54 @@ information is not available yet`, but `ps` or `lsof` still shows an older
 - References:
   [main.tsx](../../apps/desktop/src/renderer/src/main.tsx)
   [whyDidYouRender.ts](../../apps/desktop/src/renderer/src/lib/whyDidYouRender.ts)
+
+### Browser Node focus pings miss iframe-hosted editors
+
+- Symptom:
+  Clicking or typing inside a workspace app selects text or edits content, but
+  the owning Browser Node does not become the active node. This commonly shows
+  up in rich document editors that render the editable surface inside a
+  same-origin `iframe` or `srcdoc` frame.
+- Quick checks:
+  Inspect whether the app portals or mounts its editor into an iframe document.
+  If the top-level workspace app preload listens on `window.document` only, the
+  host will not receive pointer, focus, or keyboard pings from that child frame.
+- Root cause:
+  DOM events do not bubble from iframe documents to the parent document. Electron
+  webview preloads also do not run in subframes unless the host enables
+  `nodeIntegrationInSubFrames`, so iframe-hosted editors can interact normally
+  while the Browser Node focus bridge stays silent.
+- Fix:
+  Enable subframe preload execution only for host-controlled Browser Node or
+  workspace app guest preloads. Keep privileged workspace app bridges, such as
+  `tuttiExternal`, and behavior-changing guest logic, such as `_blank` link
+  interception, main-frame-only via `process.isMainFrame`. Install only passive
+  interaction forwarding in subframes.
+- Validation:
+  Run Browser Node and desktop preload tests, desktop typecheck, and the desktop
+  build. For workspace app preloads, inspect the built preload output so the
+  guest files remain self-contained.
+- References:
+  [webviewSecurity.ts](../../packages/browser/workbench-node/src/electron-main/webviewSecurity.ts)
+  [workspaceApp.ts](../../apps/desktop/src/preload/entries/workspaceApp.ts)
+  [workspaceAppInteractionForwarding.ts](../../apps/desktop/src/preload/entries/workspaceAppInteractionForwarding.ts)
+
+### Agent generated files under system temp do not open
+
+- Symptom:
+  Agent GUI shows a generated or changed file under a path such as
+  `/var/folders/.../T/codex-presentations/...`, but clicking the file does not
+  reveal it in FileManager.
+- Quick checks:
+  Confirm the desktop workspace files launch coordinator accepts the path, then
+  confirm `tuttid` resolves the workspace file root for the requested absolute
+  path instead of forcing the user home root.
+- Root cause:
+  Some agent tools write durable-looking outputs to system temporary
+  directories. FileManager can reveal a precise local path, but both the
+  renderer launch filter and daemon workspace root resolution must allow that
+  external absolute path.
+- Fix:
+  Treat explicitly launched local absolute paths like direct hidden-file reveal:
+  do not add them as projects or default locations, but allow FileManager to
+  load the parent directory and apply normal local-file operations.

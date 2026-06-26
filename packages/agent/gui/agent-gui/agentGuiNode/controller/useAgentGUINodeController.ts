@@ -92,6 +92,7 @@ import { isWorkspaceAgentUntitledTask } from "../../../shared/workspaceAgentLate
 import { projectWorkspaceAgentMessagesToTimelineItems } from "../../../shared/agentConversation/projection/workspaceAgentMessageProjection";
 import { mergeWorkspaceAgentMessages } from "../../../host/workspaceAgentSessionMessages";
 import {
+  createWorkspaceAgentActivityUserMessageIdFromClientSubmitId,
   isWorkspaceAgentActivityOptimisticMessage,
   selectWorkspaceAgentActivityOverlayMessages,
   type WorkspaceAgentActivityMessage,
@@ -146,6 +147,7 @@ import {
 } from "../../../contexts/workspace/presentation/renderer/agentGuiConversationList/agentGuiConversationListStore";
 import { useAgentGuiConversationList } from "../../../contexts/workspace/presentation/renderer/agentGuiConversationList/useAgentGuiConversationList";
 import { useAgentGUIActivation } from "./useAgentGUIActivation";
+import { pendingInterruptActionForDisplayStatus } from "./pendingInterrupt";
 import {
   formatAgentMentionMarkdown,
   normalizeAgentSessionMentionTitle
@@ -248,6 +250,17 @@ interface ACPConfigOptionSelection {
   currentValue: string | null;
 }
 
+type AgentSubmitTraceState = {
+  agentSessionId: string;
+  blockCount: number;
+  clientSubmitId: string;
+  hasImage: boolean;
+  promptLength: number;
+  queued: boolean;
+  startedAtUnixMs: number;
+  turnId: string | null;
+};
+
 function reportAgentGUIRuntimeError(input: {
   agentSessionId?: string | null;
   context?: Record<string, unknown>;
@@ -330,6 +343,107 @@ function reportAgentGUICancelDiagnostic(input: {
   } catch {
     // Diagnostic logging must never affect the Agent GUI recovery path.
   }
+}
+
+function reportAgentSubmitTraceDiagnostic(input: {
+  event: string;
+  runtime: AgentActivityRuntime;
+  trace: AgentSubmitTraceState;
+  workspaceId: string;
+  fields?: Record<string, unknown>;
+}): void {
+  const reportDiagnostic = input.runtime.reportDiagnostic;
+  if (!reportDiagnostic) {
+    return;
+  }
+  const nowUnixMs = Date.now();
+  try {
+    void Promise.resolve(
+      reportDiagnostic.call(input.runtime, {
+        details: {
+          agentSessionId: input.trace.agentSessionId,
+          blockCount: input.trace.blockCount,
+          clientSubmitId: input.trace.clientSubmitId,
+          elapsedMs: Math.max(0, nowUnixMs - input.trace.startedAtUnixMs),
+          hasImage: input.trace.hasImage,
+          promptLength: input.trace.promptLength,
+          queued: input.trace.queued,
+          startedAtUnixMs: input.trace.startedAtUnixMs,
+          traceEvent: input.event,
+          turnId: input.trace.turnId,
+          ...(input.fields ?? {})
+        },
+        event: "agent.submit.trace",
+        level: "info",
+        source: "agent-gui",
+        workspaceId: input.workspaceId
+      })
+    ).catch(() => {});
+  } catch {
+    // Diagnostic logging must never affect the Agent GUI submit path.
+  }
+}
+
+function scheduleAgentSubmitTracePaint(input: {
+  event?: string;
+  runtime: AgentActivityRuntime;
+  trace: AgentSubmitTraceState;
+  workspaceId: string;
+}): void {
+  const logPaint = () =>
+    reportAgentSubmitTraceDiagnostic({
+      event: input.event ?? "optimistic_user_message_painted",
+      runtime: input.runtime,
+      trace: input.trace,
+      workspaceId: input.workspaceId
+    });
+  const requestFrame = globalThis.requestAnimationFrame;
+  if (typeof requestFrame !== "function") {
+    setTimeout(logPaint, 0);
+    return;
+  }
+  requestFrame(() => requestFrame(logPaint));
+}
+
+function createAgentSubmitTraceState(input: {
+  agentSessionId: string;
+  content: readonly AgentPromptContentBlock[];
+  prompt: string;
+  queued: boolean;
+  startedAtUnixMs: number;
+}): AgentSubmitTraceState {
+  return {
+    agentSessionId: input.agentSessionId,
+    blockCount: input.content.length,
+    clientSubmitId: createAgentSubmitTraceId(),
+    hasImage: agentPromptContentHasImage(input.content),
+    promptLength: input.prompt.length,
+    queued: input.queued,
+    startedAtUnixMs: input.startedAtUnixMs,
+    turnId: null
+  };
+}
+
+function agentSubmitTraceMetadata(
+  trace: AgentSubmitTraceState
+): Record<string, unknown> {
+  return {
+    clientSubmitId: trace.clientSubmitId,
+    clientSubmittedAtUnixMs: trace.startedAtUnixMs,
+    promptBlockCount: trace.blockCount,
+    promptHasImage: trace.hasImage,
+    promptLength: trace.promptLength,
+    queued: trace.queued,
+    source: "agent-gui"
+  };
+}
+
+function createAgentSubmitTraceId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  const fallbackHex = Math.random().toString(16).slice(2).padEnd(12, "0");
+  return `submit-${Date.now().toString(36)}-${fallbackHex.slice(0, 12)}`;
 }
 
 function cancelResultSessionStatusIsNonBusy(
@@ -571,6 +685,26 @@ function isSessionNotFoundErrorCode(
   code: AppErrorCode | null | undefined
 ): boolean {
   return code === AGENT_SESSION_NOT_FOUND_ERROR;
+}
+
+const WORKSPACE_AGENT_SESSION_NOT_READY_REASON =
+  "workspace_agent_session_not_found";
+
+// True when a cancel raced session startup: the workspace agent session is not
+// registered in the runtime yet (its thread/start is still in flight), so the
+// daemon reports "workspace agent session not found". This is transient — the
+// session is connecting — so it must not surface as a hard error.
+function isAgentSessionNotReadyError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const reason = (error as { reason?: unknown }).reason;
+    if (reason === WORKSPACE_AGENT_SESSION_NOT_READY_REASON) {
+      return true;
+    }
+  }
+  return (
+    getAgentGUIRawErrorMessage(error)?.trim() ===
+    "workspace agent session not found"
+  );
 }
 
 function isSettingsRequireNewSessionErrorCode(
@@ -1412,16 +1546,22 @@ function createOptimisticPromptMessage(input: {
   workspaceId: string;
   agentSessionId: string;
   turnId: string;
+  clientSubmitId?: string;
   userId: string;
   prompt: string;
   content: AgentPromptContentBlock[];
   occurredAtUnixMs: number;
 }): WorkspaceAgentActivityMessage {
+  const clientSubmitMessageId = input.clientSubmitId
+    ? createWorkspaceAgentActivityUserMessageIdFromClientSubmitId(
+        input.clientSubmitId
+      )
+    : null;
   return {
     id: Math.max(1, Math.floor(input.occurredAtUnixMs)),
     workspaceId: input.workspaceId,
     agentSessionId: input.agentSessionId,
-    messageId: `optimistic:user:${input.turnId}`,
+    messageId: clientSubmitMessageId ?? `optimistic:user:${input.turnId}`,
     version: Math.max(1, Math.floor(input.occurredAtUnixMs)),
     turnId: input.turnId,
     role: "user",
@@ -1429,12 +1569,17 @@ function createOptimisticPromptMessage(input: {
     payload: {
       __agentGuiOptimisticPrompt: true,
       actorId: input.userId,
+      ...(input.clientSubmitId ? { clientSubmitId: input.clientSubmitId } : {}),
       content: input.content,
       text: input.prompt
     },
     occurredAtUnixMs: input.occurredAtUnixMs,
     startedAtUnixMs: input.occurredAtUnixMs
   };
+}
+
+function createPendingOptimisticTurnId(clientSubmitId: string): string {
+  return `pending:${clientSubmitId}`;
 }
 
 function projectAgentGUIMessagesToTimelineItems(
@@ -1507,6 +1652,19 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function appServerStartupMetadata(
+  runtimeContext: Record<string, unknown> | null | undefined
+): Record<string, unknown> | null {
+  return recordValue(runtimeContext?.appServerStartup);
+}
+
+function isAppServerStartupLoading(
+  runtimeContext: Record<string, unknown> | null | undefined,
+  key: "models" | "rateLimits"
+): boolean {
+  return appServerStartupMetadata(runtimeContext)?.[key] === "loading";
 }
 
 function draftAgentSessionIdFromComposerOptions(
@@ -1798,6 +1956,8 @@ function areComposerSettingsVMsEqual(
     (left.supportsComputerUse ?? false) ===
       (right.supportsComputerUse ?? false) &&
     left.isSettingsLoading === right.isSettingsLoading &&
+    Boolean(left.isModelOptionsLoading) ===
+      Boolean(right.isModelOptionsLoading) &&
     left.modelUnavailable === right.modelUnavailable &&
     left.reasoningUnavailable === right.reasoningUnavailable &&
     left.speedUnavailable === right.speedUnavailable &&
@@ -2109,6 +2269,28 @@ function readNodeDefaultDraftSettings(input: {
 function conversationStatusFromStatePatch(
   patch: WorkspaceAgentActivityStatePatch
 ): AgentGUIConversationSummary["status"] | null {
+  const turnPhase = patch.turn?.phase?.trim() ?? "";
+  if (turnPhase === "settled") {
+    switch (patch.turn?.outcome?.trim()) {
+      case "failed":
+        return "failed";
+      case "canceled":
+      case "interrupted":
+        return "canceled";
+      case "completed":
+      default:
+        return "completed";
+    }
+  }
+  switch (turnPhase) {
+    case "submitted":
+    case "running":
+      return "working";
+    case "waiting":
+      return "waiting";
+    default:
+      break;
+  }
   const normalized = normalizeOptionalWorkspaceAgentStatus({
     lifecycleStatus: patch.lifecycleStatus,
     currentPhase: patch.currentPhase,
@@ -2192,7 +2374,10 @@ function hasSessionControlStatePatch(
   return (
     normalizeOptionalText(patch.permissionModeId) !== null ||
     patch.settings !== undefined ||
-    patch.runtimeContext !== undefined
+    patch.runtimeContext !== undefined ||
+    patch.submitAvailability !== undefined ||
+    patch.turn?.submitAvailability !== undefined ||
+    patch.turn?.phase !== undefined
   );
 }
 
@@ -2261,6 +2446,27 @@ function mergeSessionControlStatePatch(
       permissionModeId: effectivePermissionMode
     };
   }
+  const submitAvailability =
+    patch.submitAvailability ?? patch.turn?.submitAvailability;
+  if (submitAvailability !== undefined) {
+    next.submitAvailability = submitAvailability;
+    changed = true;
+  }
+  if (patch.turn?.phase) {
+    next.turnLifecycle = {
+      activeTurnId:
+        patch.turn.activeTurnId !== undefined
+          ? patch.turn.activeTurnId
+          : patch.turn.phase === "settled"
+            ? null
+            : patch.turn.turnId,
+      phase: patch.turn.phase,
+      settling: patch.turn.settling,
+      outcome: patch.turn.outcome ?? null,
+      completedCommand: patch.turn.completedCommand ?? null
+    };
+    changed = true;
+  }
   if (
     patch.occurredAtUnixMs !== undefined &&
     Number.isFinite(patch.occurredAtUnixMs)
@@ -2274,6 +2480,19 @@ function mergeSessionControlStatePatch(
 function conversationStatusFromSessionState(
   state: AgentSessionState
 ): AgentGUIConversationSummary["status"] | null {
+  if (state.turnLifecycle?.phase) {
+    return conversationStatusFromStatePatch({
+      agentSessionId: state.agentSessionId,
+      turn: {
+        turnId: state.turnLifecycle.activeTurnId ?? "",
+        activeTurnId: state.turnLifecycle.activeTurnId,
+        phase: state.turnLifecycle.phase,
+        outcome: state.turnLifecycle.outcome ?? undefined,
+        settling: state.turnLifecycle.settling,
+        completedCommand: state.turnLifecycle.completedCommand ?? undefined
+      }
+    });
+  }
   return conversationStatusFromStatusValue(state.status);
 }
 
@@ -2554,6 +2773,11 @@ export function useAgentGUINodeController({
     setQueuedPromptRetryBlockBySessionId
   ] = useState<Record<string, QueuedPromptRetryBlock | null>>({});
   const [interruptingSessionIds, setInterruptingSessionIds] = useState<
+    Record<string, boolean>
+  >({});
+  // Sessions whose cancel raced startup; the interrupt is retried once the
+  // session connects and its turn goes live.
+  const [pendingInterruptSessionIds, setPendingInterruptSessionIds] = useState<
     Record<string, boolean>
   >({});
   const [
@@ -2949,6 +3173,9 @@ export function useAgentGUINodeController({
   const failedNewConversationIdsRef = useRef(new Set<string>());
   const lastActiveModelByProviderRef = useRef<Record<string, string>>({});
   const pendingTurnIdBySessionIdRef = useRef<Record<string, string>>({});
+  const submitTraceBySessionIdRef = useRef<
+    Record<string, AgentSubmitTraceState>
+  >({});
   const conversationIdsRef = useRef(
     new Set(conversations.map((conversation) => conversation.id))
   );
@@ -4839,10 +5066,40 @@ export function useAgentGUINodeController({
       const normalizedLastError = patch.lastError?.trim() ?? "";
       const nextStatus = conversationStatusFromStatePatch(patch);
       const completionKey = completionKeyFromStatePatch(agentSessionId, patch);
+      const hasStructuredTurnLifecycle = Boolean(patch.turn?.phase?.trim());
       const hasControlStatePatch = hasSessionControlStatePatch(patch);
       const pendingTurnId =
         pendingTurnIdBySessionIdRef.current[agentSessionId]?.trim() ?? "";
       const patchTurnId = patch.turn?.turnId?.trim() ?? "";
+      const patchActiveTurnId = patch.turn?.activeTurnId?.trim() ?? "";
+      const structuredTurnPhase = patch.turn?.phase?.trim() ?? "";
+      const submitTrace = submitTraceBySessionIdRef.current[agentSessionId];
+      if (submitTrace && structuredTurnPhase) {
+        const matchesTraceTurn =
+          !submitTrace.turnId ||
+          patchTurnId === submitTrace.turnId ||
+          patchActiveTurnId === submitTrace.turnId;
+        if (matchesTraceTurn) {
+          if (!submitTrace.turnId && (patchTurnId || patchActiveTurnId)) {
+            submitTrace.turnId = patchTurnId || patchActiveTurnId;
+          }
+          reportAgentSubmitTraceDiagnostic({
+            event: `lifecycle.${structuredTurnPhase}`,
+            runtime: agentActivityRuntime,
+            trace: submitTrace,
+            workspaceId,
+            fields: {
+              outcome: patch.turn?.outcome ?? null,
+              submitAvailability: patch.turn?.submitAvailability ?? null
+            }
+          });
+          if (structuredTurnPhase === "settled") {
+            const next = { ...submitTraceBySessionIdRef.current };
+            delete next[agentSessionId];
+            submitTraceBySessionIdRef.current = next;
+          }
+        }
+      }
       const clearedPendingSubmittedTurn = Boolean(
         pendingTurnId &&
         ((patchTurnId && patchTurnId === pendingTurnId) ||
@@ -4908,10 +5165,12 @@ export function useAgentGUINodeController({
         const timelineItems = projectAgentGUIMessagesToTimelineItems(
           resolveSessionMessages(agentSessionId)
         );
-        const status = resolveConversationStatusFromTimelineEvidence({
-          status: nextStatus ?? conversation.status,
-          timelineItems
-        });
+        const status = hasStructuredTurnLifecycle
+          ? (nextStatus ?? conversation.status)
+          : resolveConversationStatusFromTimelineEvidence({
+              status: nextStatus ?? conversation.status,
+              timelineItems
+            });
         const hasUnreadCompletion =
           status === "completed"
             ? (conversation.hasUnreadCompletion ?? false)
@@ -4954,10 +5213,12 @@ export function useAgentGUINodeController({
         const timelineItems = projectAgentGUIMessagesToTimelineItems(
           resolveSessionMessages(agentSessionId)
         );
-        const transientStatus = resolveConversationStatusFromTimelineEvidence({
-          status: nextStatus ?? transient.status,
-          timelineItems
-        });
+        const transientStatus = hasStructuredTurnLifecycle
+          ? (nextStatus ?? transient.status)
+          : resolveConversationStatusFromTimelineEvidence({
+              status: nextStatus ?? transient.status,
+              timelineItems
+            });
         setTransientConversation({
           ...transient,
           ...transientTitleFields,
@@ -4989,6 +5250,7 @@ export function useAgentGUINodeController({
         string,
         WorkspaceAgentActivityMessage[]
       >();
+      const pendingCompletionKeysBySessionId = new Map<string, string>();
       const flushPendingMessages = () => {
         for (const [agentSessionId, messages] of pendingMessagesBySessionId) {
           recordLocalMessages(agentSessionId, messages);
@@ -4996,8 +5258,19 @@ export function useAgentGUINodeController({
             agentSessionId,
             projectAgentGUIMessagesToTimelineItems(messages)
           );
+          const completionKey =
+            pendingCompletionKeysBySessionId.get(agentSessionId);
+          if (completionKey && conversationListQuery) {
+            markAgentGUIConversationCompletionObserved({
+              query: conversationListQuery,
+              conversationId: agentSessionId,
+              completionKey,
+              allowReadyStatus: true
+            });
+          }
         }
         pendingMessagesBySessionId.clear();
+        pendingCompletionKeysBySessionId.clear();
       };
       for (const event of events) {
         if (event.eventType === "available_commands_update") {
@@ -5010,13 +5283,8 @@ export function useAgentGUINodeController({
             continue;
           }
           const completionKey = completionKeyFromMessage(message);
-          if (completionKey && conversationListQuery) {
-            markAgentGUIConversationCompletionObserved({
-              query: conversationListQuery,
-              conversationId: agentSessionId,
-              completionKey,
-              allowReadyStatus: true
-            });
+          if (completionKey) {
+            pendingCompletionKeysBySessionId.set(agentSessionId, completionKey);
           }
           const messages = pendingMessagesBySessionId.get(agentSessionId);
           if (messages) {
@@ -5243,6 +5511,23 @@ export function useAgentGUINodeController({
           draftAgentSessionId ?? createAgentGUIConversationId();
         pendingCreateAgentSessionId = agentSessionId;
         const createdAtUnixMs = Date.now();
+        const submitTrace = createAgentSubmitTraceState({
+          agentSessionId,
+          content: normalizedInitialContent,
+          prompt: normalizedInitialPrompt,
+          queued: false,
+          startedAtUnixMs: createdAtUnixMs
+        });
+        submitTraceBySessionIdRef.current = {
+          ...submitTraceBySessionIdRef.current,
+          [agentSessionId]: submitTrace
+        };
+        reportAgentSubmitTraceDiagnostic({
+          event: "submit.begin",
+          runtime: agentActivityRuntime,
+          trace: submitTrace,
+          workspaceId
+        });
         const optimisticConversation: AgentGUIConversationSummary = {
           id: agentSessionId,
           userId: currentUserId?.trim() ?? "",
@@ -5260,10 +5545,47 @@ export function useAgentGUINodeController({
           updatedAtUnixMs: createdAtUnixMs
         };
         setTransientConversation(optimisticConversation);
+        isComposerHomeRef.current = false;
+        setIsComposerHome(false);
+        activeConversationIdRef.current = agentSessionId;
+        setActiveConversationId(agentSessionId);
+        setIntent({ tag: "active", id: agentSessionId });
+        persistActiveConversation(agentSessionId);
         setAgentSessionViewMessagesLoading(
           sessionViewRef(agentSessionId),
           true
         );
+        reportAgentSubmitTraceDiagnostic({
+          event: "optimistic_state_applied",
+          runtime: agentActivityRuntime,
+          trace: submitTrace,
+          workspaceId,
+          fields: { mode: "new" }
+        });
+        recordLocalMessages(agentSessionId, [
+          createOptimisticPromptMessage({
+            workspaceId,
+            agentSessionId,
+            turnId: createPendingOptimisticTurnId(submitTrace.clientSubmitId),
+            clientSubmitId: submitTrace.clientSubmitId,
+            userId: currentUserId?.trim() || "user",
+            prompt: normalizedInitialPrompt,
+            content: [...normalizedInitialContent],
+            occurredAtUnixMs: createdAtUnixMs
+          })
+        ]);
+        reportAgentSubmitTraceDiagnostic({
+          event: "optimistic_user_message_recorded",
+          runtime: agentActivityRuntime,
+          trace: submitTrace,
+          workspaceId,
+          fields: { mode: "new" }
+        });
+        scheduleAgentSubmitTracePaint({
+          runtime: agentActivityRuntime,
+          trace: submitTrace,
+          workspaceId
+        });
         if (conversationListQuery) {
           markAgentGUIConversationCreatePending({
             query: conversationListQuery,
@@ -5280,7 +5602,20 @@ export function useAgentGUINodeController({
           ...current,
           [agentSessionId]: effectiveInitialSettings
         }));
+        setDraftBySessionId((current) => ({
+          ...current,
+          [nodeDefaultDraftContentKey(dataRef.current.provider)]:
+            emptyAgentComposerDraft(),
+          [agentSessionId]: emptyAgentComposerDraft()
+        }));
         setIsLoadingMessages(true);
+        reportAgentSubmitTraceDiagnostic({
+          event: "activation.requested",
+          runtime: agentActivityRuntime,
+          trace: submitTrace,
+          workspaceId,
+          fields: { mode: "new" }
+        });
         return activation.activate({
           mode: "new",
           agentSessionId,
@@ -5288,6 +5623,7 @@ export function useAgentGUINodeController({
           cwd: selectedProjectPath ?? "",
           initialContent: normalizedInitialContent,
           initialDisplayPrompt,
+          metadata: agentSubmitTraceMetadata(submitTrace),
           title: initialConversationTitle,
           settings: effectiveInitialSettings,
           openclawGatewayReady:
@@ -5298,6 +5634,29 @@ export function useAgentGUINodeController({
       })()
         .then((result) => {
           const agentSessionId = result.session.agentSessionId;
+          const submitTrace = submitTraceBySessionIdRef.current[agentSessionId];
+          if (submitTrace) {
+            reportAgentSubmitTraceDiagnostic({
+              event: "activation.resolved",
+              runtime: agentActivityRuntime,
+              trace: submitTrace,
+              workspaceId,
+              fields: {
+                mode: "new",
+                sessionStatus: result.session.status
+              }
+            });
+            reportAgentSubmitTraceDiagnostic({
+              event: "submit.accepted",
+              runtime: agentActivityRuntime,
+              trace: submitTrace,
+              workspaceId,
+              fields: {
+                mode: "new",
+                sessionStatus: result.session.status
+              }
+            });
+          }
           if (conversationListQuery) {
             clearAgentGUIConversationCreatePending({
               query: conversationListQuery,
@@ -5403,6 +5762,22 @@ export function useAgentGUINodeController({
             startingConversationIdRef.current === agentSessionId ||
             (activeConversationIdRef.current === null &&
               isComposerHomeRef.current);
+          const submitTrace = submitTraceBySessionIdRef.current[agentSessionId];
+          if (submitTrace) {
+            const nextTraces = { ...submitTraceBySessionIdRef.current };
+            delete nextTraces[agentSessionId];
+            submitTraceBySessionIdRef.current = nextTraces;
+            reportAgentSubmitTraceDiagnostic({
+              event: "submit.failed",
+              runtime: agentActivityRuntime,
+              trace: submitTrace,
+              workspaceId,
+              fields: {
+                errorCode: getAgentGUIErrorCode(error) ?? "unknown",
+                mode: "new"
+              }
+            });
+          }
           if (
             !shouldShowFailedConversation &&
             !isCurrentConversation(agentSessionId)
@@ -5487,6 +5862,7 @@ export function useAgentGUINodeController({
       isCurrentConversation,
       agentActivityRuntime,
       pendingCreateOwnerKey,
+      recordLocalMessages,
       unactivateIfStale,
       workspaceId
     ]
@@ -5709,6 +6085,23 @@ export function useAgentGUINodeController({
           ? displayPrompt
           : agentPromptContentDisplayText(normalizedContent);
       const submittedAtUnixMs = Date.now();
+      const submitTrace = createAgentSubmitTraceState({
+        agentSessionId,
+        content: normalizedContent,
+        prompt: submittedPromptText,
+        queued: queuedPromptId !== undefined,
+        startedAtUnixMs: submittedAtUnixMs
+      });
+      submitTraceBySessionIdRef.current = {
+        ...submitTraceBySessionIdRef.current,
+        [agentSessionId]: submitTrace
+      };
+      reportAgentSubmitTraceDiagnostic({
+        event: "submit.begin",
+        runtime: agentActivityRuntime,
+        trace: submitTrace,
+        workspaceId
+      });
       const previousConversationStatus =
         resolveConversationSummaryById(
           conversationsRef.current,
@@ -5755,26 +6148,74 @@ export function useAgentGUINodeController({
         currentPhase: "working",
         occurredAtUnixMs: submittedAtUnixMs
       });
+      reportAgentSubmitTraceDiagnostic({
+        event: "optimistic_state_applied",
+        runtime: agentActivityRuntime,
+        trace: submitTrace,
+        workspaceId
+      });
       void Promise.resolve()
         .then(() => {
           if (!isCurrentConversation(agentSessionId)) {
             return null;
           }
+          reportAgentSubmitTraceDiagnostic({
+            event: "send_input.requested",
+            runtime: agentActivityRuntime,
+            trace: submitTrace,
+            workspaceId
+          });
           return agentActivityRuntime.sendInput({
             workspaceId,
             agentSessionId,
             content: normalizedContent,
             displayPrompt:
-              displayPrompt && displayPrompt.trim() ? displayPrompt : null
+              displayPrompt && displayPrompt.trim() ? displayPrompt : null,
+            metadata: agentSubmitTraceMetadata(submitTrace)
           });
         })
         .then((result) => {
           if (!result || !isCurrentConversation(agentSessionId)) {
             return;
           }
-          const submittedStatus = conversationStatusFromStatusValue(
-            projectCoreSessionStatus(result.status)
-          );
+          submitTrace.turnId = result.turnId.trim() || null;
+          reportAgentSubmitTraceDiagnostic({
+            event: "send_input.resolved",
+            runtime: agentActivityRuntime,
+            trace: submitTrace,
+            workspaceId,
+            fields: {
+              submitAvailability: result.submitAvailability,
+              turnLifecycle: result.turnLifecycle
+            }
+          });
+          reportAgentSubmitTraceDiagnostic({
+            event: "submit.accepted",
+            runtime: agentActivityRuntime,
+            trace: submitTrace,
+            workspaceId,
+            fields: {
+              submitAvailability: result.submitAvailability,
+              turnLifecycle: result.turnLifecycle
+            }
+          });
+          const submittedStatus =
+            conversationStatusFromStatePatch({
+              agentSessionId,
+              turn: {
+                turnId: result.turnId,
+                phase: result.turnLifecycle.phase,
+                outcome: result.turnLifecycle.outcome ?? undefined,
+                activeTurnId: result.turnLifecycle.activeTurnId,
+                settling: result.turnLifecycle.settling,
+                completedCommand:
+                  result.turnLifecycle.completedCommand ?? undefined,
+                submitAvailability: result.submitAvailability
+              }
+            }) ??
+            conversationStatusFromStatusValue(
+              projectCoreSessionStatus(result.session.status)
+            );
           if (submittedStatus && submittedStatus !== "ready") {
             patchConversation(agentSessionId, {
               status: submittedStatus,
@@ -5831,8 +6272,7 @@ export function useAgentGUINodeController({
               return { ...current, [agentSessionId]: null };
             });
           }
-          const submittedTurnId =
-            normalizeConfigOptionValue(recordValue(result)?.turnId) ?? "";
+          const submittedTurnId = result.turnId.trim();
           if (submittedTurnId) {
             pendingTurnIdBySessionIdRef.current = {
               ...pendingTurnIdBySessionIdRef.current,
@@ -5843,12 +6283,24 @@ export function useAgentGUINodeController({
                 workspaceId,
                 agentSessionId,
                 turnId: submittedTurnId,
+                clientSubmitId: submitTrace.clientSubmitId,
                 userId: currentUserId?.trim() || "user",
                 prompt: submittedPromptText,
                 content: normalizedContent,
                 occurredAtUnixMs: Date.now()
               })
             ]);
+            reportAgentSubmitTraceDiagnostic({
+              event: "optimistic_user_message_recorded",
+              runtime: agentActivityRuntime,
+              trace: submitTrace,
+              workspaceId
+            });
+            scheduleAgentSubmitTracePaint({
+              runtime: agentActivityRuntime,
+              trace: submitTrace,
+              workspaceId
+            });
           }
           void refreshMessagesFromSnapshot(agentSessionId);
           if (
@@ -5861,6 +6313,18 @@ export function useAgentGUINodeController({
           }
         })
         .catch((error) => {
+          const nextTraces = { ...submitTraceBySessionIdRef.current };
+          delete nextTraces[agentSessionId];
+          submitTraceBySessionIdRef.current = nextTraces;
+          reportAgentSubmitTraceDiagnostic({
+            event: "submit.failed",
+            runtime: agentActivityRuntime,
+            trace: submitTrace,
+            workspaceId,
+            fields: {
+              errorCode: getAgentGUIErrorCode(error)
+            }
+          });
           const currentSessionState =
             getAgentSessionView(sessionViewRef(agentSessionId))?.controlState ??
             null;
@@ -6274,25 +6738,37 @@ export function useAgentGUINodeController({
           void syncConversationListProjection(agentSessionId);
         })
         .catch((error) => {
-          if (isCurrentConversation(agentSessionId)) {
-            reportAgentGUIRuntimeError({
-              agentSessionId,
-              error,
-              phase: "interrupt_current_turn",
-              provider: dataRef.current.provider,
-              runtime: agentActivityRuntime,
-              workspaceId
-            });
-            setSuppressedPromptRequestIdsBySessionId((current) => {
-              if (current[agentSessionId] !== activePendingPrompt?.requestId) {
-                return current;
-              }
-              const next = { ...current };
-              delete next[agentSessionId];
-              return next;
-            });
-            setDetailError(getAgentGUIErrorMessage(error));
+          if (!isCurrentConversation(agentSessionId)) {
+            return;
           }
+          if (isAgentSessionNotReadyError(error)) {
+            // The session is still connecting (its thread/start is in flight),
+            // so there is no live turn to interrupt yet. Arm a retry for when
+            // the turn goes live and suppress the transient "session not found"
+            // banner instead of surfacing it as a hard error.
+            setPendingInterruptSessionIds((current) => ({
+              ...current,
+              [agentSessionId]: true
+            }));
+            return;
+          }
+          reportAgentGUIRuntimeError({
+            agentSessionId,
+            error,
+            phase: "interrupt_current_turn",
+            provider: dataRef.current.provider,
+            runtime: agentActivityRuntime,
+            workspaceId
+          });
+          setSuppressedPromptRequestIdsBySessionId((current) => {
+            if (current[agentSessionId] !== activePendingPrompt?.requestId) {
+              return current;
+            }
+            const next = { ...current };
+            delete next[agentSessionId];
+            return next;
+          });
+          setDetailError(getAgentGUIErrorMessage(error));
         })
         .finally(() => {
           setInterruptingSessionIds((current) => {
@@ -6318,6 +6794,51 @@ export function useAgentGUINodeController({
       agentActivityRuntime
     ]
   );
+
+  // A deferred cancel (armed when a cancel raced session startup) applies only
+  // to that startup turn. Fire it once the turn goes live; drop it once the
+  // session settles without a live turn, so it can never interrupt a later,
+  // unrelated turn in the same session.
+  useEffect(() => {
+    const agentSessionId = activeConversationId;
+    if (!agentSessionId || !pendingInterruptSessionIds[agentSessionId]) {
+      return;
+    }
+    const status = agentActivityDisplayStatuses.get(agentSessionId) ?? null;
+    const action = pendingInterruptActionForDisplayStatus(status);
+    if (action === "wait") {
+      return;
+    }
+    setPendingInterruptSessionIds((current) => {
+      if (!current[agentSessionId]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[agentSessionId];
+      return next;
+    });
+    if (action === "fire") {
+      interruptCurrentTurn("");
+    }
+  }, [
+    activeConversationId,
+    agentActivityDisplayStatuses,
+    pendingInterruptSessionIds,
+    interruptCurrentTurn
+  ]);
+
+  // Abandon a deferred cancel when the user switches away from its session, so
+  // it cannot fire against a different conversation later.
+  useEffect(() => {
+    const activeId = activeConversationId;
+    setPendingInterruptSessionIds((current) => {
+      const ids = Object.keys(current);
+      if (ids.length === 0 || (ids.length === 1 && ids[0] === activeId)) {
+        return current;
+      }
+      return activeId && current[activeId] ? { [activeId]: true } : {};
+    });
+  }, [activeConversationId]);
 
   const updateDraftContent = useCallback((draftContent: AgentComposerDraft) => {
     const agentSessionId = activeConversationIdRef.current;
@@ -7878,6 +8399,11 @@ export function useAgentGUINodeController({
   const isInterrupting =
     activeConversationId !== null &&
     Boolean(interruptingSessionIds[activeConversationId]);
+  // A cancel was requested but raced session startup; it will fire once the
+  // session connects. Surfaced so the connecting indicator can read "cancelling".
+  const isCancelPending =
+    activeConversationId !== null &&
+    Boolean(pendingInterruptSessionIds[activeConversationId]);
   const queuedPrompts = useMemo(
     () =>
       activeConversationId !== null
@@ -7985,9 +8511,12 @@ export function useAgentGUINodeController({
   const activeHasPendingSubmittedTurn = activeConversationId
     ? Boolean(pendingTurnIdBySessionIdRef.current[activeConversationId])
     : false;
+  const activeSubmitBlocked =
+    activeSessionState?.submitAvailability?.state === "blocked";
   const activeConversationBusy =
     agentActivityDisplayStatusBusy(activeActivityDisplayStatus) ||
-    activeHasPendingSubmittedTurn;
+    activeHasPendingSubmittedTurn ||
+    activeSubmitBlocked;
   const activeSessionResumable =
     activeRuntimeSession?.resumable ??
     activeConversation?.resumable ??
@@ -8111,6 +8640,10 @@ export function useAgentGUINodeController({
       (!composerSupport.model || activeSessionModelSelection !== null) &&
       (!composerSupport.reasoning || activeSessionReasoningSelection !== null);
     const isSettingsLoading = !hasACPSettings;
+    const isModelOptionsLoading = isAppServerStartupLoading(
+      activeSessionRuntimeContext,
+      "models"
+    );
     const selectedModelValue = draftModel;
     const selectedReasoningEffortValue =
       draftReasoningEffort as AgentSessionReasoningEffort | null;
@@ -8141,6 +8674,7 @@ export function useAgentGUINodeController({
       supportsPlanMode: composerSupport.plan,
       planExclusiveWithPermissionMode: data.provider === "claude-code",
       isSettingsLoading,
+      isModelOptionsLoading,
       modelUnavailable:
         activeConversationId !== null &&
         sessionSettings === null &&
@@ -8199,6 +8733,7 @@ export function useAgentGUINodeController({
     activeSessionModelSelection,
     activeSessionReasoningSelection,
     activeSessionSpeedSelection,
+    activeSessionRuntimeContext,
     data.provider,
     draftSettings.permissionModeId,
     draftSettings.planMode,
@@ -8373,6 +8908,7 @@ export function useAgentGUINodeController({
         isCreatingConversation,
         isSubmitting,
         isInterrupting,
+        isCancelPending,
         isRespondingApproval,
         promptImagesSupported,
         compactSupported,
@@ -8435,6 +8971,7 @@ export function useAgentGUINodeController({
       usageAlert,
       dismissUsageAlert,
       isInterrupting,
+      isCancelPending,
       isLoadingConversations,
       isLoadingMessages,
       activeSessionView?.hasOlderMessages,

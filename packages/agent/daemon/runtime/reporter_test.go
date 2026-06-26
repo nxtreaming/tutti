@@ -330,7 +330,8 @@ func TestReportActivityInputProjectsRuntimeMessagesToMessageUpdates(t *testing.T
 
 	session := reportTestSession()
 	userEvent := newTurnActivityEventWithID(session, "user-event-1", EventMessage, "turn-1", messageStreamStateCompleted, RoleUser, "inspect repo", map[string]any{
-		"messageId": "user-message-1",
+		"clientSubmitId": "submit-1",
+		"messageId":      "client-submit:user:submit-1",
 	})
 	userEvent.OccurredAtUnixMS = 101
 	assistantEvent := newTurnActivityEventWithID(session, "assistant-event-1", EventMessage, "turn-1", messageStreamStateCompleted, RoleAssistant, "found README", map[string]any{
@@ -351,14 +352,15 @@ func TestReportActivityInputProjectsRuntimeMessagesToMessageUpdates(t *testing.T
 	}
 	user := report.MessageUpdates[0]
 	if user.AgentSessionID != session.AgentSessionID ||
-		user.MessageID != "user-message-1" ||
+		user.MessageID != "client-submit:user:submit-1" ||
 		user.Seq != uint64(userEvent.OccurredAtUnixMS) ||
 		user.TurnID != "turn-1" ||
 		user.Role != "user" ||
 		user.Kind != "text" ||
 		user.OccurredAtUnixMS != userEvent.OccurredAtUnixMS ||
 		user.Payload["content"] != "inspect repo" ||
-		user.Payload["source"] != "runtime" {
+		user.Payload["source"] != "runtime" ||
+		user.Payload["clientSubmitId"] != "submit-1" {
 		t.Fatalf("user message update = %#v", user)
 	}
 	assistant := report.MessageUpdates[1]
@@ -456,6 +458,7 @@ func TestReportActivityInputForwardsSystemNoticeMetadataToPayload(t *testing.T) 
 		"title":             "Codex warning",
 		"detail":            "Skill descriptions were shortened to fit the 2% skills context budget.",
 		"additionalDetails": "Disable unused skills or plugins to leave more room for the rest.",
+		"code":              "CODEX_VERSION_TOO_OLD",
 		"retryable":         false,
 		"streamState":       messageStreamStateCompleted,
 	})
@@ -472,6 +475,7 @@ func TestReportActivityInputForwardsSystemNoticeMetadataToPayload(t *testing.T) 
 		notice.Payload["title"] != "Codex warning" ||
 		notice.Payload["detail"] != "Skill descriptions were shortened to fit the 2% skills context budget." ||
 		notice.Payload["additionalDetails"] != "Disable unused skills or plugins to leave more room for the rest." ||
+		notice.Payload["code"] != "CODEX_VERSION_TOO_OLD" ||
 		notice.Payload["retryable"] != false {
 		t.Fatalf("notice message payload = %#v, want system notice metadata forwarded to the GUI", notice.Payload)
 	}

@@ -102,7 +102,7 @@ If the task supplies exact metadata such as `appId`, version, display name, or d
 - `runtime.healthcheckPath`: `/healthz`
 - `localizationInfo`: omit unless the user asks for localized app metadata; when needed, follow `references/manifest-contract.md` and create each referenced locale file.
 
-If the user asks to connect the app to the Tutti ecosystem, expose at least one app capability through `tutti.cli.json` and declare it from `tutti.app.json`. If the app has a UI, include a business-level open command when there is a meaningful target to open, such as `open-project`, `open-file`, `open-run`, or `open-context`. The command should accept stable domain identifiers, validate them, map them to an app-owned origin-root route, and request opening this same app through `$TUTTI_CLI --json app open --app-id "$TUTTI_APP_ID" --route ...`. Do not expose raw frontend route construction as the public contract; callers should not need to know the app's internal router.
+If the user asks to connect the app to the Tutti ecosystem, expose at least one app capability through `tutti.cli.json` and declare it from `tutti.app.json`. If the app has a UI, include a business-level open command when there is a meaningful target to open, such as `open-project`, `open-file`, `open-run`, or `open-context`. The command should own the full self-open flow: accept stable domain identifiers, validate them, map them to an app-owned origin-root route, and request opening this same app through `$TUTTI_CLI` with an argv list equivalent to `--json app open --app-id "$TUTTI_APP_ID" --route ...`. `--json` is the CLI machine-readable output flag. Do not return route parameters for a caller or agent to interpret and then call `app open`; that makes the integration chain too indirect. Do not expose raw frontend route construction as the public contract; callers should invoke the app's business open command without needing to know the app's internal router.
 
 ## Runtime Rules
 
@@ -127,6 +127,17 @@ The runtime must:
 - Keep localized in-app copy behind stable keys and use the harness pattern in `references/i18n-harness.md` so future edits can check locale parity.
 - Use CSS `prefers-color-scheme` / `matchMedia("(prefers-color-scheme: dark)")` for dark/light rendering. Do not pass theme in the launch URL query.
 - When exposing app-owned files through references or generated content, return reference-list `location` objects scoped to `app-data-relative` or `app-package-relative`. Do not emit, persist, or instruct clients to open direct `.tutti` / `.tutti-dev` app state paths such as `$TUTTI_STATE_DIR/apps/...`; the daemon resolves valid locations before desktop clients open files.
+
+## Agent Runtime Integration
+
+For a full agent-enabled app repository, prefer `$tutti-agent-workspace-app` first. When this skill still needs to package or repair an app that already uses `@tutti-os/agent-acp-kit`, keep the app in control of agent policy:
+
+- Keep the generic `@tutti-os/agent-acp-kit` runtime path product-neutral. Tutti-specific behavior should stay behind the explicit `@tutti-os/agent-acp-kit/tutti` subpath and app-owned policy.
+- To give the app's local Codex or Claude run access to Tutti's dynamic CLI skills, prefer the `@tutti-os/agent-acp-kit/tutti` helper instead of hand-writing `$TUTTI_CLI agent tutti-cli-skill-bundle` execution and response parsing in each app.
+- Use `loadTuttiAgentSkillContext(...)` from the app host process. Pass the selected provider, run id, workspace cwd, and optional Tutti CLI command configuration such as `commandEnvNames`.
+- Pass `tuttiContext.skillManifest` into `runtime.run({ ..., skillManifest })`, merging it with app-owned skills when needed.
+- Treat `tuttiContext.recommendedSystemPrompt?.content` as advisory raw prompt content. The app may merge it into its own `systemPrompt`, edit it, place it elsewhere, or ignore it. Do not inject it silently, and do not reintroduce duplicated CLI parsing unless the installed kit lacks the helper.
+- Keep run-scoped app tools and MCP credentials app-owned. Do not pass broad Tutti daemon credentials or app secrets directly to the agent process.
 
 Do not assume a Tutti API token, browser extension, daemon internals, or broad desktop APIs. The only browser-side host surface a generated app may optionally consume is the app context described in `references/runtime-env.md`.
 
