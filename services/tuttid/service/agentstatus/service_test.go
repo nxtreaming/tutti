@@ -992,16 +992,19 @@ func TestServiceRunCodexInstallerReportsGlobalNPMActiveAction(t *testing.T) {
 	done := make(chan RunActionResult, 1)
 	pkgDir := filepath.Join(home, "lib", "node_modules", "@openai", "codex")
 	service.InstallCommand = func(ctx context.Context, input InstallCommandInput) (InstallCommandResult, error) {
+		// This callback runs on the RunAction goroutine, so it must never call
+		// t.Fatalf/t.Skipf — those Goexit only this goroutine and hang the test on
+		// <-done. Use t.Errorf and return so the test goroutine unblocks.
 		if !strings.Contains(input.Command, npmPath) ||
 			!strings.Contains(input.Command, "install") ||
 			!strings.Contains(input.Command, "-g") ||
 			!strings.Contains(input.Command, "@openai/codex") ||
 			!strings.Contains(input.Command, "--include=optional") ||
 			strings.Contains(input.Command, "--prefix") {
-			t.Fatalf("Command = %q, want global npm install with optional deps", input.Command)
+			t.Errorf("Command = %q, want global npm install with optional deps", input.Command)
 		}
 		if !slices.Contains(input.Env, "npm_config_registry=https://registry.example.test") {
-			t.Fatalf("Env = %#v, want selected npm registry", input.Env)
+			t.Errorf("Env = %#v, want selected npm registry", input.Env)
 		}
 		input.OnStdout("fetching @openai/codex")
 		close(installStarted)
@@ -1013,15 +1016,18 @@ func TestServiceRunCodexInstallerReportsGlobalNPMActiveAction(t *testing.T) {
 		writePackageManifest(t, pkgDir, "@openai/codex", MinSupportedCodexVersion)
 		codexPath := filepath.Join(pkgDir, "bin", "codex")
 		writeExecutable(t, codexPath, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'codex "+MinSupportedCodexVersion+"'; exit 0; fi\nsleep 5\n")
-		platformPath, ok := codexPlatformBinaryPath(pkgDir, runtime.GOOS, runtime.GOARCH)
-		if !ok {
-			t.Skipf("codex platform package unavailable for %s/%s", runtime.GOOS, runtime.GOARCH)
-		}
+		// Platform support was already checked on the test goroutine below, so ok
+		// is true here.
+		platformPath, _ := codexPlatformBinaryPath(pkgDir, runtime.GOOS, runtime.GOARCH)
 		writeExecutable(t, platformPath, "#!/bin/sh\nexit 0\n")
 		if err := os.Symlink(codexPath, filepath.Join(binDir, "codex-test")); err != nil {
-			t.Fatalf("symlink codex: %v", err)
+			t.Errorf("symlink codex: %v", err)
+			return InstallCommandResult{ExitCode: 1, Stderr: err.Error()}, err
 		}
 		return InstallCommandResult{ExitCode: 0, Stdout: "installed"}, nil
+	}
+	if _, ok := codexPlatformBinaryPath(pkgDir, runtime.GOOS, runtime.GOARCH); !ok {
+		t.Skipf("codex platform package unavailable for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	go func() {
 		result, err := service.RunAction(context.Background(), RunActionInput{

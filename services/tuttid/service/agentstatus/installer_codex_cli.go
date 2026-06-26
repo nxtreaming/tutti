@@ -3,9 +3,25 @@ package agentstatus
 import (
 	"context"
 	"log/slog"
+	"net/url"
 	"runtime"
 	"slices"
+	"strings"
 )
+
+// displayNPMRegistry returns a registry URL safe to surface in status and logs.
+// A custom registry override (agentNPMRegistryEnv) can embed credentials as
+// userinfo (https://user:token@host); strip them so they never reach the wizard
+// UI, telemetry, or log lines. The raw URL is still used for the npm env.
+func displayNPMRegistry(registry string) string {
+	trimmed := strings.TrimSpace(registry)
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.User == nil {
+		return trimmed
+	}
+	parsed.User = nil
+	return parsed.String()
+}
 
 func (s Service) runCodexCLILatestInstaller(
 	ctx context.Context,
@@ -24,11 +40,12 @@ func (s Service) runCodexCLILatestInstaller(
 	var result InstallCommandResult
 	var err error
 	for i, registry := range registries {
+		registryDisplay := displayNPMRegistry(registry)
 		setActiveAction("codex", ActiveAction{
 			ID:         ActionInstall,
 			Status:     "running",
 			Step:       "install",
-			Registry:   registry,
+			Registry:   registryDisplay,
 			NodeTarget: nodeTarget,
 		})
 		attemptCtx, cancel := context.WithTimeout(ctx, perRegistryInstallTimeout)
@@ -45,7 +62,7 @@ func (s Service) runCodexCLILatestInstaller(
 				ID:         ActionInstall,
 				Status:     "running",
 				Step:       "verify",
-				Registry:   registry,
+				Registry:   registryDisplay,
 				NodeTarget: nodeTarget,
 				Stdout:     result.Stdout,
 			})
@@ -54,7 +71,7 @@ func (s Service) runCodexCLILatestInstaller(
 		if i < len(registries)-1 {
 			slog.Warn(
 				"agent provider codex npm install failed on registry, trying next",
-				"registry", registry,
+				"registry", registryDisplay,
 				"exitCode", result.ExitCode,
 				"error", err,
 			)
