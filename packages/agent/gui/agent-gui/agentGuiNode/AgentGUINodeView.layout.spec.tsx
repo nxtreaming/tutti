@@ -1235,6 +1235,85 @@ describe("AgentGUINodeView layout persistence", () => {
       gap: "24px"
     });
   });
+
+  it("renders older-message loading above the transcript", () => {
+    const activeConversation = createConversationSummary("session-1");
+    renderAgentGUINodeView({
+      viewModel: {
+        ...createViewModel(),
+        conversations: [activeConversation],
+        activeConversation,
+        activeConversationId: activeConversation.id,
+        conversationDetail: createConversationDetail(),
+        isLoadingOlderMessages: true
+      }
+    });
+
+    const loading = screen.getByTestId("agent-gui-older-messages-loading");
+    expect(loading).toHaveTextContent("loadingConversation");
+    expect(screen.getByTestId("agent-conversation-flow")).toBeInTheDocument();
+  });
+
+  it("prefetches older messages near the top and preserves the prepend anchor", () => {
+    const activeConversation = createConversationSummary("session-1");
+    const actions = createActions();
+    const activeViewModel = {
+      ...createViewModel(),
+      conversations: [activeConversation],
+      activeConversation,
+      activeConversationId: activeConversation.id,
+      conversationDetail: createConversationDetail()
+    };
+    const { rerender } = renderAgentGUINodeView({
+      actions,
+      viewModel: activeViewModel
+    });
+    const timeline = screen.getByTestId("agent-gui-timeline") as HTMLElement;
+    let scrollHeight = 1000;
+    Object.defineProperty(timeline, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight
+    });
+    Object.defineProperty(timeline, "clientHeight", {
+      configurable: true,
+      get: () => 400
+    });
+
+    timeline.scrollTop = 500;
+    rerender(
+      buildAgentGUINodeViewElement({
+        actions,
+        viewModel: { ...activeViewModel, hasOlderMessages: true }
+      })
+    );
+    expect(actions.loadOlderConversationMessages).not.toHaveBeenCalled();
+
+    timeline.scrollTop = 200;
+    fireEvent.scroll(timeline);
+    expect(actions.loadOlderConversationMessages).toHaveBeenCalledTimes(1);
+
+    scrollHeight = 1032;
+    rerender(
+      buildAgentGUINodeViewElement({
+        actions,
+        viewModel: {
+          ...activeViewModel,
+          hasOlderMessages: true,
+          isLoadingOlderMessages: true
+        }
+      })
+    );
+    expect(timeline.scrollTop).toBe(232);
+
+    scrollHeight = 1200;
+    rerender(
+      buildAgentGUINodeViewElement({
+        actions,
+        viewModel: { ...activeViewModel, hasOlderMessages: true }
+      })
+    );
+    expect(timeline.scrollTop).toBe(400);
+  });
 });
 
 describe("AgentGUINodeView usage", () => {
@@ -1376,6 +1455,9 @@ describe("AgentGUINodeView provider setup notice", () => {
     expect(notice).toHaveTextContent("installRequiredPlaceholder");
     expect(notice).toHaveAttribute("role", "status");
     expect(notice).toHaveAttribute("data-slot", "toast");
+    expect(
+      screen.getByTestId("agent-gui-provider-setup-notice-action")
+    ).toHaveTextContent("installRequiredAction");
   });
 
   it("floats the setup notice above the detail content without affecting layout", () => {
@@ -1416,108 +1498,27 @@ describe("AgentGUINodeView usage alert banner", () => {
     statusDotMock.calls = [];
   });
 
-  function alertViewModel({
-    usageAlert,
-    percentUsed = 85,
-    compactSupported = null
-  }: {
-    usageAlert: AgentGUINodeViewModel["usageAlert"];
-    percentUsed?: number;
-    compactSupported?: boolean | null;
-  }): AgentGUINodeViewModel {
+  it("does not render a composer banner for context usage alerts", () => {
     const activeConversation = createConversationSummary("session-1");
-    return {
-      ...createViewModel(),
-      conversations: [activeConversation],
-      activeConversation,
-      activeConversationId: activeConversation.id,
-      conversationDetail: createConversationDetail(),
-      usage: {
-        usedTokens: Math.round((percentUsed / 100) * 200_000),
-        totalTokens: 200_000,
-        percentUsed,
-        quotas: []
-      },
-      usageAlert,
-      compactSupported
-    };
-  }
-
-  it("does not render the banner when there is no usage alert", () => {
-    renderAgentGUINodeView({ viewModel: alertViewModel({ usageAlert: null }) });
+    renderAgentGUINodeView({
+      viewModel: {
+        ...createViewModel(),
+        conversations: [activeConversation],
+        activeConversation,
+        activeConversationId: activeConversation.id,
+        conversationDetail: createConversationDetail(),
+        usage: {
+          usedTokens: 194_000,
+          totalTokens: 200_000,
+          percentUsed: 97,
+          quotas: []
+        },
+        compactSupported: true
+      }
+    });
 
     expect(screen.queryByTestId("agent-gui-usage-alert")).toBeNull();
-  });
-
-  it("keeps the usage alert attached to the composer with inset square bottom corners", () => {
-    const css = readFileSync(resolve("app/renderer/agentactivity.css"), "utf8");
-    const usageAlertRule = css.match(
-      /\.agent-gui-node__usage-alert-banner\s*{[^}]*}/s
-    )?.[0];
-
-    expect(usageAlertRule).toContain("margin: 0 24px;");
-    expect(usageAlertRule).toContain("border-radius: 8px 8px 0 0;");
-    expect(usageAlertRule).toContain("font-size: 13px;");
-    expect(usageAlertRule).toContain("font-weight: 400;");
-    expect(usageAlertRule).not.toContain("margin: 0 12px 8px;");
-
-    const usageAlertDismissRule = css.match(
-      /\.agent-gui-node__usage-alert-dismiss\s*{[^}]*}/s
-    )?.[0];
-    expect(usageAlertDismissRule).toContain("border-radius: 4px;");
-  });
-
-  it("renders the warn banner without a compact action", () => {
-    renderAgentGUINodeView({
-      viewModel: alertViewModel({ usageAlert: "warn", percentUsed: 85 })
-    });
-
-    const banner = screen.getByTestId("agent-gui-usage-alert");
-    expect(banner).toHaveAttribute("data-usage-alert-tier", "warn");
-    expect(banner).toHaveTextContent("usageAlertWarn:85");
     expect(screen.queryByTestId("agent-gui-usage-alert-compact")).toBeNull();
-  });
-
-  it("renders the critical banner with a compact action that submits and dismisses", () => {
-    const actions = createActions();
-    renderAgentGUINodeView({
-      viewModel: alertViewModel({ usageAlert: "critical", percentUsed: 97 }),
-      actions
-    });
-
-    const banner = screen.getByTestId("agent-gui-usage-alert");
-    expect(banner).toHaveAttribute("data-usage-alert-tier", "critical");
-    expect(banner).toHaveTextContent("usageAlertCritical:97");
-
-    fireEvent.click(screen.getByTestId("agent-gui-usage-alert-compact"));
-
-    expect(actions.submitCompact).toHaveBeenCalledTimes(1);
-    expect(actions.dismissUsageAlert).toHaveBeenCalledTimes(1);
-  });
-
-  it("hides the compact action on the critical banner when compact is unsupported", () => {
-    renderAgentGUINodeView({
-      viewModel: alertViewModel({
-        usageAlert: "critical",
-        compactSupported: false
-      })
-    });
-
-    expect(screen.getByTestId("agent-gui-usage-alert")).toBeInTheDocument();
-    expect(screen.queryByTestId("agent-gui-usage-alert-compact")).toBeNull();
-  });
-
-  it("dismisses the banner through the dismiss button", () => {
-    const actions = createActions();
-    renderAgentGUINodeView({
-      viewModel: alertViewModel({ usageAlert: "warn" }),
-      actions
-    });
-
-    fireEvent.click(screen.getByTestId("agent-gui-usage-alert-dismiss"));
-
-    expect(actions.dismissUsageAlert).toHaveBeenCalledTimes(1);
-    expect(actions.submitCompact).not.toHaveBeenCalled();
   });
 });
 
@@ -1584,8 +1585,7 @@ function createActions(): AgentGUINodeViewProps["actions"] {
     createConversation: vi.fn(),
     selectConversation: vi.fn(),
     submitPrompt: vi.fn(),
-    submitCompact: vi.fn(),
-    dismissUsageAlert: vi.fn(),
+    loadOlderConversationMessages: vi.fn(),
     showPromptImagesUnsupported: vi.fn(),
     submitApprovalOption: vi.fn(),
     submitInteractivePrompt: vi.fn(),
@@ -1625,14 +1625,16 @@ function createViewModel(): AgentGUINodeViewModel {
     draftContent: { prompt: "", images: [] },
     isLoadingConversations: false,
     isLoadingMessages: false,
+    isLoadingOlderMessages: false,
+    hasOlderMessages: false,
     isCreatingConversation: false,
     isSubmitting: false,
     isInterrupting: false,
+    isCancelPending: false,
     isRespondingApproval: false,
     promptImagesSupported: true,
     compactSupported: null,
     usage: null,
-    usageAlert: null,
     listError: null,
     isDeletingConversation: false,
     isDeletingProjectConversations: false,
@@ -1749,6 +1751,7 @@ function createLabels(): AgentGUIViewLabels {
     initialPlaceholder: "initialPlaceholder",
     followupPlaceholder: "followupPlaceholder",
     installRequiredPlaceholder: "installRequiredPlaceholder",
+    installRequiredAction: "installRequiredAction",
     collaboratorSessionReadOnlyPlaceholder:
       "collaboratorSessionReadOnlyPlaceholder",
     send: "send",
@@ -1823,6 +1826,7 @@ function createLabels(): AgentGUIViewLabels {
     empty: "empty",
     conversations: "conversations",
     newConversation: "newConversation",
+    agentEnvSetup: "agentEnvSetup",
     noConversations: "noConversations",
     emptyProjectConversations: "emptyProjectConversations",
     startConversation: "startConversation",
@@ -1857,6 +1861,7 @@ function createLabels(): AgentGUIViewLabels {
     authRequired: "authRequired",
     authLogin: "authLogin",
     activatingSession: "activatingSession",
+    cancellingSession: "cancellingSession",
     retryActivation: "retryActivation",
     continueInNewConversation: "continueInNewConversation",
     goalLabel: "goalLabel",
@@ -1947,9 +1952,6 @@ function createLabels(): AgentGUIViewLabels {
     usageTokensLabel: "usageTokensLabel",
     usageLimitsLabel: "usageLimitsLabel",
     usageCompactAction: "usageCompactAction",
-    usageAlertWarnMessage: ({ percent }) => `usageAlertWarn:${percent}`,
-    usageAlertCriticalMessage: ({ percent }) => `usageAlertCritical:${percent}`,
-    usageAlertDismiss: "usageAlertDismiss",
     planImplementationLead: "planImplementationLead",
     planImplementationConfirm: "planImplementationConfirm",
     planImplementationFeedbackPlaceholder:

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { getAgentEnvPanelStore } from "../../agentEnv/agentEnvPanelStore";
 import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
 import { AgentMessageBlock } from "./AgentMessageBlock";
 import { AgentTranscriptItemView } from "./AgentTranscriptItemView";
@@ -293,6 +294,14 @@ describe("AgentTranscriptItemView render stability", () => {
     );
   });
 
+  it("keeps pasted prompt images separated from the message bubble", () => {
+    const css = readFileSync(resolve("app/renderer/agentactivity.css"), "utf8");
+
+    expect(css).toMatch(
+      /\.agent-gui-conversation__user-message-flow\s*{[^}]*row-gap:\s*14px/s
+    );
+  });
+
   it("loads user prompt image attachments from the activity runtime", async () => {
     const readSessionAttachment = vi.fn(async () => ({
       attachmentId: "attachment-1",
@@ -343,14 +352,14 @@ describe("AgentTranscriptItemView render stability", () => {
     await waitFor(() => {
       const image = screen.getByRole("img", { name: "screen.png" });
       expect(image).toHaveAttribute("src", "data:image/png;base64,aW1hZ2U=");
-      expect(image).toHaveClass("cursor-zoom-in", "size-full", "object-cover");
-      const imageBlock = image.closest(".size-20");
+      expect(image).toHaveClass("cursor-zoom-in", "max-h-20", "object-contain");
+      const imageBlock = image.closest("div");
       expect(imageBlock).toBeInstanceOf(HTMLElement);
-      expect(imageBlock).toHaveClass("size-20", "overflow-hidden");
+      expect(imageBlock).toHaveClass("max-h-20", "overflow-hidden");
       const imageGrid = imageBlock?.parentElement;
       expect(imageGrid).toHaveClass("grid", "justify-self-end");
       expect(imageGrid).toHaveStyle({
-        gridTemplateColumns: "repeat(1, 80px)"
+        gridTemplateColumns: "repeat(1, 160px)"
       });
       const imageGridClasses = imageGrid?.className.split(/\s+/) ?? [];
       expect(
@@ -563,13 +572,12 @@ describe("AgentTranscriptItemView render stability", () => {
   });
 
   it("shows local agent sign-in guidance for auth errors", () => {
-    const onAuthLogin = vi.fn();
+    getAgentEnvPanelStore().open = false;
     const { getByText } = render(
       <AgentMessageBlock
         workspaceRoot="/workspace/demo"
         basePath="/workspace/demo"
         row={assistantMessageRow(claudeCodeAuthErrorMessage())}
-        onAuthLogin={onAuthLogin}
         thinkingLabel="Thought process"
       />
     );
@@ -580,8 +588,11 @@ describe("AgentTranscriptItemView render stability", () => {
     expect(
       getByText("agentHost.agentGui.visibleErrorAuthRequiredLocalAgentHint")
     ).toBeTruthy();
-    fireEvent.click(getByText("agentHost.agentGui.authLogin"));
-    expect(onAuthLogin).toHaveBeenCalledWith("claude-code");
+    fireEvent.click(getByText("agentHost.agentGui.visibleErrorActionRelogin"));
+    const store = getAgentEnvPanelStore();
+    expect(store.open).toBe(true);
+    expect(store.provider).toBe("claude-code");
+    expect(store.focus).toBe("auth");
   });
 
   it("renders transport retry notices as quiet text", () => {

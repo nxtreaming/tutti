@@ -76,6 +76,22 @@ function queuedPromptTexts(
   );
 }
 
+function conversationBodies(viewModel: {
+  conversationDetail?: {
+    turns: readonly {
+      agentMessages: readonly { body?: string }[];
+      userMessages: readonly { body?: string }[];
+    }[];
+  } | null;
+}): string[] {
+  return (
+    viewModel.conversationDetail?.turns.flatMap((turn) => [
+      ...turn.userMessages.map((message) => message.body ?? ""),
+      ...turn.agentMessages.map((message) => message.body ?? "")
+    ]) ?? []
+  ).filter(Boolean);
+}
+
 function promptContent(text: string): { content: AgentPromptContentBlock[] } {
   return { content: promptBlocks(text) };
 }
@@ -1078,12 +1094,12 @@ describe("useAgentGUINodeController", () => {
       expect(retainEventStream).toHaveBeenCalledTimes(1);
     });
 
-    expect(listSessionTimeline).toHaveBeenCalledTimes(1);
+    expect(listSessionTimeline).toHaveBeenCalled();
     expect(getState).toHaveBeenCalledTimes(1);
     expect(releaseEventStream).not.toHaveBeenCalled();
   });
 
-  it("marks the first created conversation as message-loading before activation resolves", async () => {
+  it("keeps the first created conversation on home before activation resolves", async () => {
     let resolveActivate:
       | ((result: AgentHostActivateAgentSessionResult) => void)
       | undefined;
@@ -1129,14 +1145,22 @@ describe("useAgentGUINodeController", () => {
           workspaceId: "room-1",
           agentSessionId: capturedAgentSessionId
         })?.isLoadingMessages
-      ).toBe(true);
+      ).not.toBe(true);
     });
+    expect(result.current.viewModel.activeConversationId).toBeNull();
+    expect(result.current.viewModel.isCreatingConversation).toBe(true);
 
     await act(async () => {
       resolveActivate?.({
         session: agentSession(capturedAgentSessionId),
         activation: { mode: "new", status: "attached" }
       });
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe(
+        capturedAgentSessionId
+      );
     });
   });
 
@@ -1471,139 +1495,6 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
-  it("submits the literal /compact prompt through submitCompact", async () => {
-    const exec = vi.fn(async ({ agentSessionId }: { agentSessionId: string }) =>
-      agentSession(agentSessionId, {
-        status: "working",
-        updatedAtUnixMs: Date.now()
-      })
-    );
-    installAgentHostApi({
-      list: vi.fn(async () => snapshotWithSession("session-1")),
-      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
-      exec,
-      subscribeEvents: vi.fn(() => vi.fn())
-    });
-
-    const { result } = renderHook(() =>
-      useAgentGUINodeController({
-        workspaceId: "room-1",
-        currentUserId: "user-1",
-        workspacePath: "/workspace",
-        avoidGroupingEdits: false,
-        data: agentGuiData("session-1"),
-        onDataChange: vi.fn()
-      })
-    );
-
-    await waitFor(() => {
-      expect(result.current.viewModel.activeConversationId).toBe("session-1");
-    });
-
-    act(() => {
-      result.current.actions.submitCompact();
-    });
-
-    await waitFor(() => {
-      expect(exec).toHaveBeenCalledWith({
-        workspaceId: "room-1",
-        agentSessionId: "session-1",
-        content: [{ type: "text", text: "/compact" }]
-      });
-    });
-  });
-
-  it("fires usage threshold reminders once per tier and resets on falloff", async () => {
-    const usageRuntimeContext = (usedTokens: number) => ({
-      usage: {
-        contextWindow: { usedTokens, totalTokens: 100_000 }
-      }
-    });
-    let activityListener:
-      | ((event: AgentHostAgentActivityStreamEvent) => void)
-      | undefined;
-    const getState = vi.fn(async () =>
-      agentSessionState("session-1", {
-        runtimeContext: {
-          cwd: "/workspace",
-          ...usageRuntimeContext(10_000)
-        }
-      })
-    );
-    installAgentHostApi({
-      list: vi.fn(async () => snapshotWithSession("session-1")),
-      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
-      subscribeEvents: vi.fn((_payload, listener) => {
-        activityListener = listener;
-        return vi.fn();
-      }),
-      getState
-    });
-
-    const { result } = renderHook(() =>
-      useAgentGUINodeController({
-        workspaceId: "room-1",
-        currentUserId: "user-1",
-        workspacePath: "/workspace",
-        avoidGroupingEdits: false,
-        data: agentGuiData("session-1"),
-        onDataChange: vi.fn()
-      })
-    );
-
-    await waitFor(() => {
-      expect(activityListener).toBeDefined();
-      expect(result.current.viewModel.usage?.percentUsed).toBe(10);
-    });
-    expect(result.current.viewModel.usageAlert).toBeNull();
-
-    const patchUsage = (usedTokens: number, occurredAtUnixMs: number) => {
-      act(() => {
-        activityListener?.({
-          eventType: "state_patch",
-          data: {
-            agentSessionId: "session-1",
-            runtimeContext: usageRuntimeContext(usedTokens),
-            occurredAtUnixMs
-          }
-        });
-      });
-    };
-
-    patchUsage(85_000, 20);
-    await waitFor(() => {
-      expect(result.current.viewModel.usage?.percentUsed).toBe(85);
-      expect(result.current.viewModel.usageAlert).toBe("warn");
-    });
-
-    act(() => {
-      result.current.actions.dismissUsageAlert();
-    });
-    expect(result.current.viewModel.usageAlert).toBeNull();
-
-    patchUsage(86_000, 30);
-    await waitFor(() => {
-      expect(result.current.viewModel.usage?.percentUsed).toBe(86);
-    });
-    expect(result.current.viewModel.usageAlert).toBeNull();
-
-    patchUsage(96_000, 40);
-    await waitFor(() => {
-      expect(result.current.viewModel.usageAlert).toBe("critical");
-    });
-
-    patchUsage(40_000, 50);
-    await waitFor(() => {
-      expect(result.current.viewModel.usage?.percentUsed).toBe(40);
-    });
-    expect(result.current.viewModel.usageAlert).toBeNull();
-
-    patchUsage(85_000, 60);
-    await waitFor(() => {
-      expect(result.current.viewModel.usageAlert).toBe("warn");
-    });
-  });
-
   it("selects an externally requested active conversation on an already-open panel", async () => {
     installAgentHostApi({
       list: vi.fn(async () => ({
@@ -1831,6 +1722,582 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
+  it("loads the latest selected conversation message page first", async () => {
+    const timelineRequests: Array<{
+      afterVersion?: number;
+      beforeVersion?: number;
+      cache?: boolean;
+      limit?: number;
+      order?: string;
+    }> = [];
+    const listSessionTimeline = vi.fn(
+      async ({
+        afterVersion,
+        beforeVersion,
+        cache,
+        agentSessionId,
+        limit,
+        order
+      }: {
+        afterVersion?: number;
+        beforeVersion?: number;
+        cache?: boolean;
+        agentSessionId: string;
+        limit?: number;
+        order?: string;
+      }) => {
+        if (agentSessionId !== "session-2") {
+          return { timelineItems: [], hasMore: false };
+        }
+        timelineRequests.push({
+          afterVersion,
+          beforeVersion,
+          cache,
+          limit,
+          order
+        });
+        if (order === "desc" && beforeVersion === undefined) {
+          return {
+            timelineItems: [
+              timelineMessage({
+                agentSessionId: "session-2",
+                id: 2,
+                eventId: "assistant-1",
+                role: "assistant",
+                content: "latest answer",
+                turnId: "turn-1"
+              }),
+              timelineMessage({
+                agentSessionId: "session-2",
+                id: 1,
+                eventId: "user-1",
+                role: "user",
+                content: "latest ask",
+                turnId: "turn-1"
+              })
+            ],
+            hasMore: true
+          };
+        }
+        return { timelineItems: [], hasMore: false };
+      }
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => ({
+        presences: [],
+        sessions: [
+          workspaceAgentSession("session-1"),
+          workspaceAgentSession("session-2")
+        ]
+      })),
+      listSessionTimeline,
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+    act(() => {
+      result.current.actions.selectConversation("session-2");
+    });
+
+    await waitFor(() => {
+      expect(
+        timelineRequests.some(
+          (request) =>
+            request.order === "desc" &&
+            request.cache === false &&
+            request.limit === 100 &&
+            request.beforeVersion === undefined
+        )
+      ).toBe(true);
+      expect(result.current.viewModel.hasOlderMessages).toBe(true);
+      expect(
+        result.current.viewModel.conversationDetail?.turns[0]?.userMessages
+      ).toEqual([expect.objectContaining({ body: "latest ask" })]);
+      expect(
+        result.current.viewModel.conversationDetail?.turns[0]?.agentMessages
+      ).toEqual([expect.objectContaining({ body: "latest answer" })]);
+    });
+  });
+
+  it("keeps streamed detail messages that arrive while the initial page is loading", async () => {
+    let activityListener:
+      | ((event: AgentHostAgentActivityStreamEvent) => void)
+      | undefined;
+    const resolveSession2Timelines: Array<
+      (value: { timelineItems: unknown[]; hasMore: boolean }) => void
+    > = [];
+    const listSessionTimeline = vi.fn(
+      async ({ agentSessionId }: { agentSessionId: string }) => {
+        if (agentSessionId !== "session-2") {
+          return { timelineItems: [], hasMore: false };
+        }
+        return new Promise<{ timelineItems: unknown[]; hasMore: boolean }>(
+          (resolve) => {
+            resolveSession2Timelines.push(resolve);
+          }
+        );
+      }
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => ({
+        presences: [],
+        sessions: [
+          workspaceAgentSession("session-1"),
+          workspaceAgentSession("session-2")
+        ]
+      })),
+      listSessionTimeline,
+      subscribeEvents: vi.fn((_payload, listener) => {
+        activityListener = listener;
+        return vi.fn();
+      })
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+    act(() => {
+      result.current.actions.selectConversation("session-2");
+    });
+    await waitFor(() => {
+      expect(resolveSession2Timelines.length).toBeGreaterThan(0);
+      expect(activityListener).toBeDefined();
+    });
+
+    act(() => {
+      activityListener?.(
+        streamMessage({
+          agentSessionId: "session-2",
+          id: 3,
+          eventId: "assistant-streamed",
+          role: "assistant",
+          content: "streamed while loading",
+          turnId: "turn-2"
+        })
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.viewModel.conversationDetail?.turns.at(-1)?.agentMessages
+      ).toEqual([expect.objectContaining({ body: "streamed while loading" })]);
+    });
+
+    await act(async () => {
+      for (const resolveSession2Timeline of resolveSession2Timelines.splice(
+        0
+      )) {
+        resolveSession2Timeline({
+          timelineItems: [
+            timelineMessage({
+              agentSessionId: "session-2",
+              id: 2,
+              eventId: "assistant-1",
+              role: "assistant",
+              content: "latest answer",
+              turnId: "turn-1"
+            }),
+            timelineMessage({
+              agentSessionId: "session-2",
+              id: 1,
+              eventId: "user-1",
+              role: "user",
+              content: "latest ask",
+              turnId: "turn-1"
+            })
+          ],
+          hasMore: true
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.viewModel.conversationDetail?.turns
+          .flatMap((turn) => [
+            ...turn.userMessages.map((message) => message.body),
+            ...turn.agentMessages.map((message) => message.body)
+          ])
+          .filter(Boolean)
+      ).toEqual(["latest ask", "latest answer", "streamed while loading"]);
+    });
+  });
+
+  it("does not let durable history stream expand the selected detail window", async () => {
+    let activityListener:
+      | ((event: AgentHostAgentActivityStreamEvent) => void)
+      | undefined;
+    const allTimelineItems = Array.from({ length: 260 }, (_, index) => {
+      const id = index + 1;
+      return timelineMessage({
+        agentSessionId: "session-2",
+        id,
+        eventId: `message-${id}`,
+        role: id % 2 === 0 ? "assistant" : "user",
+        content: `message ${id}`,
+        turnId: `turn-${Math.ceil(id / 2)}`
+      });
+    });
+    const listSessionTimeline = vi.fn(
+      async ({
+        agentSessionId,
+        afterVersion,
+        beforeVersion,
+        order
+      }: {
+        agentSessionId: string;
+        afterVersion?: number;
+        beforeVersion?: number;
+        order?: string;
+      }) => {
+        if (agentSessionId !== "session-2") {
+          return { timelineItems: [], hasMore: false };
+        }
+        if (order === "desc" && beforeVersion === undefined) {
+          return {
+            timelineItems: allTimelineItems.slice(160).reverse(),
+            latestVersion: 260,
+            hasMore: true
+          };
+        }
+        if (afterVersion === 260) {
+          return {
+            timelineItems: [
+              timelineMessage({
+                agentSessionId: "session-2",
+                id: 261,
+                eventId: "message-261",
+                role: "user",
+                content: "message 261",
+                turnId: "turn-131"
+              })
+            ],
+            latestVersion: 261,
+            hasMore: false
+          };
+        }
+        return { timelineItems: [], latestVersion: 260, hasMore: false };
+      }
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => ({
+        presences: [],
+        sessions: [workspaceAgentSession("session-2")],
+        sessionMessagesById: {
+          "session-2": allTimelineItems.map(timelineItemToMessage)
+        }
+      })),
+      listSessionTimeline,
+      subscribeEvents: vi.fn((_payload, listener) => {
+        activityListener = listener;
+        return vi.fn();
+      })
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-2"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-2");
+      expect(conversationBodies(result.current.viewModel)).toContain(
+        "message 260"
+      );
+    });
+
+    act(() => {
+      for (let id = 1; id <= 160; id += 1) {
+        activityListener?.(
+          streamMessage({
+            agentSessionId: "session-2",
+            id,
+            eventId: `message-${id}`,
+            role: id % 2 === 0 ? "assistant" : "user",
+            content: `message ${id}`,
+            turnId: `turn-${Math.ceil(id / 2)}`
+          })
+        );
+      }
+    });
+
+    await waitFor(() => {
+      const bodies = conversationBodies(result.current.viewModel);
+      expect(bodies).toContain("message 161");
+      expect(bodies).toContain("message 260");
+      expect(bodies).not.toContain("message 1");
+      expect(bodies).not.toContain("message 160");
+    });
+
+    await act(async () => {
+      await (
+        window as { agentActivityRuntime?: AgentActivityRuntime }
+      ).agentActivityRuntime?.listSessionMessages({
+        workspaceId: "room-1",
+        agentSessionId: "session-2",
+        afterVersion: 260
+      });
+    });
+    act(() => {
+      result.current.actions.selectConversation("session-2");
+    });
+
+    await waitFor(() => {
+      const bodies = conversationBodies(result.current.viewModel);
+      expect(bodies).toContain("message 161");
+      expect(bodies).toContain("message 261");
+      expect(bodies).not.toContain("message 1");
+      expect(bodies).not.toContain("message 160");
+    });
+  });
+
+  it("loads older selected conversation messages before the current oldest version", async () => {
+    const timelineRequests: Array<{
+      beforeVersion?: number;
+      cache?: boolean;
+      order?: string;
+    }> = [];
+    const listSessionTimeline = vi.fn(
+      async ({
+        beforeVersion,
+        cache,
+        agentSessionId,
+        order
+      }: {
+        beforeVersion?: number;
+        cache?: boolean;
+        agentSessionId: string;
+        order?: string;
+      }) => {
+        if (agentSessionId !== "session-2") {
+          return { timelineItems: [], hasMore: false };
+        }
+        timelineRequests.push({ beforeVersion, cache, order });
+        if (order === "desc" && beforeVersion === undefined) {
+          return {
+            timelineItems: [
+              timelineMessage({
+                agentSessionId: "session-2",
+                id: 2,
+                eventId: "assistant-1",
+                role: "assistant",
+                content: "latest answer",
+                turnId: "turn-1"
+              }),
+              timelineMessage({
+                agentSessionId: "session-2",
+                id: 1,
+                eventId: "user-1",
+                role: "user",
+                content: "latest ask",
+                turnId: "turn-1"
+              })
+            ],
+            hasMore: true
+          };
+        }
+        if (order === "desc" && beforeVersion === 1) {
+          return {
+            timelineItems: [
+              timelineMessage({
+                agentSessionId: "session-2",
+                id: 0,
+                eventId: "older-user",
+                role: "user",
+                content: "older ask",
+                turnId: "turn-0"
+              })
+            ],
+            hasMore: false
+          };
+        }
+        return { timelineItems: [], hasMore: false };
+      }
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => ({
+        presences: [],
+        sessions: [
+          workspaceAgentSession("session-1"),
+          workspaceAgentSession("session-2")
+        ]
+      })),
+      listSessionTimeline,
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+    act(() => {
+      result.current.actions.selectConversation("session-2");
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.hasOlderMessages).toBe(true);
+    });
+    await act(async () => {
+      result.current.actions.loadOlderConversationMessages();
+    });
+
+    await waitFor(() => {
+      expect(
+        timelineRequests.some(
+          (request) =>
+            request.order === "desc" &&
+            request.cache === false &&
+            request.beforeVersion === 1
+        )
+      ).toBe(true);
+      expect(
+        result.current.viewModel.conversationDetail?.turns[0]?.userMessages
+      ).toEqual([expect.objectContaining({ body: "older ask" })]);
+      expect(
+        result.current.viewModel.conversationDetail?.turns.at(-1)?.agentMessages
+      ).toEqual([expect.objectContaining({ body: "latest answer" })]);
+    });
+  });
+
+  it("clears older message loading when a stale older request resolves", async () => {
+    let resolveOlder:
+      | ((value: { timelineItems: unknown[]; hasMore: boolean }) => void)
+      | undefined;
+    const listSessionTimeline = vi.fn(
+      async ({
+        beforeVersion,
+        agentSessionId,
+        order
+      }: {
+        beforeVersion?: number;
+        agentSessionId: string;
+        order?: string;
+      }) => {
+        if (agentSessionId !== "session-2") {
+          return { timelineItems: [], hasMore: false };
+        }
+        if (order === "desc" && beforeVersion === undefined) {
+          return {
+            timelineItems: [
+              timelineMessage({
+                agentSessionId: "session-2",
+                id: 1,
+                eventId: "user-1",
+                role: "user",
+                content: "latest ask",
+                turnId: "turn-1"
+              })
+            ],
+            hasMore: true
+          };
+        }
+        return new Promise<{ timelineItems: unknown[]; hasMore: boolean }>(
+          (resolve) => {
+            resolveOlder = resolve;
+          }
+        );
+      }
+    );
+    installAgentHostApi({
+      list: vi.fn(async () => ({
+        presences: [],
+        sessions: [
+          workspaceAgentSession("session-1"),
+          workspaceAgentSession("session-2")
+        ]
+      })),
+      listSessionTimeline,
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData("session-1"),
+        onDataChange: vi.fn()
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+    act(() => {
+      result.current.actions.selectConversation("session-2");
+    });
+    await waitFor(() => {
+      expect(result.current.viewModel.hasOlderMessages).toBe(true);
+    });
+    await act(async () => {
+      result.current.actions.loadOlderConversationMessages();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(result.current.viewModel.isLoadingOlderMessages).toBe(true);
+    });
+
+    act(() => {
+      result.current.actions.selectConversation("session-1");
+    });
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-1");
+    });
+    await act(async () => {
+      resolveOlder?.({ timelineItems: [], hasMore: false });
+      await Promise.resolve();
+    });
+    act(() => {
+      result.current.actions.selectConversation("session-2");
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe("session-2");
+      expect(result.current.viewModel.isLoadingOlderMessages).toBe(false);
+    });
+  });
+
   it("keeps a switched conversation while its first state load reports not found", async () => {
     let session2StateLoads = 0;
     const getState = vi.fn(
@@ -1886,7 +2353,6 @@ describe("useAgentGUINodeController", () => {
     expect(result.current.viewModel.activeConversationId).toBe("session-2");
     expect(result.current.viewModel.activeConversation?.id).toBe("session-2");
     expect(result.current.viewModel.detailError).toBeNull();
-    expect(result.current.viewModel.isLoadingMessages).toBe(true);
 
     await waitFor(() => {
       expect(session2StateLoads).toBe(2);
@@ -2598,9 +3064,6 @@ describe("useAgentGUINodeController", () => {
     });
     await loadAgentActivityRuntimeForTests();
     await waitFor(() => {
-      expect(list).toHaveBeenCalledTimes(2);
-    });
-    await waitFor(() => {
       expect(result.current.viewModel.conversations[0]).toEqual(
         expect.objectContaining({
           id: createdSessionId,
@@ -2610,7 +3073,7 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
-  it("switches to the optimistic new session while activation is pending", async () => {
+  it("keeps home active while activation is pending and switches after activation succeeds", async () => {
     let resolveActivation:
       | ((value: AgentHostActivateAgentSessionResult) => void)
       | undefined;
@@ -2657,14 +3120,13 @@ describe("useAgentGUINodeController", () => {
     });
 
     const createdId = activate.mock.calls[0]![0].agentSessionId;
-    await waitFor(() => {
-      expect(result.current.viewModel.activeConversationId).toBe(createdId);
-    });
+    expect(result.current.viewModel.activeConversationId).toBeNull();
     expect(result.current.viewModel.isCreatingConversation).toBe(true);
-    expect(result.current.viewModel.draftPrompt).toBe("");
+    expect(result.current.viewModel.draftPrompt).toBe("first prompt");
     expect(
       result.current.viewModel.conversationDetail?.turns[0]?.userMessages
-    ).toEqual([expect.objectContaining({ body: "first prompt" })]);
+    ).toBeUndefined();
+    expect(exec).not.toHaveBeenCalled();
 
     act(() => {
       resolveActivation?.({
@@ -2677,7 +3139,77 @@ describe("useAgentGUINodeController", () => {
       expect(result.current.viewModel.activeConversationId).toBe(createdId);
     });
     expect(result.current.viewModel.draftPrompt).toBe("");
+    expect(
+      result.current.viewModel.conversationDetail?.turns[0]?.userMessages
+    ).toEqual([expect.objectContaining({ body: "first prompt" })]);
     expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("preserves home draft edits made while first conversation activation is pending", async () => {
+    let resolveActivation:
+      | ((value: AgentHostActivateAgentSessionResult) => void)
+      | undefined;
+    const activate = vi.fn((input: AgentHostActivateAgentSessionInput) => {
+      if (input.mode === "new") {
+        return new Promise<AgentHostActivateAgentSessionResult>((resolve) => {
+          resolveActivation = resolve;
+        });
+      }
+      return Promise.resolve({
+        session: agentSession(input.agentSessionId),
+        activation: { mode: input.mode, status: "attached" as const }
+      });
+    });
+    installAgentHostApi({
+      list: vi.fn(async () => ({ presences: [], sessions: [] })),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn()),
+      activate
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData(null),
+        onDataChange: vi.fn()
+      })
+    );
+
+    act(() => {
+      result.current.actions.updateDraftContent(draftContent("first prompt"));
+      result.current.actions.submitPrompt(promptBlocks("first prompt"));
+    });
+
+    await waitFor(() => {
+      expect(activate).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "new" })
+      );
+    });
+    const createdId = activate.mock.calls[0]![0].agentSessionId;
+
+    act(() => {
+      result.current.actions.updateDraftContent(
+        draftContent("keep this draft")
+      );
+      resolveActivation?.({
+        session: agentSession(createdId),
+        activation: { mode: "new", status: "attached" }
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.activeConversationId).toBe(createdId);
+    });
+
+    act(() => {
+      result.current.actions.createConversation();
+    });
+
+    expect(result.current.viewModel.activeConversationId).toBeNull();
+    expect(result.current.viewModel.draftPrompt).toBe("keep this draft");
   });
 
   it("keeps first conversation creation busy after the controller remounts before activation resolves", async () => {
@@ -2739,6 +3271,7 @@ describe("useAgentGUINodeController", () => {
     await waitFor(() => {
       expect(second.result.current.viewModel.isCreatingConversation).toBe(true);
     });
+    expect(second.result.current.viewModel.activeConversationId).toBeNull();
   });
 
   it("keeps an active prompt submission busy after the controller remounts before exec resolves", async () => {
@@ -2811,11 +3344,11 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
-  it("passes the submitted prompt as the optimistic title without showing a pending history entry", async () => {
+  it("passes the submitted prompt as the activation title without showing a pending history entry", async () => {
     const activate = vi.fn(
       (_input: AgentHostActivateAgentSessionInput) =>
         new Promise<AgentHostActivateAgentSessionResult>(() => {
-          // Keep the activate request pending so the test can observe the optimistic state.
+          // Keep the activate request pending so the test can observe the first-create state.
         })
     );
     installAgentHostApi({
@@ -2851,16 +3384,12 @@ describe("useAgentGUINodeController", () => {
       })
     );
     expect(result.current.viewModel.conversations).toEqual([]);
-    expect(result.current.viewModel.activeConversation).toEqual(
-      expect.objectContaining({
-        provider: "hermes",
-        status: "working",
-        title: "hello from hero"
-      })
-    );
+    expect(result.current.viewModel.activeConversation).toBeNull();
+    expect(result.current.viewModel.activeConversationId).toBeNull();
+    expect(result.current.viewModel.isCreatingConversation).toBe(true);
     expect(
       result.current.viewModel.conversationDetail?.turns[0]?.userMessages
-    ).toEqual([expect.objectContaining({ body: "hello from hero" })]);
+    ).toBeUndefined();
   });
 
   it("blocks OpenClaw conversation creation until the gateway is ready", async () => {
@@ -5941,7 +6470,7 @@ describe("useAgentGUINodeController", () => {
     expect(result.current.viewModel.activeConversationId).toBe("session-1");
   });
 
-  it("keeps a failed conversation visible when activation fails immediately", async () => {
+  it("keeps home visible and preserves draft when activation fails immediately", async () => {
     const activate = vi.fn(
       async (_input: AgentHostActivateAgentSessionInput) => {
         throw new Error("runtime not connected");
@@ -5966,6 +6495,7 @@ describe("useAgentGUINodeController", () => {
     );
 
     act(() => {
+      result.current.actions.updateDraftContent(draftContent("create one"));
       result.current.actions.submitPrompt(promptBlocks("create one"));
     });
 
@@ -5974,16 +6504,11 @@ describe("useAgentGUINodeController", () => {
     });
 
     const startedWith = activate.mock.calls.at(-1)?.[0];
-    expect(result.current.viewModel.activeConversationId).toBe(
-      startedWith?.agentSessionId
-    );
+    expect(startedWith?.agentSessionId).toBeTruthy();
+    expect(result.current.viewModel.activeConversationId).toBeNull();
     expect(result.current.viewModel.conversations).toEqual([]);
-    expect(result.current.viewModel.activeConversation).toEqual(
-      expect.objectContaining({
-        id: startedWith?.agentSessionId,
-        status: "failed"
-      })
-    );
+    expect(result.current.viewModel.activeConversation).toBeNull();
+    expect(result.current.viewModel.draftPrompt).toBe("create one");
     expect(result.current.viewModel.detailError).toBe("runtime not connected");
     expect(toast.error).not.toHaveBeenCalled();
   });
@@ -6025,15 +6550,15 @@ describe("useAgentGUINodeController", () => {
     // The failure is surfaced and the global loading flag is cleared today.
     expect(result.current.viewModel.detailError).toBe("runtime not connected");
     expect(result.current.viewModel.isLoadingMessages).toBe(false);
-    // The per-session messages-loading flag opened before submit must also be
-    // released on failure; otherwise the conversation view spins forever.
+    // First-create failure should not leave a per-session messages-loading flag
+    // behind; otherwise a later detail view for the id can spin forever.
     await waitFor(() => {
       expect(
         getAgentSessionView({
           workspaceId: "room-1",
           agentSessionId: failedId as string
         })?.isLoadingMessages
-      ).toBe(false);
+      ).not.toBe(true);
     });
   });
 
@@ -12523,17 +13048,21 @@ function installAgentHostApi({
           const loadTimeline = listSessionTimeline as (
             input: unknown
           ) => Promise<{
+            hasMore?: boolean;
+            latestVersion?: number;
             timelineItems?: AgentHostWorkspaceAgentTimelineItem[];
           }>;
           const timeline = await loadTimeline(input);
           return {
             messages: (timeline.timelineItems ?? []).map(timelineItemToMessage),
-            latestVersion: (timeline.timelineItems ?? []).reduce(
-              (max: number, item: AgentHostWorkspaceAgentTimelineItem) =>
-                Math.max(max, item.seq ?? item.id ?? 0),
-              0
-            ),
-            hasMore: false
+            latestVersion:
+              timeline.latestVersion ??
+              (timeline.timelineItems ?? []).reduce(
+                (max: number, item: AgentHostWorkspaceAgentTimelineItem) =>
+                  Math.max(max, item.seq ?? item.id ?? 0),
+                0
+              ),
+            hasMore: timeline.hasMore ?? false
           };
         },
         deleteSession
@@ -12645,6 +13174,7 @@ function installAgentActivityRuntimeForHostMocks({
     afterVersion?: number;
     agentSessionId: string;
     beforeVersion?: number;
+    cache?: boolean;
     limit?: number;
     order?: AgentActivityMessageOrder;
     workspaceId: string;
@@ -12659,6 +13189,7 @@ function installAgentActivityRuntimeForHostMocks({
       ...(input.beforeVersion !== undefined
         ? { beforeVersion: input.beforeVersion }
         : {}),
+      ...(input.cache !== undefined ? { cache: input.cache } : {}),
       ...(input.limit !== undefined ? { limit: input.limit } : {}),
       ...(input.order !== undefined ? { order: input.order } : {})
     });
@@ -12668,19 +13199,21 @@ function installAgentActivityRuntimeForHostMocks({
           workspaceId: input.workspaceId
         })
     );
-    if (messages.length > 0) {
+    if (messages.length > 0 && input.cache !== false) {
       setSnapshot(input.workspaceId, (current) =>
         mergeMessagesInSnapshot(current, input.agentSessionId, messages)
       );
     }
     return {
       messages,
-      latestVersion: messages.reduce(
-        (max: number, message: AgentActivityMessage) =>
-          Math.max(max, message.version),
-        0
-      ),
-      hasMore: false
+      latestVersion:
+        result.latestVersion ??
+        messages.reduce(
+          (max: number, message: AgentActivityMessage) =>
+            Math.max(max, message.version),
+          0
+        ),
+      hasMore: result.hasMore ?? false
     };
   };
 

@@ -14,6 +14,7 @@ const (
 )
 
 const DisabledReasonProviderTemporarilyUnsupported = "provider_temporarily_unsupported"
+const codexServiceTierOverride = `service_tier="fast"`
 
 type ProviderSpec struct {
 	Provider                     string
@@ -111,10 +112,10 @@ func DefaultRegistry() Registry {
 			// "stdin is not a terminal").
 			AdapterBinaryNames: []string{"codex"},
 			AdapterCommand:     []string{"codex", "app-server"},
-			AuthStatusCommand:  []string{"login", "status"},
+			AuthStatusCommand:  []string{"login", "-c", codexServiceTierOverride, "status"},
 			AuthMarkerPaths:    []string{"~/.codex/auth.json"},
 			Install:            codexCLIInstallerSpec(),
-			LoginArgs:          []string{"login"},
+			LoginArgs:          []string{"login", "-c", codexServiceTierOverride},
 		},
 		agentprovider.Nexight: {
 			Provider:           agentprovider.Nexight,
@@ -175,13 +176,12 @@ func DefaultRegistry() Registry {
 	return Registry{Specs: specs}
 }
 
-// codexCLIInstallerSpec installs the first-party codex binary via the
-// daemon-managed GitHub-release installer. This runs headlessly (HTTP download
-// + checksum + extract + symlink), unlike the official `curl … | sh` script
-// which aborts with "stdin is not a terminal" when run without a TTY.
+// codexCLIInstallerSpec installs the first-party Codex npm package globally,
+// including its platform-specific optional dependency binary.
 func codexCLIInstallerSpec() InstallerSpec {
 	return InstallerSpec{
-		Kind:     InstallerKindCodexCLILatest,
-		CodexCLI: &CodexCLILatestInstallerSpec{},
+		Kind:           InstallerKindCodexCLILatest,
+		DisplayCommand: "npm install -g @openai/codex --include=optional",
+		CodexCLI:       &CodexCLILatestInstallerSpec{},
 	}
 }
