@@ -44,3 +44,12 @@ export type {
   StageDetailToken,
   StageRemediation
 } from "./agentEnvWizardFlow.ts";
+export {
+  buildAgentEnvWizardViewModel,
+  deriveHasAnomaly
+} from "./agentEnvViewModel.ts";
+export type {
+  AgentEnvWizardViewModel,
+  AgentEnvWizardViewModelInput,
+  NetworkCheck
+} from "./agentEnvViewModel.ts";
