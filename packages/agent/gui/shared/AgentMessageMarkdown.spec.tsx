@@ -240,6 +240,42 @@ describe("AgentMessageMarkdown", () => {
     expect(onLinkAction).not.toHaveBeenCalled();
   });
 
+  it("keeps standard markdown link hrefs clickable", () => {
+    const onLinkClick = vi.fn();
+    render(
+      <AgentMessageMarkdown
+        content={
+          "[Email](mailto:hello@example.com) [Phone](tel:+123456789) [Section](#details) [Chat](xmpp:hello@example.com)"
+        }
+        onLinkClick={onLinkClick}
+      />
+    );
+
+    for (const [label, href] of [
+      ["Email", "mailto:hello@example.com"],
+      ["Phone", "tel:+123456789"],
+      ["Section", "#details"],
+      ["Chat", "xmpp:hello@example.com"]
+    ] as const) {
+      fireEvent.click(screen.getByRole("link", { name: label }));
+      expect(onLinkClick).toHaveBeenLastCalledWith(href);
+    }
+  });
+
+  it("renders unsafe markdown links as plain text", () => {
+    const onLinkClick = vi.fn();
+    render(
+      <AgentMessageMarkdown
+        content={"不要打开 [bad](javascript:alert(1))"}
+        onLinkClick={onLinkClick}
+      />
+    );
+
+    expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+    expect(screen.getByText("bad")).toBeInTheDocument();
+    expect(onLinkClick).not.toHaveBeenCalled();
+  });
+
   it("does not nest path links inside markdown links with inline code labels", () => {
     const onLinkClick = vi.fn();
     const { container } = render(

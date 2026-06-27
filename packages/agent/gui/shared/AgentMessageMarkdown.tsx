@@ -70,6 +70,15 @@ const PLAIN_SESSION_MENTION_AGENT_LABELS = [
   "Nexight",
   "Codex"
 ] as const;
+const STANDARD_MARKDOWN_LINK_PROTOCOLS = [
+  "http",
+  "https",
+  "irc",
+  "ircs",
+  "mailto",
+  "tel",
+  "xmpp"
+] as const;
 const WINDOWS_DRIVE_HREF_PROTOCOLS =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 export const AGENT_MARKDOWN_PLAIN_TITLE_CLASSNAME =
@@ -82,6 +91,7 @@ const MARKDOWN_SANITIZE_SCHEMA: RehypeSanitizeOptions = {
     href: [
       ...(defaultSchema.protocols?.href ?? []),
       "mention",
+      ...STANDARD_MARKDOWN_LINK_PROTOCOLS,
       ...WINDOWS_DRIVE_HREF_PROTOCOLS
     ]
   }
@@ -1327,9 +1337,29 @@ function isClickableMarkdownHref(href: string): boolean {
   const target = href.trim();
   return Boolean(
     target &&
-    (isHttpUrl(target) ||
+    (isStandardMarkdownLinkHref(target) ||
       isRichTextMentionHref(target) ||
       isExplicitWorkspaceFilePath(target))
+  );
+}
+
+function isStandardMarkdownLinkHref(href: string): boolean {
+  const target = href.trim();
+  if (!target || isExplicitWorkspaceFilePath(target)) {
+    return false;
+  }
+  if (target.startsWith("#")) {
+    return target.length > 1;
+  }
+  let url: URL;
+  try {
+    url = new URL(target);
+  } catch {
+    return false;
+  }
+  const protocol = url.protocol.replace(/:$/, "").toLowerCase();
+  return STANDARD_MARKDOWN_LINK_PROTOCOLS.includes(
+    protocol as (typeof STANDARD_MARKDOWN_LINK_PROTOCOLS)[number]
   );
 }
 
@@ -1557,7 +1587,9 @@ function normalizePlainSessionMentionTitle(content: string): string {
 
 function markdownUrlTransform(value: string): string {
   const target = value.trim();
-  return isRichTextMentionHref(target) || isExplicitWorkspaceFilePath(target)
+  return isRichTextMentionHref(target) ||
+    isExplicitWorkspaceFilePath(target) ||
+    isStandardMarkdownLinkHref(target)
     ? target
     : defaultUrlTransform(value);
 }
