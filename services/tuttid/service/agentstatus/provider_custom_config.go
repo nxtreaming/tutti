@@ -47,6 +47,7 @@ func providerCustomConfigEnvVars(provider string) []string {
 	case agentprovider.ClaudeCode:
 		return []string{
 			"ANTHROPIC_API_KEY",
+			"ANTHROPIC_AUTH_TOKEN",
 			"ANTHROPIC_BASE_URL",
 			"ANTHROPIC_API_BASE_URL",
 		}
@@ -114,6 +115,7 @@ func (s Service) claudeSettingsHasCustomConfig() bool {
 	}
 	for _, key := range []string{
 		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_AUTH_TOKEN",
 		"ANTHROPIC_BASE_URL",
 		"ANTHROPIC_API_BASE_URL",
 	} {
@@ -125,8 +127,8 @@ func (s Service) claudeSettingsHasCustomConfig() bool {
 }
 
 // claudeCodeUsesAPIBilling reports whether Claude Code is configured to use
-// API Usage Billing (an API key, an API key helper, or a custom Anthropic API
-// endpoint) rather than an Anthropic Console login session.
+// API Usage Billing (an API key, an auth token, an API key helper, or a custom
+// Anthropic API endpoint) rather than an Anthropic Console login session.
 func (s Service) claudeCodeUsesAPIBilling() bool {
 	return s.providerUsesCustomConfig(agentprovider.ClaudeCode)
 }

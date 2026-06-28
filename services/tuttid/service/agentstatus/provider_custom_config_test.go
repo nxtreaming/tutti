@@ -76,6 +76,16 @@ func TestProviderUsesCustomConfigClaudeSettings(t *testing.T) {
 	}
 }
 
+func TestProviderUsesCustomConfigClaudeAuthToken(t *testing.T) {
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, ".claude", "settings.json"),
+		`{"env":{"ANTHROPIC_AUTH_TOKEN":"sk-test"}}`)
+	svc := customConfigService(home)
+	if !svc.providerUsesCustomConfig(agentprovider.ClaudeCode) {
+		t.Fatal("expected claude settings ANTHROPIC_AUTH_TOKEN to count as custom config")
+	}
+}
+
 func TestProviderUsesCustomConfigClaudeApiKeyHelper(t *testing.T) {
 	home := t.TempDir()
 	writeFile(t, filepath.Join(home, ".claude", "settings.json"),

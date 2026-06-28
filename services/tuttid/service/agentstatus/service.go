@@ -548,25 +548,25 @@ func (s Service) statusForSpec(ctx context.Context, spec ProviderSpec, now time.
 		actions = append(actions, daemonAction(ActionInstall))
 	} else {
 		actions = append(actions, terminalAction(ActionLogin, loginCommandForRuntime(spec, runtimeResolution)))
-		switch auth.Status {
-		case AuthAuthenticated:
-			// already ready
-		case AuthRequired, AuthUnknown:
-			// Claude Code can run in API Usage Billing mode (API key or custom
-			// endpoint) without an Anthropic Console login session. Treat that
-			// configuration as authenticated so the environment wizard doesn't
-			// block users who have a working CLI but no console login.
-			if spec.Provider == agentprovider.ClaudeCode && s.claudeCodeUsesAPIBilling() {
-				auth.Status = AuthAuthenticated
-				auth.AccountLabel = firstNonBlank(auth.AccountLabel, "API Usage Billing")
-				auth.AuthMethod = "apiKey"
-			} else {
+
+		// Claude Code can run in API Usage Billing mode (API key or custom
+		// endpoint). When the user has configured that, prefer it over whatever
+		// auth status / method the CLI reports, so the wizard reflects reality.
+		if spec.Provider == agentprovider.ClaudeCode && s.claudeCodeUsesAPIBilling() {
+			auth.Status = AuthAuthenticated
+			auth.AccountLabel = "API Usage Billing"
+			auth.AuthMethod = "apiKey"
+		} else {
+			switch auth.Status {
+			case AuthAuthenticated:
+				// already ready
+			case AuthRequired:
 				availability.Status = AvailabilityAuthRequired
-				if auth.Status == AuthRequired {
-					availability.ReasonCode = "auth_required"
-				} else {
-					availability.ReasonCode = "auth_unknown"
-				}
+				availability.ReasonCode = "auth_required"
+				actions = append(actions, Action{ID: ActionRefresh, Kind: ActionKindRefresh})
+			case AuthUnknown:
+				availability.Status = AvailabilityAuthRequired
+				availability.ReasonCode = "auth_unknown"
 				actions = append(actions, Action{ID: ActionRefresh, Kind: ActionKindRefresh})
 			}
 		}
