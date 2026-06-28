@@ -251,10 +251,33 @@ func (s Service) List(ctx context.Context, input ListInput) (Snapshot, error) {
 	// independent, so probe them once; the API endpoint (run/login path) differs
 	// per provider, so probe that per status. All are reported separately on each
 	// provider's Network.
+	//
+	// Skip the (slow, flaky-proxy-prone) connectivity probe for any provider that
+	// is mid-install: the network doesn't change during an install, and the
+	// per-second install-progress poll would otherwise re-probe it every tick,
+	// making the network step flicker. Such a provider reports no Network (the UI
+	// treats nil as "not a blocker"); a full re-detect after the install
+	// refreshes it. When every requested provider is installing, even the shared
+	// registry/proxy probes are skipped.
 	if len(statuses) > 0 {
-		registry := s.probeRegistry(ctx)
-		proxy := s.probeProxy(ctx)
+		installing := make([]bool, len(statuses))
+		anyNeedsNetwork := false
 		for i := range statuses {
+			installing[i] = providerInstallInFlight(statuses[i].Provider)
+			if !installing[i] {
+				anyNeedsNetwork = true
+			}
+		}
+		var registry NetworkEndpointStatus
+		var proxy *NetworkProxyStatus
+		if anyNeedsNetwork {
+			registry = s.probeRegistry(ctx)
+			proxy = s.probeProxy(ctx)
+		}
+		for i := range statuses {
+			if installing[i] {
+				continue
+			}
 			api := s.probeProviderAPI(ctx, statuses[i].Provider)
 			statuses[i].Network = &NetworkStatus{
 				Registry:    registry,

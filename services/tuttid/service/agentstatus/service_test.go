@@ -65,8 +65,12 @@ func TestServiceListReturnsLatestActiveActionAfterNetworkProbe(t *testing.T) {
 		return "", errors.New("not found")
 	}, map[string]bool{})
 	activeCtx := withActiveActionToken(context.Background(), nextActiveActionToken())
+	// A login (not install) active action: List skips the network probe only
+	// while a provider is installing, so a non-install action keeps the probe
+	// running — which is what this test exercises (the active action is read
+	// after the probe, so output appended during it is surfaced).
 	claimActiveAction(activeCtx, "codex", ActiveAction{
-		ID:     ActionInstall,
+		ID:     ActionLogin,
 		Status: "running",
 		Step:   "cli",
 	})
