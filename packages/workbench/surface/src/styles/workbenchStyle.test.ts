@@ -50,6 +50,27 @@ test("mission control hidden presentation windows are invisible and inert", () =
   );
 });
 
+test("mission control overlay lets layout controls sit above dialog overlays", () => {
+  const css = readFileSync(resolve("src/styles/workbench.css"), "utf8");
+  const source = readFileSync(
+    resolve("src/mission-control/WorkbenchMissionControlOverlay.tsx"),
+    "utf8"
+  );
+
+  assert.match(
+    css,
+    /\.workbench-mission-control\s*{[^}]*z-index:\s*var\(--z-tooltip,\s*100700\);/s
+  );
+  assert.match(
+    source,
+    /className="workbench-mission-control pointer-events-none absolute inset-0 overflow-hidden"/
+  );
+  assert.match(
+    source,
+    /className="workbench-mission-control__layout-dock desktop-dock-plate pointer-events-auto"/
+  );
+});
+
 test("dialog popover node layer sits above dialog overlays and remains clickable", () => {
   const css = readFileSync(resolve("src/styles/workbench.css"), "utf8");
 

@@ -533,6 +533,7 @@
 }
 
 .workbench-mission-control {
+  z-index: var(--z-tooltip, 100700);
   opacity: 1;
 }
 
