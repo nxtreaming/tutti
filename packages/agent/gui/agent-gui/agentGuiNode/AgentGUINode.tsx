@@ -692,6 +692,31 @@ export const AgentGUINode = memo(function AgentGUINode({
     onDataChange: handleDataChange,
     onShowMessage
   });
+  const handleCreateConversation = useCallback(
+    (...args: Parameters<typeof actions.createConversation>) => {
+      if (!previewMode) {
+        onUpdateNode((current) =>
+          current.lastActiveAgentSessionId === null &&
+          (current.lastActiveConversationTitle ?? null) === null
+            ? current
+            : {
+                ...current,
+                lastActiveAgentSessionId: null,
+                lastActiveConversationTitle: null
+              }
+        );
+      }
+      actions.createConversation(...args);
+    },
+    [actions, onUpdateNode, previewMode]
+  );
+  const viewActions = useMemo(
+    () => ({
+      ...actions,
+      createConversation: handleCreateConversation
+    }),
+    [actions, handleCreateConversation]
+  );
 
   const fallbackAgentTitle = t("sidebar.fallbackAgentLabel");
   const activeProvider =
@@ -1313,7 +1338,7 @@ export const AgentGUINode = memo(function AgentGUINode({
         return (
           <AgentGUINodeView
             viewModel={viewModel}
-            actions={actions}
+            actions={viewActions}
             isActive={isActive}
             composerFocusRequestSequence={composerFocusRequestSequence}
             newConversationRequestSequence={newConversationRequestSequence}
