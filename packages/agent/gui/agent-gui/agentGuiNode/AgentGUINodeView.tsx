@@ -354,6 +354,24 @@ export interface AgentGUIViewLabels {
   slashPalettePluginsGroup: string;
   slashPaletteConnectorsGroup: string;
   slashPaletteMcpGroup: string;
+  slashCommandCompactLabel: string;
+  slashCommandContextLabel: string;
+  slashCommandFastLabel: string;
+  slashCommandGoalLabel: string;
+  slashCommandInitLabel: string;
+  slashCommandPlanLabel: string;
+  slashCommandReviewLabel: string;
+  slashCommandStatusLabel: string;
+  slashCommandUsageLabel: string;
+  slashCommandCompactDescription: string;
+  slashCommandContextDescription: string;
+  slashCommandFastDescription: string;
+  slashCommandGoalDescription: string;
+  slashCommandInitDescription: string;
+  slashCommandPlanDescription: string;
+  slashCommandReviewDescription: string;
+  slashCommandStatusDescription: string;
+  slashCommandUsageDescription: string;
   browserUseCapabilityLabel: string;
   browserUseCapabilityDescription: string;
   browserUseCapabilityDescriptionAutoConnect: string;
@@ -1862,6 +1880,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       planModeOnLabel: labels.planModeOnLabel,
       planModeOffLabel: labels.planModeOffLabel,
       planUnavailable: labels.planUnavailable,
+      goalLabel: labels.goalLabel,
       queuedLabel: labels.queuedLabel,
       sendQueuedPromptNext: labels.sendQueuedPromptNext,
       editQueuedPrompt: labels.editQueuedPrompt,
@@ -1877,6 +1896,24 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       slashPalettePluginsGroup: labels.slashPalettePluginsGroup,
       slashPaletteConnectorsGroup: labels.slashPaletteConnectorsGroup,
       slashPaletteMcpGroup: labels.slashPaletteMcpGroup,
+      slashCommandCompactLabel: labels.slashCommandCompactLabel,
+      slashCommandContextLabel: labels.slashCommandContextLabel,
+      slashCommandFastLabel: labels.slashCommandFastLabel,
+      slashCommandGoalLabel: labels.slashCommandGoalLabel,
+      slashCommandInitLabel: labels.slashCommandInitLabel,
+      slashCommandPlanLabel: labels.slashCommandPlanLabel,
+      slashCommandReviewLabel: labels.slashCommandReviewLabel,
+      slashCommandStatusLabel: labels.slashCommandStatusLabel,
+      slashCommandUsageLabel: labels.slashCommandUsageLabel,
+      slashCommandCompactDescription: labels.slashCommandCompactDescription,
+      slashCommandContextDescription: labels.slashCommandContextDescription,
+      slashCommandFastDescription: labels.slashCommandFastDescription,
+      slashCommandGoalDescription: labels.slashCommandGoalDescription,
+      slashCommandInitDescription: labels.slashCommandInitDescription,
+      slashCommandPlanDescription: labels.slashCommandPlanDescription,
+      slashCommandReviewDescription: labels.slashCommandReviewDescription,
+      slashCommandStatusDescription: labels.slashCommandStatusDescription,
+      slashCommandUsageDescription: labels.slashCommandUsageDescription,
       browserUseCapabilityLabel: labels.browserUseCapabilityLabel,
       browserUseCapabilityDescription: labels.browserUseCapabilityDescription,
       browserUseCapabilityDescriptionAutoConnect:
@@ -1956,6 +1993,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       labels.planModeOffLabel,
       labels.planModeOnLabel,
       labels.planUnavailable,
+      labels.goalLabel,
       labels.projectLocked,
       labels.projectMissingDescription,
       labels.promptTipsPrefix,
@@ -1999,6 +2037,24 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       labels.slashPaletteCapabilitiesGroup,
       labels.slashPaletteCommandsGroup,
       labels.slashPaletteConnectorsGroup,
+      labels.slashCommandCompactLabel,
+      labels.slashCommandContextLabel,
+      labels.slashCommandFastLabel,
+      labels.slashCommandGoalLabel,
+      labels.slashCommandInitLabel,
+      labels.slashCommandPlanLabel,
+      labels.slashCommandReviewLabel,
+      labels.slashCommandStatusLabel,
+      labels.slashCommandUsageLabel,
+      labels.slashCommandCompactDescription,
+      labels.slashCommandContextDescription,
+      labels.slashCommandFastDescription,
+      labels.slashCommandGoalDescription,
+      labels.slashCommandInitDescription,
+      labels.slashCommandPlanDescription,
+      labels.slashCommandReviewDescription,
+      labels.slashCommandStatusDescription,
+      labels.slashCommandUsageDescription,
       labels.slashPaletteMcpGroup,
       labels.slashPalettePluginsGroup,
       labels.slashPaletteSkillsGroup,
@@ -2112,6 +2168,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       isInterrupting: viewModel.isInterrupting,
       isSendingTurn: isComposerSending,
       isSubmittingPrompt: viewModel.isRespondingApproval,
+      uiLanguage,
       labels: composerLabels,
       workspaceUserProjectI18n,
       capabilityMenuState,
@@ -2160,6 +2217,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       submitInteractivePrompt,
       submitPrompt,
       submitGuidancePrompt,
+      uiLanguage,
       stableLinkAction,
       stableRequestGitBranches,
       stableSelectProjectDirectory,
