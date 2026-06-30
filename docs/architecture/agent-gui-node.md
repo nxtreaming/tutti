@@ -495,6 +495,15 @@ from `currentPhase` or turn lifecycle. Projection layers that bridge into legacy
 Host DTOs must normalize the tuple together, or `active/idle` and
 `active/working` sessions will render as the wrong conversation state.
 
+When the visible symptom is a sticky error badge on a rail row, dock preview, or
+message-center trigger, also inspect the latest loaded turn messages. A
+session-level `failed` status can be historical after a later turn starts or
+completes. Outer status badges should keep authoritative non-error lifecycle
+states, but when the outer projection is `failed`, they should let the latest
+turn's message status clear or confirm that failure. Keep unrecoverable
+activation/resume failures session-scoped; keep ordinary historical turn
+failures on the transcript row that produced them.
+
 ### Message Parsing And Rendering
 
 ```text
@@ -566,6 +575,10 @@ User-visible rules:
 - Working/error/attention badges should come from session status, pending
   interactive/approval projection, or explicit local pending state. Do not infer
   them from row text.
+- Error badges are current-state indicators, not session-history indicators. If
+  a session still reports `failed` but loaded messages show a newer successful
+  or running turn, list/dock/message-center projections should follow that
+  newer turn instead of keeping the whole session red forever.
 
 ### Conversation Titles Across Surfaces
 
