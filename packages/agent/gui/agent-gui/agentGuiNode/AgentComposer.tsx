@@ -144,6 +144,7 @@ import {
 } from "./model/agentUsageThresholds";
 import { useOptionalAgentActivityRuntime } from "../../agentActivityRuntime";
 import { useOptionalAgentHostApi } from "../../agentActivityHost";
+import type { AgentDroppedFileReferenceResolver } from "./model/agentDroppedFileReferences";
 
 export { formatSlashStatusTokenCount };
 
@@ -402,6 +403,7 @@ export interface AgentComposerProps {
         entity?: AgentContextMentionItem | null
       ) => Promise<WorkspaceReferencePickResult>)
     | null;
+  resolveDroppedFileReferences?: AgentDroppedFileReferenceResolver | null;
   selectProjectDirectory?: () => Promise<{ path: string } | null>;
   onRequestGitBranches?: AgentComposerGitBranchLoader | null;
   contextMentionProviders?: readonly AgentContextMentionProvider[];
@@ -803,6 +805,7 @@ export function AgentComposer({
   onCapabilitySettingsRequest,
   onLinkAction,
   onRequestWorkspaceReferences = null,
+  resolveDroppedFileReferences = null,
   selectProjectDirectory,
   onRequestGitBranches = null,
   contextMentionProviders = EMPTY_CONTEXT_MENTION_PROVIDERS
@@ -1922,7 +1925,11 @@ export function AgentComposer({
       if (remainingSlots === 0) {
         return;
       }
-      const uploadPromptContent = agentActivityRuntime?.uploadPromptContent;
+      const uploadPromptContent =
+        agentActivityRuntime?.uploadPromptContent &&
+        (agentActivityRuntime.promptContentUploadSupport?.image ?? true)
+          ? agentActivityRuntime.uploadPromptContent
+          : undefined;
       const nextImages = images.slice(0, remainingSlots).map((image) => ({
         id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
         name: image.name,
@@ -2103,6 +2110,20 @@ export function AgentComposer({
     await applyReferencePickResult(await onRequestWorkspaceReferences());
   }, [applyReferencePickResult, onRequestWorkspaceReferences]);
 
+  const applyDroppedFileReferences = useCallback(
+    async (files: readonly File[]) => {
+      if (!resolveDroppedFileReferences || files.length === 0) {
+        return;
+      }
+      const references = await resolveDroppedFileReferences(files);
+      if (references.length === 0) {
+        return;
+      }
+      await applyReferencePickResult({ files: references, mentionItems: [] });
+    },
+    [applyReferencePickResult, resolveDroppedFileReferences]
+  );
+
   // @ 面板里点任务/应用行的「查看产物」入口:关掉面板,打开引用 picker 并定位到该实体;
   // 选中的文件仍按常规插入,但不会把该任务/应用本身作为 mention 插入。
   const handleOpenReferencesForEntity = useCallback(
@@ -2259,27 +2280,46 @@ export function AgentComposer({
       return target instanceof Node && dropTarget.contains(target);
     };
 
-    const hasPromptImageFiles = (event: DragEvent): boolean => {
+    const systemFileDrop = (
+      event: DragEvent
+    ): { imageFiles: File[]; regularFiles: File[] } | null => {
       if (
         event.defaultPrevented ||
         inputDisabled ||
         !containsEventTarget(event) ||
         hasWorkspaceFileDropData(event.dataTransfer)
       ) {
-        return false;
+        return null;
       }
-      return imageFilesFromDataTransfer(event.dataTransfer).length > 0;
+      const files = Array.from(event.dataTransfer?.files ?? []);
+      if (files.length === 0) {
+        return null;
+      }
+      const imageFiles = imageFilesFromDataTransfer(event.dataTransfer);
+      const imageFileSet = new Set(imageFiles);
+      const regularFiles = files.filter((file) => !imageFileSet.has(file));
+      const canResolveRegularFiles = Boolean(resolveDroppedFileReferences);
+      const effectiveRegularFiles = canResolveRegularFiles ? regularFiles : [];
+      if (imageFiles.length === 0 && effectiveRegularFiles.length === 0) {
+        return null;
+      }
+      return { imageFiles, regularFiles: effectiveRegularFiles };
     };
 
     const handleDragOver: EventListener = (event): void => {
       if (!isDragEvent(event)) {
         return;
       }
-      if (!hasPromptImageFiles(event)) {
+      const drop = systemFileDrop(event);
+      if (!drop) {
         return;
       }
       event.preventDefault();
-      if (!promptImagesSupported) {
+      if (
+        drop.regularFiles.length === 0 &&
+        drop.imageFiles.length > 0 &&
+        !promptImagesSupported
+      ) {
         return;
       }
       if (event.dataTransfer) {
@@ -2291,17 +2331,28 @@ export function AgentComposer({
       if (!isDragEvent(event)) {
         return;
       }
-      if (!hasPromptImageFiles(event)) {
+      const drop = systemFileDrop(event);
+      if (!drop) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
+      if (drop.regularFiles.length > 0) {
+        editorHandleRef.current?.focusAtEnd();
+        void applyDroppedFileReferences(drop.regularFiles).then(() => {
+          if (!isDisposed) {
+            scheduleComposerFocus();
+          }
+        });
+      }
+      if (drop.imageFiles.length === 0) {
+        return;
+      }
       if (!promptImagesSupported) {
         onPromptImagesUnsupported?.();
         return;
       }
-      const imageFiles = imageFilesFromDataTransfer(event.dataTransfer);
-      void readAgentRichTextPromptImages(imageFiles).then((images) => {
+      void readAgentRichTextPromptImages(drop.imageFiles).then((images) => {
         if (isDisposed || images.length === 0) {
           return;
         }
@@ -2319,9 +2370,11 @@ export function AgentComposer({
     };
   }, [
     addDraftImages,
+    applyDroppedFileReferences,
     inputDisabled,
     onPromptImagesUnsupported,
     promptImagesSupported,
+    resolveDroppedFileReferences,
     scheduleComposerFocus
   ]);
   useEffect(() => {
@@ -2927,6 +2980,11 @@ export function AgentComposer({
                     onPromptImagesUnsupported={onPromptImagesUnsupported}
                     onPasteImages={handlePastedImages}
                     getReferenceForFile={getReferenceForFile}
+                    onDropFiles={
+                      resolveDroppedFileReferences
+                        ? applyDroppedFileReferences
+                        : undefined
+                    }
                   />
                   {!isHeroLayout ? composerActionButton : null}
                 </div>

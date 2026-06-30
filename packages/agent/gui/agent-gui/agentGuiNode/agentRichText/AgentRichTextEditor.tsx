@@ -77,6 +77,7 @@ export interface AgentRichTextEditorProps {
   onPromptImagesUnsupported?: () => void;
   onPasteImages?: (images: AgentRichTextPastedImage[]) => void;
   getReferenceForFile?: (file: File) => WorkspaceFileReference | null;
+  onDropFiles?: (files: readonly File[]) => void;
 }
 
 export interface AgentRichTextEditorHandle {
@@ -458,7 +459,8 @@ export const AgentRichTextEditor = forwardRef<
     promptImagesSupported = true,
     onPromptImagesUnsupported,
     onPasteImages,
-    getReferenceForFile
+    getReferenceForFile,
+    onDropFiles
   },
   ref
 ): React.JSX.Element {
@@ -479,6 +481,7 @@ export const AgentRichTextEditor = forwardRef<
   const onLinkClickRef = useRef(onLinkClick);
   const onPromptImagesUnsupportedRef = useRef(onPromptImagesUnsupported);
   const onPasteImagesRef = useRef(onPasteImages);
+  const onDropFilesRef = useRef(onDropFiles);
   const promptImagesSupportedRef = useRef(promptImagesSupported);
   const getReferenceForFileRef = useRef(getReferenceForFile);
   const placeholderRef = useRef(placeholder);
@@ -621,6 +624,7 @@ export const AgentRichTextEditor = forwardRef<
   onLinkClickRef.current = onLinkClick;
   onPromptImagesUnsupportedRef.current = onPromptImagesUnsupported;
   onPasteImagesRef.current = onPasteImages;
+  onDropFilesRef.current = onDropFiles;
   promptImagesSupportedRef.current = promptImagesSupported;
   getReferenceForFileRef.current = getReferenceForFile;
   placeholderRef.current = placeholder;
@@ -860,11 +864,16 @@ export const AgentRichTextEditor = forwardRef<
             return false;
           }
           const imageFiles = imageFilesFromDataTransfer(dataTransfer);
-          if (imageFiles.length > 0) {
+          const hasRegularSystemFiles =
+            Array.from(dataTransfer.files ?? []).some(
+              (file) => !imageFiles.includes(file)
+            ) && Boolean(onDropFilesRef.current);
+          if (imageFiles.length > 0 || hasRegularSystemFiles) {
             event.preventDefault();
-            dataTransfer.dropEffect = promptImagesSupportedRef.current
-              ? "copy"
-              : "none";
+            dataTransfer.dropEffect =
+              hasRegularSystemFiles || promptImagesSupportedRef.current
+                ? "copy"
+                : "none";
             return true;
           }
           if (!hasWorkspaceFileDropData(dataTransfer)) {
@@ -886,8 +895,44 @@ export const AgentRichTextEditor = forwardRef<
             return false;
           }
           const imageFiles = imageFilesFromDataTransfer(dataTransfer);
-          if (imageFiles.length > 0) {
+          const files = Array.from(dataTransfer.files ?? []);
+          const imageFileSet = new Set(imageFiles);
+          const regularFiles = files.filter((file) => !imageFileSet.has(file));
+          const canHandleRegularFiles = Boolean(onDropFilesRef.current);
+          if (
+            imageFiles.length > 0 ||
+            (regularFiles.length > 0 && canHandleRegularFiles)
+          ) {
             event.preventDefault();
+            const currentEditor = editorRef.current;
+            if (
+              regularFiles.length > 0 &&
+              onDropFilesRef.current &&
+              currentEditor &&
+              !currentEditor.isDestroyed
+            ) {
+              const coordinatePosition = currentEditor.view.posAtCoords({
+                left: event.clientX,
+                top: event.clientY
+              })?.pos;
+              const fallbackSelectionPosition =
+                currentEditor.state.selection.from;
+              const insertPosition =
+                coordinatePosition ??
+                (Number.isInteger(fallbackSelectionPosition)
+                  ? fallbackSelectionPosition
+                  : null) ??
+                currentEditor.state.doc.content.size;
+              currentEditor
+                .chain()
+                .focus()
+                .setTextSelection(insertPosition)
+                .run();
+              onDropFilesRef.current(regularFiles);
+            }
+            if (imageFiles.length === 0) {
+              return true;
+            }
             if (!promptImagesSupportedRef.current) {
               onPromptImagesUnsupportedRef.current?.();
               return true;

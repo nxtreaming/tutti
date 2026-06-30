@@ -6,7 +6,7 @@ import type {
   AgentActivitySessionEventEnvelope,
   AgentActivitySnapshot
 } from "@tutti-os/agent-activity-core";
-import type { DesktopRuntimeApi } from "@preload/types";
+import type { DesktopHostFilesApi, DesktopRuntimeApi } from "@preload/types";
 import type { IReporterService } from "../../analytics/services/reporterService.interface.ts";
 import { AgentConversationPinnedReporter } from "../../analytics/reporters/agent-conversation-pinned/agentConversationPinnedReporter.ts";
 import { AgentConversationUnpinnedReporter } from "../../analytics/reporters/agent-conversation-unpinned/agentConversationUnpinnedReporter.ts";
@@ -43,6 +43,7 @@ type AgentComposerSettingsChange = {
 interface CreateDesktopAgentActivityRuntimeOptions {
   reporterNow?: () => number;
   reporterService?: Pick<IReporterService, "trackEvents">;
+  hostFilesApi?: Pick<DesktopHostFilesApi, "archiveAgentPromptFile">;
   runtimeApi?: Pick<
     DesktopRuntimeApi,
     "logRendererDiagnostic" | "logTerminalDiagnostic"
@@ -147,6 +148,10 @@ export function createDesktopAgentActivityRuntime(
     reporterService: options.reporterService
   });
   return {
+    promptContentUploadSupport: {
+      file: true,
+      image: false
+    },
     async activateSession(input) {
       reportAgentSubmitTraceDiagnostic({
         agentSessionId: input.agentSessionId,
@@ -364,6 +369,59 @@ export function createDesktopAgentActivityRuntime(
         success: true
       });
       return result;
+    },
+    async uploadPromptContent(input) {
+      if (!options.hostFilesApi?.archiveAgentPromptFile) {
+        throw new Error(
+          "Prompt file uploads are not supported by this agent runtime."
+        );
+      }
+      const content = await Promise.all(
+        input.content.map(async (block) => {
+          if (block.type === "file") {
+            const hostPath = block.hostPath?.trim() ?? "";
+            if (!hostPath) {
+              throw new Error("Prompt file upload requires hostPath.");
+            }
+            const archived = await options.hostFilesApi!.archiveAgentPromptFile(
+              {
+                workspaceID: input.workspaceId,
+                hostPath,
+                displayName: block.name ?? null,
+                mimeType: block.mimeType ?? null
+              }
+            );
+            return {
+              ...block,
+              name: archived.name,
+              path: archived.path,
+              sizeBytes: archived.sizeBytes,
+              uploadStatus: "uploaded"
+            };
+          }
+          if (block.type === "image" && block.data) {
+            const archived = await options.hostFilesApi!.archiveAgentPromptFile(
+              {
+                workspaceID: input.workspaceId,
+                dataBase64: block.data,
+                displayName: block.name ?? null,
+                mimeType: block.mimeType ?? null
+              }
+            );
+            const blockWithoutData = { ...block };
+            delete blockWithoutData.data;
+            return {
+              ...blockWithoutData,
+              name: archived.name,
+              path: archived.path,
+              sizeBytes: archived.sizeBytes,
+              uploadStatus: "uploaded"
+            };
+          }
+          return block;
+        })
+      );
+      return { content };
     },
     readSessionAttachment: (input) =>
       workspaceAgentActivityService.readSessionAttachment(input),

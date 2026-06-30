@@ -1674,6 +1674,84 @@ describe("AgentRichTextEditor", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("passes dropped system non-image files to the composer upload path", async () => {
+    const onChange = vi.fn();
+    const onDropFiles = vi.fn();
+    render(
+      <AgentRichTextEditor
+        value=""
+        disabled={false}
+        placeholder="Prompt"
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        onDropFiles={onDropFiles}
+      />
+    );
+
+    const dataTransfer = createDataTransferStub([
+      new File(["report"], "report.pdf", { type: "application/pdf" }),
+      new File(["notes"], "notes.txt", { type: "text/plain" })
+    ]);
+    const editor = await screen.findByRole("textbox", { name: "Prompt" });
+
+    fireEvent.dragOver(editor, { dataTransfer });
+    expect(dataTransfer.dropEffect).toBe("copy");
+    fireEvent.drop(editor, {
+      dataTransfer,
+      clientX: 8,
+      clientY: 8
+    });
+
+    expect(onDropFiles).toHaveBeenCalledWith([
+      expect.objectContaining({ name: "report.pdf" }),
+      expect.objectContaining({ name: "notes.txt" })
+    ]);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps mixed system image and file drops in their separate composer paths", async () => {
+    const onChange = vi.fn();
+    const onPasteImages = vi.fn();
+    const onDropFiles = vi.fn();
+    render(
+      <AgentRichTextEditor
+        value=""
+        disabled={false}
+        placeholder="Prompt"
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        onPasteImages={onPasteImages}
+        onDropFiles={onDropFiles}
+      />
+    );
+
+    const dataTransfer = createDataTransferStub([
+      new File(["image"], "diagram.png", { type: "image/png" }),
+      new File(["report"], "report.pdf", { type: "application/pdf" })
+    ]);
+    const editor = await screen.findByRole("textbox", { name: "Prompt" });
+
+    fireEvent.drop(editor, {
+      dataTransfer,
+      clientX: 8,
+      clientY: 8
+    });
+
+    expect(onDropFiles).toHaveBeenCalledWith([
+      expect.objectContaining({ name: "report.pdf" })
+    ]);
+    await waitFor(() =>
+      expect(onPasteImages).toHaveBeenCalledWith([
+        {
+          name: "diagram.png",
+          mimeType: "image/png",
+          data: "aW1hZ2U="
+        }
+      ])
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("inserts multiple dropped workspace mentions in drag order", async () => {
     const onChange = vi.fn();
     render(
