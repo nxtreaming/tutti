@@ -1269,6 +1269,7 @@ export const zhCN = {
         questionFallback: "问题",
         delegateSession: "委托会话",
         noMatches: "没有匹配结果",
+        stepLabel: "步骤 {{index}}",
         noMatchingTools: "没有匹配的工具",
         loadedAvailable: "已加载 {{loaded}} 个 · 共 {{available}} 个",
         contentTruncated: "内容已截断",

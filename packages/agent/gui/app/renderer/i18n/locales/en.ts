@@ -1354,6 +1354,7 @@ export const en = {
         questionFallback: "Question",
         delegateSession: "Delegate session",
         noMatches: "No matches",
+        stepLabel: "Step {{index}}",
         noMatchingTools: "No matching tools",
         loadedAvailable: "{{loaded}} loaded · {{available}} available",
         contentTruncated: "Content truncated",
