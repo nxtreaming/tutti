@@ -5,6 +5,12 @@ import { createAccountStore } from "./accountStore.ts";
 
 const loginStatusPollMs = 1000;
 
+type ActiveLoginAttempt = {
+  attemptID: string;
+  expiresAt: number;
+  loginURL: string;
+};
+
 export interface AccountServiceDependencies {
   hostFilesApi: Pick<DesktopHostFilesApi, "openExternal">;
   tuttidClient: Pick<
@@ -21,6 +27,9 @@ export class AccountService implements IAccountService {
   readonly store = createAccountStore();
 
   private readonly dependencies: AccountServiceDependencies;
+  private activeLoginAttempt: ActiveLoginAttempt | null = null;
+  private loginPoll: Promise<void> | null = null;
+  private loginGeneration = 0;
 
   constructor(dependencies: AccountServiceDependencies) {
     this.dependencies = dependencies;
@@ -45,12 +54,11 @@ export class AccountService implements IAccountService {
     }
     this.store.signingIn = true;
     this.store.error = null;
-    this.store.loginStatus = "pending";
     try {
-      const started = await this.dependencies.tuttidClient.startAccountLogin();
-      await this.dependencies.hostFilesApi.openExternal(started.login_url);
-      await this.pollLoginStatus(started.attempt_id, started.expires_at);
-      await this.refreshUserInfo();
+      const attempt = await this.ensureLoginAttempt();
+      await this.dependencies.hostFilesApi.openExternal(attempt.loginURL);
+      this.store.loginStatus = "pending";
+      this.startLoginStatusPoll(attempt);
     } catch (error) {
       this.store.error = readAccountError(error);
     } finally {
@@ -64,9 +72,11 @@ export class AccountService implements IAccountService {
     }
     this.store.signingOut = true;
     this.store.error = null;
+    this.cancelLoginPoll();
     try {
       await this.dependencies.tuttidClient.logoutAccount();
       this.store.user = null;
+      this.store.loginStatus = null;
     } catch (error) {
       this.store.error = readAccountError(error);
     } finally {
@@ -74,23 +84,84 @@ export class AccountService implements IAccountService {
     }
   }
 
+  private async ensureLoginAttempt(): Promise<ActiveLoginAttempt> {
+    if (
+      this.activeLoginAttempt &&
+      Date.now() <= this.activeLoginAttempt.expiresAt
+    ) {
+      return this.activeLoginAttempt;
+    }
+    const started = await this.dependencies.tuttidClient.startAccountLogin();
+    const attempt = {
+      attemptID: started.attempt_id,
+      expiresAt: started.expires_at,
+      loginURL: started.login_url
+    };
+    this.activeLoginAttempt = attempt;
+    return attempt;
+  }
+
+  private startLoginStatusPoll(attempt: ActiveLoginAttempt): void {
+    if (
+      this.loginPoll &&
+      this.activeLoginAttempt?.attemptID === attempt.attemptID
+    ) {
+      return;
+    }
+    const generation = ++this.loginGeneration;
+    this.loginPoll = this.pollLoginStatus(attempt, generation).finally(() => {
+      if (this.loginGeneration === generation) {
+        this.loginPoll = null;
+      }
+    });
+  }
+
+  private cancelLoginPoll(): void {
+    this.loginGeneration += 1;
+    this.loginPoll = null;
+    this.activeLoginAttempt = null;
+  }
+
   private async pollLoginStatus(
-    attemptID: string,
-    expiresAt: number
+    attempt: ActiveLoginAttempt,
+    generation: number
   ): Promise<void> {
-    while (Date.now() <= expiresAt) {
-      const status =
-        await this.dependencies.tuttidClient.getAccountLoginStatus(attemptID);
-      this.store.loginStatus = status.status;
-      if (status.status === "completed") {
+    try {
+      while (
+        this.loginGeneration === generation &&
+        Date.now() <= attempt.expiresAt
+      ) {
+        const status =
+          await this.dependencies.tuttidClient.getAccountLoginStatus(
+            attempt.attemptID
+          );
+        if (this.loginGeneration !== generation) {
+          return;
+        }
+        this.store.loginStatus = status.status;
+        if (status.status === "completed") {
+          this.activeLoginAttempt = null;
+          await this.refreshUserInfo();
+          return;
+        }
+        if (status.status === "failed" || status.status === "expired") {
+          throw new Error(status.error ?? status.status);
+        }
+        await delay(loginStatusPollMs);
+      }
+      throw new Error("Login timed out");
+    } catch (error) {
+      if (this.loginGeneration !== generation) {
         return;
       }
-      if (status.status === "failed" || status.status === "expired") {
-        throw new Error(status.error ?? status.status);
+      this.activeLoginAttempt = null;
+      this.store.error = readAccountError(error);
+      this.store.loginStatus = "failed";
+    } finally {
+      if (this.loginGeneration === generation) {
+        this.activeLoginAttempt = null;
       }
-      await delay(loginStatusPollMs);
     }
-    throw new Error("Login timed out");
   }
 }
 

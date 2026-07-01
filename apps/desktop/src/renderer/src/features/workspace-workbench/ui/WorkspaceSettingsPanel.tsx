@@ -2734,7 +2734,7 @@ function WorkspaceAccountSettingsSection() {
   }, [accountService]);
 
   const handleLogin = async () => {
-    if (accountState.signingIn || accountState.signingOut) {
+    if (accountState.signingOut) {
       return;
     }
     await accountService.startLogin();
@@ -2805,11 +2805,7 @@ function WorkspaceAccountSettingsSection() {
           </>
         ) : (
           <WorkspaceSettingsActionButton
-            disabled={
-              accountState.loading ||
-              accountState.signingIn ||
-              accountState.signingOut
-            }
+            disabled={accountState.loading || accountState.signingOut}
             icon={
               accountState.signingIn ? (
                 <LoadingIcon className="size-3.5" />
@@ -2818,7 +2814,9 @@ function WorkspaceAccountSettingsSection() {
             label={
               accountState.signingIn
                 ? t("workspace.settings.account.signingIn")
-                : t("workspace.settings.account.login")
+                : accountState.loginStatus === "pending"
+                  ? t("workspace.settings.account.reopenLogin")
+                  : t("workspace.settings.account.login")
             }
             onClick={handleLogin}
           />

@@ -543,6 +543,7 @@ export const en = {
         login: "Sign in",
         logout: "Sign out",
         refresh: "Refresh",
+        reopenLogin: "Open sign-in again",
         signedOutTitle: "Not signed in",
         signingIn: "Signing in...",
         signingOut: "Signing out..."

@@ -517,6 +517,7 @@ export const zhCN = {
         login: "登录",
         logout: "退出登录",
         refresh: "刷新",
+        reopenLogin: "重新打开登录页",
         signedOutTitle: "未登录",
         signingIn: "登录中...",
         signingOut: "退出中..."
