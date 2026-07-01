@@ -18,6 +18,7 @@ tags:
   - name: workspace
   - name: terminal
   - name: agent-session
+  - name: agent-target
   - name: agent-context
   - name: app-center
   - name: app-factory
@@ -338,6 +339,28 @@ paths:
           $ref: "#/components/responses/InvalidRequestError"
         "405":
           $ref: "#/components/responses/MethodNotAllowedError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+  /v1/agent-targets:
+    get:
+      operationId: listAgentTargets
+      tags:
+        - agent-target
+      summary: List daemon-owned Agent Targets
+      description: Returns durable Agent Target records. The launch ref is a controlled union and not a free-form configuration blob.
+      responses:
+        "200":
+          description: Agent Targets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListAgentTargetsResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedError"
+        "502":
+          $ref: "#/components/responses/PreferencesOperationError"
         "503":
           $ref: "#/components/responses/ServiceUnavailableError"
   /v1/workspaces:
@@ -3812,6 +3835,7 @@ components:
         - agentComposerDefaultsByProvider
         - agentGuiConversationRailCollapsedByProvider
         - agentConversationDetailMode
+        - agentDockLayout
         - appCatalogChannel
         - defaultAgentProvider
         - dockIconStyle
@@ -3831,6 +3855,8 @@ components:
           $ref: "#/components/schemas/DesktopAgentGuiConversationRailCollapsedByProvider"
         agentConversationDetailMode:
           $ref: "#/components/schemas/DesktopAgentConversationDetailMode"
+        agentDockLayout:
+          $ref: "#/components/schemas/DesktopAgentDockLayout"
         appCatalogChannel:
           $ref: "#/components/schemas/DesktopAppCatalogChannel"
         browserUseConnectionMode:
@@ -3890,6 +3916,11 @@ components:
       enum:
         - coding
         - general
+    DesktopAgentDockLayout:
+      type: string
+      enum:
+        - legacySplit
+        - unified
     DesktopAgentComposerDefaultsByProvider:
       type: object
       additionalProperties: false
@@ -3958,6 +3989,76 @@ components:
       properties:
         preferences:
           $ref: "#/components/schemas/DesktopPreferences"
+    AgentTargetProvider:
+      type: string
+      enum:
+        - codex
+        - claude-code
+    AgentTargetSource:
+      type: string
+      enum:
+        - system
+        - user
+    AgentTargetLaunchRef:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - provider
+      properties:
+        type:
+          type: string
+          enum:
+            - local_cli
+        provider:
+          $ref: "#/components/schemas/AgentTargetProvider"
+    AgentTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - provider
+        - launchRef
+        - name
+        - enabled
+        - source
+        - sortOrder
+        - createdAtUnixMs
+        - updatedAtUnixMs
+      properties:
+        id:
+          type: string
+        provider:
+          $ref: "#/components/schemas/AgentTargetProvider"
+        launchRef:
+          $ref: "#/components/schemas/AgentTargetLaunchRef"
+        name:
+          type: string
+        iconKey:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        source:
+          $ref: "#/components/schemas/AgentTargetSource"
+        sortOrder:
+          type: integer
+        createdAtUnixMs:
+          type: integer
+          format: int64
+        updatedAtUnixMs:
+          type: integer
+          format: int64
+    ListAgentTargetsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - targets
+      properties:
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentTarget"
     ListWorkspacesResponse:
       type: object
       additionalProperties: false

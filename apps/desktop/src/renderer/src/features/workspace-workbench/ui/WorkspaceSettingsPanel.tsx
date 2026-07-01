@@ -62,6 +62,7 @@ import {
 } from "../../../../../shared/i18n/index.ts";
 import {
   type DesktopAgentProvider,
+  desktopAgentDockLayouts,
   desktopAgentConversationDetailModes,
   desktopAppCatalogChannels,
   desktopBrowserUseConnectionModes,
@@ -73,6 +74,7 @@ import {
   normalizeDesktopFileExtension,
   type DesktopAppCatalogChannel,
   type DesktopAgentConversationDetailMode,
+  type DesktopAgentDockLayout,
   type DesktopBrowserUseConnectionMode,
   type DesktopDockPlacement,
   type DesktopFileDefaultOpener,
@@ -302,11 +304,15 @@ export function WorkspaceSettingsPanel({
                 agentConversationDetailMode={
                   desktopPreferencesState.agentConversationDetailMode
                 }
+                agentDockLayout={desktopPreferencesState.agentDockLayout}
                 browserUseConnectionMode={
                   desktopPreferencesState.browserUseConnectionMode
                 }
                 changingAgentConversationDetailMode={
                   desktopPreferencesState.changingAgentConversationDetailMode
+                }
+                changingAgentDockLayout={
+                  desktopPreferencesState.changingAgentDockLayout
                 }
                 changingDefaultAgentProvider={
                   desktopPreferencesState.changingDefaultAgentProvider
@@ -324,6 +330,9 @@ export function WorkspaceSettingsPanel({
                 }}
                 onAgentConversationDetailModeChange={(mode) => {
                   void settingsService.changeAgentConversationDetailMode(mode);
+                }}
+                onAgentDockLayoutChange={(layout) => {
+                  void settingsService.changeAgentDockLayout(layout);
                 }}
                 onDefaultAgentProviderChange={(provider) => {
                   void settingsService.changeDefaultAgentProvider(provider);
@@ -2303,21 +2312,26 @@ function resolveComputerUseGrantTooltip(
 
 function WorkspaceAgentSettingsSection({
   agentConversationDetailMode,
+  agentDockLayout,
   browserUseConnectionMode,
   changingAgentConversationDetailMode,
+  changingAgentDockLayout,
   changingDefaultAgentProvider,
   changingBrowserUseConnectionMode,
   defaultAgentProvider,
   focusedAnchor,
   focusRequestID,
   onAgentConversationDetailModeChange,
+  onAgentDockLayoutChange,
   onDefaultAgentProviderChange,
   onBrowserUseConnectionModeChange,
   onOpenExternalAgentImport
 }: {
   agentConversationDetailMode: DesktopAgentConversationDetailMode;
+  agentDockLayout: DesktopAgentDockLayout;
   browserUseConnectionMode: DesktopBrowserUseConnectionMode;
   changingAgentConversationDetailMode: DesktopAgentConversationDetailMode | null;
+  changingAgentDockLayout: DesktopAgentDockLayout | null;
   changingDefaultAgentProvider: DesktopAgentProvider | null;
   changingBrowserUseConnectionMode: DesktopBrowserUseConnectionMode | null;
   defaultAgentProvider: DesktopAgentProvider;
@@ -2326,6 +2340,7 @@ function WorkspaceAgentSettingsSection({
   onAgentConversationDetailModeChange: (
     mode: DesktopAgentConversationDetailMode
   ) => void;
+  onAgentDockLayoutChange: (layout: DesktopAgentDockLayout) => void;
   onBrowserUseConnectionModeChange: (
     mode: DesktopBrowserUseConnectionMode
   ) => void;
@@ -2351,6 +2366,8 @@ function WorkspaceAgentSettingsSection({
     changingAgentConversationDetailMode !== null;
   const pendingAgentConversationDetailMode =
     changingAgentConversationDetailMode ?? agentConversationDetailMode;
+  const isUpdatingAgentDockLayout = changingAgentDockLayout !== null;
+  const pendingAgentDockLayout = changingAgentDockLayout ?? agentDockLayout;
 
   useEffect(() => {
     if (!focusedAnchor || focusRequestID === 0) {
@@ -2476,6 +2493,49 @@ function WorkspaceAgentSettingsSection({
               {workspaceSettingsDefaultAgentProviders.map((provider) => (
                 <SelectItem key={provider} value={provider}>
                   {resolveWorkspaceAgentGuiLabel(provider)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex w-full items-center justify-between gap-4 max-[560px]:flex-col max-[560px]:items-stretch">
+        <div className="flex min-w-0 flex-1 flex-col gap-1 max-[560px]:w-full">
+          <strong className="text-[13px] font-semibold text-[var(--text-primary)]">
+            {t("workspace.settings.general.agentDockLayoutLabel")}
+          </strong>
+          <p className="m-0 text-[13px] leading-[1.3] text-[var(--text-secondary)]">
+            {t("workspace.settings.general.agentDockLayoutDescription")}
+          </p>
+        </div>
+        <div className="w-[220px] min-w-[220px] max-[560px]:w-full max-[560px]:min-w-0">
+          <Select
+            disabled={isUpdatingAgentDockLayout}
+            value={pendingAgentDockLayout}
+            onValueChange={(value) =>
+              onAgentDockLayoutChange(value as DesktopAgentDockLayout)
+            }
+          >
+            <SelectTrigger
+              aria-label={t("workspace.settings.general.agentDockLayoutLabel")}
+              className={workspaceSettingsSelectTriggerClass}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              className={workspaceSettingsSelectContentClass}
+              style={{ zIndex: "var(--z-panel-popover)" }}
+            >
+              {desktopAgentDockLayouts.map((layout) => (
+                <SelectItem key={layout} value={layout}>
+                  {layout === "legacySplit"
+                    ? t(
+                        "workspace.settings.general.agentDockLayoutOptions.legacySplit"
+                      )
+                    : t(
+                        "workspace.settings.general.agentDockLayoutOptions.unified"
+                      )}
                 </SelectItem>
               ))}
             </SelectContent>

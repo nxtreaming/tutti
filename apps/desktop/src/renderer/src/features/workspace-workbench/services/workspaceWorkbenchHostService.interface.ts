@@ -24,7 +24,10 @@ import type {
   WorkbenchHostSnapshotRepository
 } from "@tutti-os/workbench-surface";
 import type { WorkspaceWorkbenchDesktopI18nRuntime } from "@shared/i18n";
-import type { DesktopDockIconStyle } from "@shared/preferences";
+import type {
+  DesktopAgentDockLayout,
+  DesktopDockIconStyle
+} from "@shared/preferences";
 import type { DesktopThemeAppearance } from "@shared/theme";
 import type {
   WorkspaceWallpaperDisplayMode,
@@ -111,6 +114,7 @@ export interface IWorkspaceWorkbenchHostService {
   approveWindowClose(): Promise<void>;
   createHostInput(input: {
     appI18n: I18nRuntime<string>;
+    agentDockLayout: DesktopAgentDockLayout;
     appCenterRevision?: number;
     confirmCloseGuard: (
       request: WorkbenchHostCloseDialogRequest
@@ -129,6 +133,7 @@ export interface IWorkspaceWorkbenchHostService {
     themeAppearance: DesktopThemeAppearance;
     workspaceId: string;
   }): WorkspaceWorkbenchHostInput;
+  loadAgentGuiProviderTargets(): Promise<readonly AgentGUIProviderTarget[]>;
   createWorkspaceAppExternalFileReferenceAdapter(
     workspaceId: string
   ): WorkspaceFileReferenceAdapter;

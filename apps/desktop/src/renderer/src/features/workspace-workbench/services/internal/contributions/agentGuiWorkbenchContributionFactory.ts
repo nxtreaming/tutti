@@ -8,11 +8,13 @@ export const agentGuiWorkbenchContributionFactory: DesktopWorkbenchContributionF
     create(context) {
       return createWorkspaceAgentGuiContribution({
         agentProviderStatusService: context.agentProviderStatusService,
+        agentDockLayout: context.agentDockLayout,
         appCenterService: context.appCenterService,
         appI18n: context.appI18n,
         computerUseApi: context.computerUseApi,
         dockIconUrls: context.dockIcons.agents,
         dockPreviewCache: context.dockPreviewCache,
+        defaultAgentProvider: context.defaultAgentProvider,
         defaultProviderTargetId: context.defaultProviderTargetId,
         hostFilesApi: context.hostFilesApi,
         i18n: context.i18n,

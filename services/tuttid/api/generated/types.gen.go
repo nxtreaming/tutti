@@ -352,6 +352,57 @@ func (e AgentProviderSkillOptionSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for AgentTargetLaunchRefType.
+const (
+	LocalCli AgentTargetLaunchRefType = "local_cli"
+)
+
+// Valid indicates whether the value is a known member of the AgentTargetLaunchRefType enum.
+func (e AgentTargetLaunchRefType) Valid() bool {
+	switch e {
+	case LocalCli:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentTargetProvider.
+const (
+	AgentTargetProviderClaudeCode AgentTargetProvider = "claude-code"
+	AgentTargetProviderCodex      AgentTargetProvider = "codex"
+)
+
+// Valid indicates whether the value is a known member of the AgentTargetProvider enum.
+func (e AgentTargetProvider) Valid() bool {
+	switch e {
+	case AgentTargetProviderClaudeCode:
+		return true
+	case AgentTargetProviderCodex:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentTargetSource.
+const (
+	AgentTargetSourceSystem AgentTargetSource = "system"
+	AgentTargetSourceUser   AgentTargetSource = "user"
+)
+
+// Valid indicates whether the value is a known member of the AgentTargetSource enum.
+func (e AgentTargetSource) Valid() bool {
+	switch e {
+	case AgentTargetSourceSystem:
+		return true
+	case AgentTargetSourceUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApiErrorDetailsCode.
 const (
 	InvalidRequest                 ApiErrorDetailsCode = "invalid_request"
@@ -538,6 +589,24 @@ func (e DesktopAgentConversationDetailMode) Valid() bool {
 	}
 }
 
+// Defines values for DesktopAgentDockLayout.
+const (
+	LegacySplit DesktopAgentDockLayout = "legacySplit"
+	Unified     DesktopAgentDockLayout = "unified"
+)
+
+// Valid indicates whether the value is a known member of the DesktopAgentDockLayout enum.
+func (e DesktopAgentDockLayout) Valid() bool {
+	switch e {
+	case LegacySplit:
+		return true
+	case Unified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DesktopAppCatalogChannel.
 const (
 	Production DesktopAppCatalogChannel = "production"
@@ -696,19 +765,19 @@ func (e DesktopSleepPreventionMode) Valid() bool {
 
 // Defines values for DesktopThemeSource.
 const (
-	Dark   DesktopThemeSource = "dark"
-	Light  DesktopThemeSource = "light"
-	System DesktopThemeSource = "system"
+	DesktopThemeSourceDark   DesktopThemeSource = "dark"
+	DesktopThemeSourceLight  DesktopThemeSource = "light"
+	DesktopThemeSourceSystem DesktopThemeSource = "system"
 )
 
 // Valid indicates whether the value is a known member of the DesktopThemeSource enum.
 func (e DesktopThemeSource) Valid() bool {
 	switch e {
-	case Dark:
+	case DesktopThemeSourceDark:
 		return true
-	case Light:
+	case DesktopThemeSourceLight:
 		return true
-	case System:
+	case DesktopThemeSourceSystem:
 		return true
 	default:
 		return false
@@ -987,28 +1056,28 @@ func (e WorkbenchSnapshotNodeDisplayMode) Valid() bool {
 
 // Defines values for WorkspaceAgentProvider.
 const (
-	ClaudeCode WorkspaceAgentProvider = "claude-code"
-	Codex      WorkspaceAgentProvider = "codex"
-	Gemini     WorkspaceAgentProvider = "gemini"
-	Hermes     WorkspaceAgentProvider = "hermes"
-	Nexight    WorkspaceAgentProvider = "nexight"
-	Openclaw   WorkspaceAgentProvider = "openclaw"
+	WorkspaceAgentProviderClaudeCode WorkspaceAgentProvider = "claude-code"
+	WorkspaceAgentProviderCodex      WorkspaceAgentProvider = "codex"
+	WorkspaceAgentProviderGemini     WorkspaceAgentProvider = "gemini"
+	WorkspaceAgentProviderHermes     WorkspaceAgentProvider = "hermes"
+	WorkspaceAgentProviderNexight    WorkspaceAgentProvider = "nexight"
+	WorkspaceAgentProviderOpenclaw   WorkspaceAgentProvider = "openclaw"
 )
 
 // Valid indicates whether the value is a known member of the WorkspaceAgentProvider enum.
 func (e WorkspaceAgentProvider) Valid() bool {
 	switch e {
-	case ClaudeCode:
+	case WorkspaceAgentProviderClaudeCode:
 		return true
-	case Codex:
+	case WorkspaceAgentProviderCodex:
 		return true
-	case Gemini:
+	case WorkspaceAgentProviderGemini:
 		return true
-	case Hermes:
+	case WorkspaceAgentProviderHermes:
 		return true
-	case Nexight:
+	case WorkspaceAgentProviderNexight:
 		return true
-	case Openclaw:
+	case WorkspaceAgentProviderOpenclaw:
 		return true
 	default:
 		return false
@@ -1891,6 +1960,35 @@ type AgentSessionComposerSettings struct {
 	Speed            *string `json:"speed,omitempty"`
 }
 
+// AgentTarget defines model for AgentTarget.
+type AgentTarget struct {
+	CreatedAtUnixMs int64                `json:"createdAtUnixMs"`
+	Enabled         bool                 `json:"enabled"`
+	IconKey         *string              `json:"iconKey,omitempty"`
+	Id              string               `json:"id"`
+	LaunchRef       AgentTargetLaunchRef `json:"launchRef"`
+	Name            string               `json:"name"`
+	Provider        AgentTargetProvider  `json:"provider"`
+	SortOrder       int                  `json:"sortOrder"`
+	Source          AgentTargetSource    `json:"source"`
+	UpdatedAtUnixMs int64                `json:"updatedAtUnixMs"`
+}
+
+// AgentTargetLaunchRef defines model for AgentTargetLaunchRef.
+type AgentTargetLaunchRef struct {
+	Provider AgentTargetProvider      `json:"provider"`
+	Type     AgentTargetLaunchRefType `json:"type"`
+}
+
+// AgentTargetLaunchRefType defines model for AgentTargetLaunchRef.Type.
+type AgentTargetLaunchRefType string
+
+// AgentTargetProvider defines model for AgentTargetProvider.
+type AgentTargetProvider string
+
+// AgentTargetSource defines model for AgentTargetSource.
+type AgentTargetSource string
+
 // ApiErrorDetails defines model for ApiErrorDetails.
 type ApiErrorDetails struct {
 	Code             ApiErrorDetailsCode     `json:"code"`
@@ -2339,6 +2437,9 @@ type DesktopAgentComposerDefaultsByProvider struct {
 // DesktopAgentConversationDetailMode defines model for DesktopAgentConversationDetailMode.
 type DesktopAgentConversationDetailMode string
 
+// DesktopAgentDockLayout defines model for DesktopAgentDockLayout.
+type DesktopAgentDockLayout string
+
 // DesktopAgentGuiConversationRailCollapsedByProvider defines model for DesktopAgentGuiConversationRailCollapsedByProvider.
 type DesktopAgentGuiConversationRailCollapsedByProvider struct {
 	ClaudeCode *bool `json:"claude-code,omitempty"`
@@ -2377,6 +2478,7 @@ type DesktopMinimizeAnimation string
 type DesktopPreferences struct {
 	AgentComposerDefaultsByProvider             DesktopAgentComposerDefaultsByProvider             `json:"agentComposerDefaultsByProvider"`
 	AgentConversationDetailMode                 DesktopAgentConversationDetailMode                 `json:"agentConversationDetailMode"`
+	AgentDockLayout                             DesktopAgentDockLayout                             `json:"agentDockLayout"`
 	AgentGuiConversationRailCollapsedByProvider DesktopAgentGuiConversationRailCollapsedByProvider `json:"agentGuiConversationRailCollapsedByProvider"`
 	AppCatalogChannel                           DesktopAppCatalogChannel                           `json:"appCatalogChannel"`
 	BrowserUseConnectionMode                    *DesktopBrowserUseConnectionMode                   `json:"browserUseConnectionMode,omitempty"`
@@ -2812,6 +2914,11 @@ type IssueManagerTopicListResponse struct {
 // IssueManagerTopicResponse defines model for IssueManagerTopicResponse.
 type IssueManagerTopicResponse struct {
 	Topic IssueManagerTopic `json:"topic"`
+}
+
+// ListAgentTargetsResponse defines model for ListAgentTargetsResponse.
+type ListAgentTargetsResponse struct {
+	Targets []AgentTarget `json:"targets"`
 }
 
 // ListWorkspacesResponse defines model for ListWorkspacesResponse.

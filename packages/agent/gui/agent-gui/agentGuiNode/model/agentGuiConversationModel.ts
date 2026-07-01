@@ -20,6 +20,11 @@ import {
   extractExitPlanModeOptions,
   isExitPlanSwitchModeInput
 } from "../../../shared/agentConversation/exitPlanOptions";
+import {
+  filterAgentGUIConversationSummaries,
+  normalizeAgentGUIConversationFilter,
+  type AgentGUIConversationFilter
+} from "./agentGuiConversationFilter";
 import type { AgentApprovalItemVM } from "../../../shared/agentConversation/contracts/agentApprovalItemVM";
 import type { AgentConversationVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type { AgentConversationPromptVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
@@ -161,6 +166,7 @@ export type AgentGUIInteractivePrompt =
   | Extract<AgentConversationPromptVM, { kind: "plan-implementation" }>;
 
 export interface BuildAgentGUIConversationsInput {
+  conversationFilter?: AgentGUIConversationFilter;
   isNoProjectPath?: AgentGUIConversationNoProjectPathResolver;
   snapshot: WorkspaceAgentActivitySnapshot;
   provider: AgentGUIProvider;
@@ -169,6 +175,7 @@ export interface BuildAgentGUIConversationsInput {
 }
 
 export function buildAgentGUIConversationSummaries({
+  conversationFilter,
   isNoProjectPath,
   snapshot,
   provider,
@@ -183,21 +190,29 @@ export function buildAgentGUIConversationSummaries({
     userProjects,
     { isNoProjectPath }
   );
-  return buildWorkspaceAgentActivityListViewModel(runtimeSnapshot, {
-    sessionMessagesById
-  })
-    .activities.map((activity) =>
-      conversationSummaryFromActivity(
-        activity,
-        sessionsById.get(activity.sessionId),
-        { projectResolver }
-      )
+  const conversations = buildWorkspaceAgentActivityListViewModel(
+    runtimeSnapshot,
+    {
+      sessionMessagesById
+    }
+  ).activities.map((activity) =>
+    conversationSummaryFromActivity(
+      activity,
+      sessionsById.get(activity.sessionId),
+      { projectResolver }
     )
-    .filter(
-      (conversation) =>
-        conversation.provider === provider ||
-        conversation.provider === "unknown"
+  );
+  if (conversationFilter) {
+    return filterAgentGUIConversationSummaries(
+      conversations,
+      normalizeAgentGUIConversationFilter(conversationFilter),
+      { includeUnknownProvider: true }
     );
+  }
+  return conversations.filter(
+    (conversation) =>
+      conversation.provider === provider || conversation.provider === "unknown"
+  );
 }
 
 export function selectAgentGUIConversationId(

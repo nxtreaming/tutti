@@ -4,15 +4,18 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement, isValidElement, type ReactElement } from "react";
 import { agentGuiDockIconUrls } from "../dockIcons.ts";
+import { createLocalAgentGUIProviderTarget } from "../providerTargets.ts";
 import {
   AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
   agentGuiWorkbenchDefaultCopy,
+  buildAgentGuiDockEntries,
   createAgentGuiWorkbenchContribution,
   resolveAgentGuiWorkbenchDefaultLaunchFrame,
   resolveAgentGuiWorkbenchContributionCopy
 } from "./contribution.ts";
 import {
   agentGuiWorkbenchDockEntryId,
+  agentGuiWorkbenchUnifiedDockEntryId,
   agentGuiWorkbenchTypeId
 } from "./launch.ts";
 
@@ -41,7 +44,314 @@ function createTestAgentGuiWorkbenchContribution(
   });
 }
 
+const testLaunchLayout = {
+  layoutConstraints: {
+    minHeight: 160,
+    minWidth: 280,
+    safeArea: {
+      bottom: 0,
+      left: 0,
+      right: 0,
+      top: 0
+    },
+    surfacePadding: 0
+  },
+  surfaceSize: {
+    height: 800,
+    width: 1200
+  }
+};
+
 describe("agent GUI workbench contribution copy", () => {
+  it("builds legacy split dock entries for the current provider dock ids", () => {
+    const entries = buildAgentGuiDockEntries({
+      layout: "legacySplit",
+      providerAvailability: {},
+      targets: [
+        createLocalAgentGUIProviderTarget("codex"),
+        createLocalAgentGUIProviderTarget("claude-code")
+      ]
+    });
+
+    expect(entries.map((entry) => entry.id)).toEqual([
+      "agent-gui:claude-code",
+      "agent-gui",
+      "agent-gui:nexight",
+      "agent-gui:hermes",
+      "agent-gui:gemini",
+      "agent-gui:openclaw"
+    ]);
+    expect(entries.find((entry) => entry.id === "agent-gui")?.visibility).toBe(
+      "always"
+    );
+    expect(
+      entries.find((entry) => entry.id === "agent-gui:claude-code")?.visibility
+    ).toBe("always");
+  });
+
+  it("builds one unified dock entry with the selected default target payload", () => {
+    const claudeTarget = createLocalAgentGUIProviderTarget("claude-code");
+    const entries = buildAgentGuiDockEntries({
+      defaultProvider: "codex",
+      label: "Agent",
+      layout: "unified",
+      providerAvailability: {
+        "claude-code": true,
+        codex: false
+      },
+      targets: [createLocalAgentGUIProviderTarget("codex"), claudeTarget]
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.id).toBe(agentGuiWorkbenchUnifiedDockEntryId());
+    expect(entries[0]?.label).toBe("Agent");
+    expect(entries[0]?.launchPayload).toEqual({
+      provider: "claude-code",
+      providerTargetId: "local:claude-code",
+      providerTargetRef: claudeTarget.ref
+    });
+  });
+
+  it("uses the first enabled target in host order after an unavailable default provider", () => {
+    const disabledClaudeTarget = {
+      ...createLocalAgentGUIProviderTarget("claude-code"),
+      disabled: true,
+      targetId: "disabled-claude"
+    };
+    const enabledClaudeTarget = {
+      ...createLocalAgentGUIProviderTarget("claude-code"),
+      targetId: "daemon-claude"
+    };
+    const entries = buildAgentGuiDockEntries({
+      defaultProvider: "codex",
+      label: "Agent",
+      layout: "unified",
+      providerAvailability: {
+        "claude-code": true,
+        codex: false
+      },
+      targets: [
+        createLocalAgentGUIProviderTarget("codex"),
+        disabledClaudeTarget,
+        enabledClaudeTarget
+      ]
+    });
+
+    expect(entries[0]?.launchPayload).toEqual({
+      provider: "claude-code",
+      providerTargetId: "daemon-claude",
+      providerTargetRef: enabledClaudeTarget.ref
+    });
+  });
+
+  it("uses host target order for an available default provider", () => {
+    const daemonCodexTarget = {
+      ...createLocalAgentGUIProviderTarget("codex"),
+      targetId: "daemon-codex"
+    };
+    const localCodexTarget = createLocalAgentGUIProviderTarget("codex");
+    const entries = buildAgentGuiDockEntries({
+      defaultProvider: "codex",
+      label: "Agent",
+      layout: "unified",
+      providerAvailability: {
+        codex: true
+      },
+      targets: [daemonCodexTarget, localCodexTarget]
+    });
+
+    expect(entries[0]?.launchPayload).toEqual({
+      provider: "codex",
+      providerTargetId: "daemon-codex",
+      providerTargetRef: daemonCodexTarget.ref
+    });
+  });
+
+  it("matches unified dock nodes across provider-specific and historical agent GUI identities", () => {
+    const [entry] = buildAgentGuiDockEntries({
+      layout: "unified",
+      providerAvailability: {},
+      targets: []
+    });
+
+    expect(
+      entry?.matchNode?.({
+        data: {
+          instanceId: "agent-gui:codex:panel:test-1",
+          typeId: agentGuiWorkbenchTypeId
+        }
+      } as never)
+    ).toBe(true);
+    expect(
+      entry?.matchNode?.({
+        data: {
+          instanceId: "agent-gui:claude-code:session:session-1",
+          typeId: agentGuiWorkbenchTypeId
+        }
+      } as never)
+    ).toBe(true);
+    expect(
+      entry?.matchNode?.({
+        data: {
+          dockEntryId: "agent-gui",
+          instanceId: "agent-gui",
+          typeId: agentGuiWorkbenchTypeId
+        }
+      } as never)
+    ).toBe(true);
+    expect(
+      entry?.matchNode?.({
+        data: {
+          instanceId: "agent-gui:gemini:panel:test-1",
+          typeId: agentGuiWorkbenchTypeId
+        }
+      } as never)
+    ).toBe(false);
+  });
+
+  it("keeps unified launch payload provider priority when opening a session", () => {
+    const contribution = createTestAgentGuiWorkbenchContribution({
+      dockLayout: "unified",
+      renderBody: () => null,
+      workspaceId: "workspace-1"
+    });
+
+    const launchResult = contribution.onLaunchRequest?.({
+      dockEntryId: agentGuiWorkbenchUnifiedDockEntryId(),
+      layoutConstraints: testLaunchLayout.layoutConstraints,
+      payload: {
+        agentSessionId: "session-claude-1",
+        provider: "claude-code"
+      },
+      reason: "dock",
+      surfaceSize: testLaunchLayout.surfaceSize,
+      typeId: agentGuiWorkbenchTypeId,
+      workspaceId: "workspace-1"
+    }) as
+      | {
+          instanceId: string;
+        }
+      | null
+      | undefined;
+
+    expect(launchResult).toMatchObject({
+      activation: {
+        payload: {
+          agentSessionId: "session-claude-1"
+        },
+        type: "agent-gui:open-session"
+      },
+      dockEntryId: agentGuiWorkbenchUnifiedDockEntryId(),
+      instanceId: "agent-gui:claude-code:session:session-claude-1",
+      title: "Claude Code"
+    });
+  });
+
+  it("resolves unified empty dock launches lazily from current provider availability", () => {
+    const claudeTarget = createLocalAgentGUIProviderTarget("claude-code");
+    const contribution = createTestAgentGuiWorkbenchContribution({
+      defaultProvider: "codex",
+      dockLayout: "unified",
+      providerAvailability: {},
+      providerTargets: [
+        createLocalAgentGUIProviderTarget("codex"),
+        claudeTarget
+      ],
+      renderBody: () => null,
+      resolveDockLaunchPayload: () => ({
+        provider: "claude-code",
+        providerTargetId: claudeTarget.targetId,
+        providerTargetRef: claudeTarget.ref
+      }),
+      workspaceId: "workspace-1"
+    });
+    const [dockEntry] = contribution.dockEntries ?? [];
+
+    expect(dockEntry?.launchPayload).toMatchObject({
+      provider: "codex"
+    });
+
+    const launchResult = contribution.onLaunchRequest?.({
+      dockEntryId: dockEntry?.id,
+      layoutConstraints: testLaunchLayout.layoutConstraints,
+      payload: dockEntry?.launchPayload,
+      reason: "dock",
+      surfaceSize: testLaunchLayout.surfaceSize,
+      typeId: agentGuiWorkbenchTypeId,
+      workspaceId: "workspace-1"
+    }) as
+      | {
+          instanceId: string;
+        }
+      | null
+      | undefined;
+
+    expect(launchResult).toMatchObject({
+      dockEntryId: agentGuiWorkbenchUnifiedDockEntryId(),
+      title: "Claude Code"
+    });
+    expect(launchResult?.instanceId).toContain("agent-gui:claude-code:panel:");
+    expect(
+      contribution.externalStateSource?.getSnapshotNodeState?.({
+        instanceId: launchResult?.instanceId ?? "",
+        typeId: agentGuiWorkbenchTypeId
+      } as never)
+    ).toMatchObject({
+      providerTargetId: "local:claude-code",
+      providerTargetRef: claudeTarget.ref
+    });
+  });
+
+  it("seeds unified launch descriptor target state without changing provider identity", () => {
+    const claudeTarget = createLocalAgentGUIProviderTarget("claude-code");
+    const contribution = createTestAgentGuiWorkbenchContribution({
+      defaultProviderTargetId: claudeTarget.targetId,
+      dockLayout: "unified",
+      providerTargets: [
+        createLocalAgentGUIProviderTarget("codex"),
+        claudeTarget
+      ],
+      renderBody: () => null,
+      workspaceId: "workspace-1"
+    });
+    const [dockEntry] = contribution.dockEntries ?? [];
+
+    const launchResult = contribution.onLaunchRequest?.({
+      dockEntryId: dockEntry?.id,
+      layoutConstraints: testLaunchLayout.layoutConstraints,
+      payload: dockEntry?.launchPayload,
+      reason: "dock",
+      surfaceSize: testLaunchLayout.surfaceSize,
+      typeId: agentGuiWorkbenchTypeId,
+      workspaceId: "workspace-1"
+    }) as
+      | {
+          instanceId: string;
+        }
+      | null
+      | undefined;
+
+    expect(launchResult).toMatchObject({
+      dockEntryId: agentGuiWorkbenchUnifiedDockEntryId(),
+      title: "Claude Code"
+    });
+    expect(launchResult?.instanceId).toContain("agent-gui:claude-code:panel:");
+    expect(
+      contribution.externalStateSource?.getSnapshotNodeState?.({
+        instanceId: launchResult?.instanceId ?? "",
+        typeId: agentGuiWorkbenchTypeId
+      } as never)
+    ).toEqual({
+      composerOverrides: null,
+      composerOverridesByProvider: null,
+      conversationRailCollapsed: false,
+      conversationRailWidthPx: null,
+      lastActiveAgentSessionId: null,
+      providerTargetId: "local:claude-code",
+      providerTargetRef: claudeTarget.ref
+    });
+  });
+
   it("uses package defaults when the host does not provide copy", () => {
     expect(resolveAgentGuiWorkbenchContributionCopy()).toEqual(
       agentGuiWorkbenchDefaultCopy

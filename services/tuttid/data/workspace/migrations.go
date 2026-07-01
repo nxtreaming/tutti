@@ -15,11 +15,13 @@ const schemaMigrationWorkspacesV4 = "workspaces_v4"
 const schemaMigrationWorkspaceAgentActivityV1 = "workspace_agent_activity_v1"
 const schemaMigrationWorkspaceAgentActivityV2 = "workspace_agent_activity_v2"
 const schemaMigrationWorkspaceAgentActivityV3 = "workspace_agent_activity_v3"
+const schemaMigrationAgentTargetsV1 = "agent_targets_v1"
 const schemaMigrationWorkspaceIssuesV1 = "workspace_issues_v1"
 const schemaMigrationWorkspaceIssuesV2 = "workspace_issues_v2"
 const schemaMigrationWorkspaceIssuesV3 = "workspace_issues_v3"
 const schemaMigrationWorkspaceIssuesV4 = "workspace_issues_v4"
 const schemaMigrationDesktopPreferencesV1 = "desktop_preferences_v1"
+const schemaMigrationDesktopPreferencesAgentDockLayoutV1 = "desktop_preferences_agent_dock_layout_v1"
 const schemaMigrationDesktopPreferencesSleepPreventionModeV1 = "desktop_preferences_sleep_prevention_mode_v1"
 const schemaMigrationDesktopPreferencesDockPlacementV1 = "desktop_preferences_dock_placement_v1"
 const schemaMigrationDesktopPreferencesDockIconStyleV1 = "desktop_preferences_dock_icon_style_v1"
@@ -110,7 +112,14 @@ INSERT OR IGNORE INTO tuttid_schema_migrations (id, applied_at_unix_ms)
 		return err
 	}
 
+	if err := s.applyAgentTargetsV1(ctx); err != nil {
+		return err
+	}
+
 	if err := s.applyDesktopPreferencesV1(ctx); err != nil {
+		return err
+	}
+	if err := s.applyDesktopPreferencesAgentDockLayoutV1(ctx); err != nil {
 		return err
 	}
 	if err := s.applyDesktopPreferencesSleepPreventionModeV1(ctx); err != nil {

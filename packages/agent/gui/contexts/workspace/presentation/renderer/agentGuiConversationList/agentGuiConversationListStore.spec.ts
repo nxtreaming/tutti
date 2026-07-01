@@ -93,6 +93,71 @@ describe("agentGuiConversationListStore", () => {
     });
   });
 
+  it("projects all and provider conversation filters from session.provider", async () => {
+    const allQuery: AgentGUIConversationListQuery = {
+      conversationFilter: { kind: "all" },
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      provider: "codex",
+      sessionOrigin: "WORKSPACE_AGENT_SESSION_ORIGIN_RUNTIME"
+    };
+    const codexQuery: AgentGUIConversationListQuery = {
+      ...allQuery,
+      conversationFilter: { kind: "provider", provider: "codex" }
+    };
+    const claudeQuery: AgentGUIConversationListQuery = {
+      ...allQuery,
+      conversationFilter: { kind: "provider", provider: "claude-code" }
+    };
+    const snapshot: WorkspaceAgentActivitySnapshot = {
+      ...emptySnapshot(),
+      sessions: [
+        runtimeSession("codex-targetless", 3_000, {
+          provider: "codex",
+          title: "Old Codex"
+        }),
+        runtimeSession("claude-targetless", 2_000, {
+          provider: "claude-code",
+          title: "Old Claude Code"
+        }),
+        runtimeSession("gemini-session", 1_000, {
+          provider: "gemini",
+          title: "Gemini"
+        })
+      ]
+    };
+    setAgentActivityRuntimeForTests({
+      getSnapshot: () => snapshot,
+      load: async () => snapshot,
+      subscribe: () => () => {}
+    } as Partial<AgentActivityRuntime> as AgentActivityRuntime);
+
+    ensureAgentGUIConversationListQuery(allQuery);
+    ensureAgentGUIConversationListQuery(codexQuery);
+    ensureAgentGUIConversationListQuery(claudeQuery);
+    scheduleAgentGUIConversationListProjection(allQuery, "projection-sync");
+    scheduleAgentGUIConversationListProjection(codexQuery, "projection-sync");
+    scheduleAgentGUIConversationListProjection(claudeQuery, "projection-sync");
+
+    await waitFor(() => {
+      expect(
+        getAgentGUIConversationListQuerySnapshot(allQuery)?.conversations.map(
+          (item) => item.id
+        )
+      ).toEqual(["codex-targetless", "claude-targetless"]);
+      expect(
+        getAgentGUIConversationListQuerySnapshot(codexQuery)?.conversations.map(
+          (item) => item.id
+        )
+      ).toEqual(["codex-targetless"]);
+      expect(
+        getAgentGUIConversationListQuerySnapshot(
+          claudeQuery
+        )?.conversations.map((item) => item.id)
+      ).toEqual(["claude-targetless"]);
+    });
+  });
+
   it("keeps existing conversations during incremental runtime updates that omit one session", async () => {
     const query: AgentGUIConversationListQuery = {
       workspaceId: "workspace-1",

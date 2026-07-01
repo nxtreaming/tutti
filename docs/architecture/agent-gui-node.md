@@ -130,11 +130,20 @@ Workbench and desktop product integration wrap that chain:
 
 ```text
 Workbench dock or external launch
+  -> buildAgentGuiDockEntries
   -> createAgentGuiWorkbenchLaunchDescriptor
   -> DesktopAgentGUIWorkbenchBody
   -> workbench node state + desktop preferences + mention providers
   -> <AgentGUI ... />
 ```
+
+`agentDockLayout` is a daemon-owned desktop preference that changes only the
+dock presentation. `legacySplit` keeps provider-specific Codex and Claude Code
+dock entries. `unified` exposes one Agent dock entry that matches Codex and
+Claude Code AgentGUI nodes, but launches still create provider-specific
+multi-instance AgentGUI nodes. The unified entry may choose a default target or
+provider for its launch payload; that selection must not synthesize a provider
+or replace the provider identity recorded on the node/session.
 
 This means an AgentGUI bug can start at several different interfaces. Do not
 assume that a visible UI symptom starts in the visible UI component.
@@ -569,6 +578,10 @@ User-visible rules:
   runtime update time.
 - Search and project grouping are list-query concerns. They may hide a session
   from the rail, but must not delete or unactivate the session.
+- Conversation provider filters are also list-query concerns. The All, Codex,
+  and Claude Code rail filters match historical sessions by `session.provider`;
+  they must not mutate workbench node `provider`, provider target fields,
+  composer drafts, desktop default provider, or composer-default preferences.
 - A pending create row can appear before the daemon-created session is
   authoritative. It must be replaced by the authoritative session or removed on
   create failure.

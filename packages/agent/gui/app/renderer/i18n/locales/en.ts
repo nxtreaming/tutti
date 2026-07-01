@@ -609,6 +609,9 @@ export const en = {
       agentEnvSetup: "Environment Check",
       noConversations: "No sessions yet",
       emptyProjectConversations: "No chats yet",
+      conversationFilterAll: "All",
+      conversationFilterCodex: "Codex",
+      conversationFilterClaudeCode: "Claude Code",
       batchRunnerStandaloneTitle: "Agent GUI batch runner",
       batchRunnerSubtitle:
         "Run JSONL prompt cases and review execution results",

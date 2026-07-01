@@ -81,6 +81,7 @@ export interface PreferencesDesktopPreferencesV1 {
     openclaw?: boolean;
   };
   agentConversationDetailMode: "coding" | "general";
+  agentDockLayout: "legacySplit" | "unified";
   appCatalogChannel: "production" | "staging";
   browserUseConnectionMode?: "isolated" | "autoConnect";
   defaultAgentProvider:

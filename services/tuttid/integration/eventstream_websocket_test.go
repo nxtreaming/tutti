@@ -271,8 +271,8 @@ func TestTuttidBlackBoxEventStreamPreferenceIntentPublishesUpdatedEvent(t *testi
 	if after.Preferences.Locale != tuttigenerated.ZhCN {
 		t.Fatalf("stored locale = %q, want %q", after.Preferences.Locale, tuttigenerated.ZhCN)
 	}
-	if after.Preferences.DefaultAgentProvider != tuttigenerated.Codex {
-		t.Fatalf("stored defaultAgentProvider = %q, want %q", after.Preferences.DefaultAgentProvider, tuttigenerated.Codex)
+	if after.Preferences.DefaultAgentProvider != tuttigenerated.WorkspaceAgentProviderCodex {
+		t.Fatalf("stored defaultAgentProvider = %q, want %q", after.Preferences.DefaultAgentProvider, tuttigenerated.WorkspaceAgentProviderCodex)
 	}
 	if after.Preferences.AgentConversationDetailMode != tuttigenerated.General {
 		t.Fatalf("stored agentConversationDetailMode = %q, want %q", after.Preferences.AgentConversationDetailMode, tuttigenerated.General)
@@ -283,8 +283,8 @@ func TestTuttidBlackBoxEventStreamPreferenceIntentPublishesUpdatedEvent(t *testi
 	if after.Preferences.DockPlacement != tuttigenerated.Bottom {
 		t.Fatalf("stored dockPlacement = %q, want %q", after.Preferences.DockPlacement, tuttigenerated.Bottom)
 	}
-	if after.Preferences.ThemeSource != tuttigenerated.Dark {
-		t.Fatalf("stored themeSource = %q, want %q", after.Preferences.ThemeSource, tuttigenerated.Dark)
+	if after.Preferences.ThemeSource != tuttigenerated.DesktopThemeSourceDark {
+		t.Fatalf("stored themeSource = %q, want %q", after.Preferences.ThemeSource, tuttigenerated.DesktopThemeSourceDark)
 	}
 }
 

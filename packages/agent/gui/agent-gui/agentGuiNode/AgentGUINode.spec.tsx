@@ -7681,6 +7681,7 @@ function createViewModel(
     },
     inlineNotice: null,
     ...overrides,
+    conversationFilter: overrides.conversationFilter ?? { kind: "all" },
     listError: overrides.listError ?? null
   };
 }

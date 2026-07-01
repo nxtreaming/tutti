@@ -60,6 +60,7 @@ import type {
   IssueManagerTaskListResponse,
   IssueManagerTopic,
   IssueManagerTopicListResponse,
+  ListAgentTargetsResponse,
   ListWorkspacesResponse,
   CopyWorkspaceFileEntryRequest,
   MoveWorkspaceFileEntryRequest,
@@ -129,6 +130,7 @@ export type TuttidTrackEvent = TrackEvent;
 export type TuttidTrackEventsRequest = TrackEventsRequest;
 
 export interface TuttidClient {
+  listAgentTargets(): Promise<ListAgentTargetsResponse>;
   listCliCapabilities(
     workspaceID?: string,
     options?: { includeHidden?: boolean; includeIntegration?: boolean }

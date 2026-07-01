@@ -51,6 +51,7 @@ export function filterAgentGUIConversationSummaries(
   filter: AgentGUIConversationFilter,
   options: {
     allProviders?: readonly AgentGUIConversationFilterProvider[];
+    includeUnknownProvider?: boolean;
   } = {}
 ): AgentGUIConversationSummary[] {
   const normalizedFilter = normalizeAgentGUIConversationFilter(filter);
@@ -61,7 +62,8 @@ export function filterAgentGUIConversationSummaries(
     matchesAgentGUIConversationFilterProvider(
       conversation.provider,
       normalizedFilter,
-      allProviderSet
+      allProviderSet,
+      options.includeUnknownProvider === true
     )
   );
 }
@@ -71,6 +73,7 @@ export function filterWorkspaceAgentActivitySessionsForConversations(
   filter: AgentGUIConversationFilter,
   options: {
     allProviders?: readonly AgentGUIConversationFilterProvider[];
+    includeUnknownProvider?: boolean;
   } = {}
 ): WorkspaceAgentActivitySession[] {
   const normalizedFilter = normalizeAgentGUIConversationFilter(filter);
@@ -81,7 +84,8 @@ export function filterWorkspaceAgentActivitySessionsForConversations(
     matchesAgentGUIConversationFilterProvider(
       session.provider,
       normalizedFilter,
-      allProviderSet
+      allProviderSet,
+      options.includeUnknownProvider === true
     )
   );
 }
@@ -89,11 +93,12 @@ export function filterWorkspaceAgentActivitySessionsForConversations(
 function matchesAgentGUIConversationFilterProvider(
   provider: string | null | undefined,
   filter: AgentGUIConversationFilter,
-  allProviderSet: ReadonlySet<AgentGUIConversationFilterProvider>
+  allProviderSet: ReadonlySet<AgentGUIConversationFilterProvider>,
+  includeUnknownProvider: boolean
 ): boolean {
   const normalizedProvider = normalizeAgentGUIProviderIdentity(provider);
   if (!isAgentGUIConversationFilterProvider(normalizedProvider)) {
-    return false;
+    return normalizedProvider === "unknown" && includeUnknownProvider;
   }
   return filter.kind === "all"
     ? allProviderSet.has(normalizedProvider)

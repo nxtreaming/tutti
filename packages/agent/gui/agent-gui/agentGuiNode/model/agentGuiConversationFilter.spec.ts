@@ -34,6 +34,20 @@ describe("agentGuiConversationFilter", () => {
     ).toEqual(["claude-1"]);
   });
 
+  it("can preserve unknown-provider historical summaries for compatibility", () => {
+    expect(
+      filterAgentGUIConversationSummaries(
+        [
+          conversation("codex-1", "codex"),
+          conversation("claude-1", "claude-code"),
+          conversation("unknown-1", "unknown")
+        ],
+        { kind: "provider", provider: "codex" },
+        { includeUnknownProvider: true }
+      ).map((item) => item.id)
+    ).toEqual(["codex-1", "unknown-1"]);
+  });
+
   it("keeps the filter model independent from composer state", () => {
     const composerState = Object.freeze({
       defaultProviderTargetId: "local-codex",

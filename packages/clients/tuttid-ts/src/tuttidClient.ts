@@ -28,6 +28,7 @@ import {
   getDesktopPreferences,
   getHealth,
   getStartupWorkspace,
+  listAgentTargets,
   getWorkspaceFileTreeSnapshot,
   getWorkspace,
   getWorkspaceAgentSession,
@@ -117,6 +118,12 @@ export function createTuttidClient(
   });
 
   return {
+    async listAgentTargets() {
+      return unwrapData(
+        await listAgentTargets({ client }),
+        "Agent targets request failed."
+      );
+    },
     async listCliCapabilities(workspaceID, options) {
       const response = await listCliCapabilities({
         client,

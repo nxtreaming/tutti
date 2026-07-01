@@ -747,6 +747,7 @@ function createDependenciesStub(): {
       copyFilesToClipboard: fail
     },
     tuttidClient: {
+      listAgentTargets: fail,
       applyWorkspaceGitPatch: fail,
       listCliCapabilities: fail,
       listWorkspaceAppMentionCandidates: fail,

@@ -1403,10 +1403,9 @@ describe("AgentGUINodeView layout persistence", () => {
     fireEvent.scroll(timeline);
 
     composerMock.calls.at(-1)?.onSubmit?.([{ type: "text", text: "New ask" }]);
-    expect(actions.submitPrompt).toHaveBeenCalledWith(
-      [{ type: "text", text: "New ask" }],
-      undefined
-    );
+    expect(actions.submitPrompt).toHaveBeenCalledWith([
+      { type: "text", text: "New ask" }
+    ]);
 
     scrollHeight = 1240;
     rerender(
@@ -1702,6 +1701,7 @@ type AgentGUINodeViewProps = Parameters<typeof AgentGUINodeView>[0];
 
 function createActions(): AgentGUINodeViewProps["actions"] {
   return {
+    updateConversationFilter: vi.fn(),
     createConversation: vi.fn(),
     selectConversation: vi.fn(),
     submitPrompt: vi.fn(),
@@ -1738,6 +1738,7 @@ function createViewModel(): AgentGUINodeViewModel {
       conversationRailWidthPx: null
     },
     selectedProviderTarget: createLocalAgentGUIProviderTarget("codex"),
+    conversationFilter: { kind: "all" },
     conversations: [],
     userProjects: [],
     activeConversation: null,
@@ -1976,6 +1977,9 @@ function createLabels(): AgentGUIViewLabels {
     agentEnvSetup: "agentEnvSetup",
     noConversations: "noConversations",
     emptyProjectConversations: "emptyProjectConversations",
+    conversationFilterAll: "All",
+    conversationFilterCodex: "Codex",
+    conversationFilterClaudeCode: "Claude Code",
     startConversation: "startConversation",
     selectConversation: "selectConversation",
     loadingConversations: "loadingConversations",

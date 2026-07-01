@@ -12,6 +12,10 @@ import {
   resolveAgentGUIConversationTitleFromMessages,
   type AgentGUIConversationSummary
 } from "../../../../../agent-gui/agentGuiNode/model/agentGuiConversationModel";
+import {
+  normalizeAgentGUIConversationFilter,
+  type AgentGUIConversationFilter
+} from "../../../../../agent-gui/agentGuiNode/model/agentGuiConversationFilter";
 import { resolveAgentGUIExplicitConversationTitle } from "../../../../../agent-gui/agentGuiNode/model/agentGuiProviderIdentity";
 import {
   mergeWorkspaceAgentActivityDurableAndOverlayMessages,
@@ -42,15 +46,18 @@ const UPDATE_STORM_DIAGNOSTIC_THRESHOLD = 8;
 const MAX_DIAGNOSTIC_STACK_LENGTH = 2000;
 
 export interface AgentGUIConversationListQuery {
+  conversationFilter?: AgentGUIConversationFilter | null;
   workspaceId: string;
   userId: string;
   provider: AgentGUIProvider;
   sessionOrigin: string;
 }
 
-type NormalizedAgentGUIConversationListQuery = Required<
-  Omit<AgentGUIConversationListQuery, "workspaceId">
-> & {
+type NormalizedAgentGUIConversationListQuery = {
+  conversationFilter: AgentGUIConversationFilter | null;
+  provider: AgentGUIProvider;
+  sessionOrigin: string;
+  userId: string;
   workspaceId: string;
 };
 
@@ -129,11 +136,34 @@ function normalizeQuery(
     return null;
   }
   return {
+    conversationFilter: normalizeAgentGUIConversationListFilter(input),
     workspaceId,
     userId,
     provider,
     sessionOrigin
   };
+}
+
+function normalizeAgentGUIConversationListFilter(
+  input: AgentGUIConversationListQuery
+): AgentGUIConversationFilter | null {
+  if (input.conversationFilter) {
+    return normalizeAgentGUIConversationFilter(input.conversationFilter);
+  }
+  return null;
+}
+
+function conversationFilterKey(
+  filter: AgentGUIConversationFilter | null,
+  provider: AgentGUIProvider
+): string {
+  if (!filter) {
+    return `legacy-provider:${provider}`;
+  }
+  const normalized = normalizeAgentGUIConversationFilter(filter);
+  return normalized.kind === "provider"
+    ? `provider:${normalized.provider}`
+    : "all";
 }
 
 export function createAgentGUIConversationListQueryKey(
@@ -145,6 +175,10 @@ export function createAgentGUIConversationListQueryKey(
         normalized.workspaceId,
         normalized.userId,
         normalized.provider,
+        conversationFilterKey(
+          normalized.conversationFilter,
+          normalized.provider
+        ),
         normalized.sessionOrigin
       ].join("::")
     : null;
@@ -1256,6 +1290,9 @@ async function refreshAgentGUIConversationListQuery(
         })
       : workspaceAgentSnapshot.sessions;
     const baseConversations = buildAgentGUIConversationSummaries({
+      ...(state.query.conversationFilter
+        ? { conversationFilter: state.query.conversationFilter }
+        : {}),
       snapshot: canApplyDirtySessionProjection
         ? {
             ...workspaceAgentSnapshot,

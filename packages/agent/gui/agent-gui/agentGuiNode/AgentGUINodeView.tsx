@@ -272,6 +272,9 @@ export interface AgentGUIViewLabels {
   agentEnvSetup: string;
   noConversations: string;
   emptyProjectConversations: string;
+  conversationFilterAll: string;
+  conversationFilterCodex: string;
+  conversationFilterClaudeCode: string;
   startConversation: string;
   selectConversation: string;
   loadingConversations: string;
@@ -450,6 +453,9 @@ interface AgentGUINodeViewProps {
   previewMode?: boolean;
   onAgentProviderLogin?: (provider?: string | null) => void;
   actions: {
+    updateConversationFilter: (
+      filter: AgentGUINodeViewModel["conversationFilter"]
+    ) => void;
     createConversation: (options?: {
       projectPath?: string | null;
       source?: string;
@@ -1254,7 +1260,9 @@ export function AgentGUINodeView({
         openclawGateway,
         isCollapsed: conversationRailCollapsed,
         slashStatusLimits,
+        conversationFilter: viewModel.conversationFilter,
         onCreateConversation: requestCreateConversation,
+        onUpdateConversationFilter: actions.updateConversationFilter,
         onOpenAgentEnvSetup: openAgentEnvSetup,
         onRetryOpenclawGateway: retryOpenclawGateway,
         onSelectConversation: selectConversation,
@@ -1281,6 +1289,7 @@ export function AgentGUINodeView({
         openConversationWindow,
         openProjectFiles,
         openclawGateway,
+        actions.updateConversationFilter,
         previewMode,
         removeProject,
         requestCreateConversation,
@@ -1291,6 +1300,7 @@ export function AgentGUINodeView({
         slashStatusLimits,
         toggleConversationPinned,
         uiLanguage,
+        viewModel.conversationFilter,
         viewModel.activeConversationId,
         viewModel.isDeletingConversation,
         viewModel.isDeletingProjectConversations,
@@ -2116,6 +2126,10 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   const submitPromptAndScrollToBottom = useCallback(
     (content: AgentPromptContentBlock[], displayPrompt?: string): void => {
       requestSubmittedPromptScrollToBottom();
+      if (displayPrompt === undefined) {
+        submitPrompt(content);
+        return;
+      }
       submitPrompt(content, displayPrompt);
     },
     [requestSubmittedPromptScrollToBottom, submitPrompt]
@@ -2123,6 +2137,10 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   const submitGuidancePromptAndScrollToBottom = useCallback(
     (content: AgentPromptContentBlock[], displayPrompt?: string): void => {
       requestSubmittedPromptScrollToBottom();
+      if (displayPrompt === undefined) {
+        submitGuidancePrompt(content);
+        return;
+      }
       submitGuidancePrompt(content, displayPrompt);
     },
     [requestSubmittedPromptScrollToBottom, submitGuidancePrompt]
@@ -3048,6 +3066,10 @@ interface AgentGUIConversationRailPaneProps {
   openclawGateway: OpenclawGatewayViewModel | null;
   isCollapsed: boolean;
   slashStatusLimits: readonly AgentComposerSlashStatusLimit[];
+  conversationFilter: AgentGUINodeViewModel["conversationFilter"];
+  onUpdateConversationFilter: (
+    filter: AgentGUINodeViewModel["conversationFilter"]
+  ) => void;
   onCreateConversation: (options?: {
     projectPath?: string | null;
     source?: string;
@@ -3139,6 +3161,8 @@ function agentGUIConversationRailStoreSnapshotsEqual(
     current.createConversationDisabled === next.createConversationDisabled &&
     current.openclawGateway === next.openclawGateway &&
     current.isCollapsed === next.isCollapsed &&
+    current.conversationFilter === next.conversationFilter &&
+    current.onUpdateConversationFilter === next.onUpdateConversationFilter &&
     current.onCreateConversation === next.onCreateConversation &&
     current.onOpenAgentEnvSetup === next.onOpenAgentEnvSetup &&
     current.onRetryOpenclawGateway === next.onRetryOpenclawGateway &&
@@ -3348,6 +3372,8 @@ const AgentGUIConversationRailPane = memo(
     openclawGateway,
     isCollapsed,
     slashStatusLimits,
+    conversationFilter,
+    onUpdateConversationFilter,
     onCreateConversation,
     onOpenAgentEnvSetup,
     onRetryOpenclawGateway,
@@ -3365,6 +3391,9 @@ const AgentGUIConversationRailPane = memo(
   }: AgentGUIConversationRailPaneProps): React.JSX.Element {
     "use memo";
     const [conversationQuery, setConversationQuery] = useState("");
+    const updateConversationFilter = useStableEventCallback(
+      onUpdateConversationFilter
+    );
     const [collapsedProjectSectionIds, setCollapsedProjectSectionIds] =
       useState<ReadonlySet<string>>(() => new Set());
     const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
@@ -3499,6 +3528,56 @@ const AgentGUIConversationRailPane = memo(
             <CreateChatIcon aria-hidden="true" />
             <span>{labels.newConversation}</span>
           </Button>
+        </div>
+        <div
+          className="mx-2 mb-2 grid grid-cols-3 gap-1 rounded-[8px] bg-[var(--fill-tertiary)] p-1"
+          role="tablist"
+          aria-label={labels.conversations}
+        >
+          {[
+            {
+              id: "all",
+              label: labels.conversationFilterAll,
+              filter: { kind: "all" as const }
+            },
+            {
+              id: "codex",
+              label: labels.conversationFilterCodex,
+              filter: { kind: "provider" as const, provider: "codex" as const }
+            },
+            {
+              id: "claude-code",
+              label: labels.conversationFilterClaudeCode,
+              filter: {
+                kind: "provider" as const,
+                provider: "claude-code" as const
+              }
+            }
+          ].map((option) => {
+            const isSelected =
+              conversationFilter.kind === option.filter.kind &&
+              (conversationFilter.kind === "all" ||
+                (option.filter.kind === "provider" &&
+                  conversationFilter.provider === option.filter.provider));
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                className={cn(
+                  "h-7 min-w-0 rounded-[6px] px-2 text-[12px] font-medium leading-none transition-colors",
+                  isSelected
+                    ? "bg-[var(--fill-primary)] text-[var(--text-primary)] shadow-sm"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                )}
+                disabled={previewMode}
+                onClick={() => updateConversationFilter(option.filter)}
+              >
+                <span className="block truncate">{option.label}</span>
+              </button>
+            );
+          })}
         </div>
         {openclawGateway?.status === "starting" ? (
           <div className={styles.gatewayStatus} data-state="starting">

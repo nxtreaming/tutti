@@ -922,6 +922,11 @@ export const AgentGUINode = memo(function AgentGUINode({
       emptyProjectConversations: t(
         "agentHost.agentGui.emptyProjectConversations"
       ),
+      conversationFilterAll: t("agentHost.agentGui.conversationFilterAll"),
+      conversationFilterCodex: t("agentHost.agentGui.conversationFilterCodex"),
+      conversationFilterClaudeCode: t(
+        "agentHost.agentGui.conversationFilterClaudeCode"
+      ),
       startConversation: t("agentHost.agentGui.startConversation"),
       selectConversation: t("agentHost.agentGui.selectConversation"),
       loadingConversations: t("agentHost.agentGui.loadingConversations"),

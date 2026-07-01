@@ -15,6 +15,7 @@ import {
   type AppReferenceListResponse,
   type CliCapabilitiesResponse,
   type IssueManagerReferenceSearchResponse,
+  type ListAgentTargetsResponse,
   type ListWorkspacesResponse,
   type WorkspaceFilePreviewResponse,
   type WorkspaceGitPatchSupportResponse,
@@ -111,6 +112,62 @@ test("shared tuttid client unwraps workspace list responses", async () => {
     totalCount: 1,
     workspaces: [{ id: "ws-1", name: "One", lastOpenedAt: null }]
   } satisfies ListWorkspacesResponse);
+});
+
+test("shared tuttid client unwraps agent target responses", async () => {
+  const client = createTuttidClient({
+    fetch: async (input, init) => {
+      const request =
+        input instanceof Request ? input : new Request(input, init);
+      assert.equal(new URL(request.url).pathname, "/v1/agent-targets");
+
+      return new Response(
+        JSON.stringify({
+          targets: [
+            {
+              id: "local-codex",
+              provider: "codex",
+              launchRef: {
+                type: "local_cli",
+                provider: "codex"
+              },
+              name: "Codex",
+              iconKey: "codex",
+              enabled: true,
+              source: "system",
+              sortOrder: 10,
+              createdAtUnixMs: 1,
+              updatedAtUnixMs: 1
+            }
+          ]
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
+    }
+  });
+
+  assert.deepEqual(await client.listAgentTargets(), {
+    targets: [
+      {
+        id: "local-codex",
+        provider: "codex",
+        launchRef: {
+          type: "local_cli",
+          provider: "codex"
+        },
+        name: "Codex",
+        iconKey: "codex",
+        enabled: true,
+        source: "system",
+        sortOrder: 10,
+        createdAtUnixMs: 1,
+        updatedAtUnixMs: 1
+      }
+    ]
+  } satisfies ListAgentTargetsResponse);
 });
 
 test("shared tuttid client forwards bearer auth tokens", async () => {

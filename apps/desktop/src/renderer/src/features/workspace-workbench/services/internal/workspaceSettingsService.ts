@@ -3,6 +3,7 @@ import type { DesktopLocale } from "@shared/i18n";
 import type {
   DesktopAgentProvider,
   DesktopAgentConversationDetailMode,
+  DesktopAgentDockLayout,
   DesktopAppCatalogChannel,
   DesktopBrowserUseConnectionMode,
   DesktopDockIconStyle,
@@ -255,6 +256,25 @@ export class WorkspaceSettingsService implements IWorkspaceSettingsService {
       this.notifications.error({
         title: createActiveTranslator().t(
           "workspace.settings.general.agentConversationDetailModeSaveFailed"
+        )
+      });
+    }
+  }
+
+  async changeAgentDockLayout(layout: DesktopAgentDockLayout): Promise<void> {
+    if (
+      this.desktopPreferences.store.agentDockLayout === layout ||
+      this.desktopPreferences.store.changingAgentDockLayout === layout
+    ) {
+      return;
+    }
+
+    try {
+      await this.desktopPreferences.setAgentDockLayout(layout);
+    } catch {
+      this.notifications.error({
+        title: createActiveTranslator().t(
+          "workspace.settings.general.agentDockLayoutSaveFailed"
         )
       });
     }
@@ -1102,9 +1122,11 @@ const noopDesktopPreferencesStore: DesktopPreferencesReadableStoreState = {
   agentComposerDefaultsByProvider: {},
   agentGuiConversationRailCollapsedByProvider: {},
   agentConversationDetailMode: "coding",
+  agentDockLayout: "legacySplit",
   appCatalogChannel: "production",
   browserUseConnectionMode: "isolated",
   changingAgentConversationDetailMode: null,
+  changingAgentDockLayout: null,
   changingAppCatalogChannel: null,
   changingBrowserUseConnectionMode: null,
   changingDefaultAgentProvider: null,
@@ -1149,6 +1171,9 @@ const noopDesktopPreferences: DesktopPreferencesService = {
   },
   setAgentConversationDetailMode(mode) {
     return Promise.resolve(mode);
+  },
+  setAgentDockLayout(layout) {
+    return Promise.resolve(layout);
   },
   setDockPlacement(placement) {
     return Promise.resolve(placement);

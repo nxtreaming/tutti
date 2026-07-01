@@ -243,6 +243,7 @@ export type DesktopPreferences = {
   agentComposerDefaultsByProvider: DesktopAgentComposerDefaultsByProvider;
   agentGuiConversationRailCollapsedByProvider: DesktopAgentGuiConversationRailCollapsedByProvider;
   agentConversationDetailMode: DesktopAgentConversationDetailMode;
+  agentDockLayout: DesktopAgentDockLayout;
   appCatalogChannel: DesktopAppCatalogChannel;
   browserUseConnectionMode?: DesktopBrowserUseConnectionMode;
   defaultAgentProvider: WorkspaceAgentProvider;
@@ -275,6 +276,8 @@ export type DesktopAgentComposerDefaults = {
 };
 
 export type DesktopAgentConversationDetailMode = "coding" | "general";
+
+export type DesktopAgentDockLayout = "legacySplit" | "unified";
 
 export type DesktopAgentComposerDefaultsByProvider = {
   "claude-code"?: DesktopAgentComposerDefaults;
@@ -313,6 +316,32 @@ export type DesktopPreferencesStateResponse = {
 
 export type PutDesktopPreferencesRequest = {
   preferences: DesktopPreferences;
+};
+
+export type AgentTargetProvider = "codex" | "claude-code";
+
+export type AgentTargetSource = "system" | "user";
+
+export type AgentTargetLaunchRef = {
+  type: "local_cli";
+  provider: AgentTargetProvider;
+};
+
+export type AgentTarget = {
+  id: string;
+  provider: AgentTargetProvider;
+  launchRef: AgentTargetLaunchRef;
+  name: string;
+  iconKey?: string | null;
+  enabled: boolean;
+  source: AgentTargetSource;
+  sortOrder: number;
+  createdAtUnixMs: number;
+  updatedAtUnixMs: number;
+};
+
+export type ListAgentTargetsResponse = {
+  targets: Array<AgentTarget>;
 };
 
 export type ListWorkspacesResponse = {
@@ -2565,6 +2594,45 @@ export type AttachEventStreamResponses = {
    */
   200: unknown;
 };
+
+export type ListAgentTargetsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-targets";
+};
+
+export type ListAgentTargetsErrors = {
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Desktop preferences operation failed in an upstream adapter or command
+   */
+  502: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type ListAgentTargetsError =
+  ListAgentTargetsErrors[keyof ListAgentTargetsErrors];
+
+export type ListAgentTargetsResponses = {
+  /**
+   * Agent Targets
+   */
+  200: ListAgentTargetsResponse;
+};
+
+export type ListAgentTargetsResponse2 =
+  ListAgentTargetsResponses[keyof ListAgentTargetsResponses];
 
 export type ListWorkspacesData = {
   body?: never;

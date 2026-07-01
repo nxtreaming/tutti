@@ -6,6 +6,7 @@ import type {
   AgentGUIConversationUserProject,
   AgentGUIInteractivePrompt
 } from "./agentGuiConversationModel";
+import type { AgentGUIConversationFilter } from "./agentGuiConversationFilter";
 import type {
   AgentSessionCommand,
   AgentSessionComposerSettings,
@@ -159,6 +160,7 @@ export interface AgentGUINodeViewModel {
   currentUserId?: string | null;
   data: AgentGUINodeData;
   selectedProviderTarget: AgentGUIProviderTarget;
+  conversationFilter: AgentGUIConversationFilter;
   conversations: AgentGUIConversationSummary[];
   userProjects: AgentGUIConversationUserProject[];
   activeConversation: AgentGUIConversationSummary | null;

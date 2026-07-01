@@ -42,6 +42,9 @@ function createTransportClient(
   overrides: Partial<TuttidClient> = {}
 ): TuttidClient {
   return {
+    async listAgentTargets() {
+      throw new Error("not used");
+    },
     async applyWorkspaceGitPatch() {
       throw new Error("not used");
     },

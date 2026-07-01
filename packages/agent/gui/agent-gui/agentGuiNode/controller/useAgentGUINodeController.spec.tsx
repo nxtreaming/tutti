@@ -286,6 +286,96 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
+  it("switches conversation filters without mutating composer provider state", async () => {
+    const list = vi.fn(async () => ({
+      presences: [],
+      sessions: [
+        workspaceAgentSession("codex-session", {
+          provider: "codex",
+          title: "Codex session",
+          updatedAtUnixMs: 3
+        }),
+        workspaceAgentSession("claude-session", {
+          provider: "claude-code",
+          title: "Claude session",
+          updatedAtUnixMs: 2
+        })
+      ]
+    }));
+    installAgentHostApi({
+      list,
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+    const onDataChange = vi.fn();
+    const onRememberComposerDefaults = vi.fn();
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData(null, "codex", {
+          providerTargetId: "local:codex",
+          providerTargetRef: { kind: "local-provider", provider: "codex" }
+        }),
+        onDataChange,
+        onRememberComposerDefaults
+      })
+    );
+
+    await waitFor(() => {
+      expect(
+        result.current.viewModel.conversations.map((item) => item.id)
+      ).toEqual(["codex-session", "claude-session"]);
+    });
+
+    act(() => {
+      result.current.actions.updateDraftContent(
+        draftContent("keep this draft")
+      );
+    });
+    onDataChange.mockClear();
+    onRememberComposerDefaults.mockClear();
+
+    act(() => {
+      result.current.actions.updateConversationFilter({
+        kind: "provider",
+        provider: "claude-code"
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.viewModel.conversations.map((item) => item.id)
+      ).toEqual(["claude-session"]);
+    });
+
+    expect(result.current.viewModel.data.provider).toBe("codex");
+    expect(result.current.viewModel.selectedProviderTarget.provider).toBe(
+      "codex"
+    );
+    expect(result.current.viewModel.data.providerTargetId).toBe("local:codex");
+    expect(result.current.viewModel.draftPrompt).toBe("keep this draft");
+    for (const [updater] of onDataChange.mock.calls) {
+      const next = updater(
+        agentGuiData(null, "codex", {
+          providerTargetId: "local:codex",
+          providerTargetRef: { kind: "local-provider", provider: "codex" },
+          composerOverrides: { model: "gpt-5" }
+        })
+      );
+      expect(next).toMatchObject({
+        provider: "codex",
+        providerTargetId: "local:codex",
+        providerTargetRef: { kind: "local-provider", provider: "codex" },
+        composerOverrides: { model: "gpt-5" }
+      });
+    }
+    expect(onRememberComposerDefaults).not.toHaveBeenCalled();
+  });
+
   it("keeps the visible conversation list reference for equal project reloads", async () => {
     let userProjectListener: (() => void) | null = null;
     let userProjects = [

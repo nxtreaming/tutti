@@ -70,6 +70,11 @@ import {
   type AgentGUIInteractiveQuestion,
   type AgentGUIConversationSummary
 } from "../model/agentGuiConversationModel";
+import {
+  createAgentGUIConversationFilterState,
+  normalizeAgentGUIConversationFilter,
+  type AgentGUIConversationFilter
+} from "../model/agentGuiConversationFilter";
 import type {
   AgentHostUserProject,
   AgentHostUserProjectsApi
@@ -3353,6 +3358,14 @@ export function useAgentGUINodeController({
     return stable;
   }, [agentActivitySnapshot]);
   const generatedControllerOwnerKey = useId();
+  const [conversationFilter, setConversationFilter] =
+    useState<AgentGUIConversationFilter>(
+      () => createAgentGUIConversationFilterState().filter
+    );
+  const queryConversationFilter =
+    data.provider === "codex" || data.provider === "claude-code"
+      ? conversationFilter
+      : null;
   const conversationListQuery =
     useMemo<AgentGUIConversationListQuery | null>(() => {
       const userId = currentUserId?.trim() ?? "";
@@ -3361,12 +3374,15 @@ export function useAgentGUINodeController({
         return null;
       }
       return {
+        ...(queryConversationFilter
+          ? { conversationFilter: queryConversationFilter }
+          : {}),
         workspaceId,
         userId,
         provider: data.provider,
         sessionOrigin: AGENT_GUI_RUNTIME_SESSION_ORIGIN
       };
-    }, [currentUserId, data.provider, workspaceId]);
+    }, [currentUserId, data.provider, queryConversationFilter, workspaceId]);
   const conversationListState = useAgentGuiConversationList(
     conversationListQuery
   );
@@ -4237,12 +4253,29 @@ export function useAgentGUINodeController({
     const nextQueryKey = conversationListQuery
       ? createAgentGUIConversationListQueryKey(conversationListQuery)
       : null;
+    const previousHasExplicitFilter = previousQuery?.conversationFilter != null;
+    const nextHasExplicitFilter =
+      conversationListQuery?.conversationFilter != null;
+    const previousFilterKey = previousQuery
+      ? JSON.stringify(
+          normalizeAgentGUIConversationFilter(previousQuery.conversationFilter)
+        )
+      : "";
+    const nextFilterKey = conversationListQuery
+      ? JSON.stringify(
+          normalizeAgentGUIConversationFilter(
+            conversationListQuery.conversationFilter
+          )
+        )
+      : "";
     if (
       previousQuery &&
       conversationListQuery &&
       previousQueryKey !== nextQueryKey &&
       previousQuery.workspaceId === conversationListQuery.workspaceId &&
       previousQuery.provider === conversationListQuery.provider &&
+      previousHasExplicitFilter === nextHasExplicitFilter &&
+      previousFilterKey === nextFilterKey &&
       previousQuery.sessionOrigin === conversationListQuery.sessionOrigin &&
       previousSnapshot.conversations.length > 0
     ) {
@@ -9835,6 +9868,12 @@ export function useAgentGUINodeController({
     stableComposerSettings.isSettingsLoading
   ]);
 
+  const updateConversationFilter = useCallback(
+    (filter: AgentGUIConversationFilter) => {
+      setConversationFilter(normalizeAgentGUIConversationFilter(filter));
+    },
+    []
+  );
   const stableCreateConversation =
     useStableControllerEventCallback(createConversation);
   const stableSelectConversation =
@@ -9899,8 +9938,12 @@ export function useAgentGUINodeController({
   const stableLoadOlderConversationMessages = useStableControllerEventCallback(
     loadOlderConversationMessages
   );
+  const stableUpdateConversationFilter = useStableControllerEventCallback(
+    updateConversationFilter
+  );
   const controllerActions = useMemo(
     () => ({
+      updateConversationFilter: stableUpdateConversationFilter,
       createConversation: stableCreateConversation,
       selectConversation: stableSelectConversation,
       submitPrompt: stableSubmitPrompt,
@@ -9956,6 +9999,7 @@ export function useAgentGUINodeController({
       stableSubmitInteractivePrompt,
       stableSubmitPrompt,
       stableToggleConversationPinned,
+      stableUpdateConversationFilter,
       stableUpdateComposerSettings,
       stableUpdateDraftContent,
       stableUpdateSelectedProjectPath
@@ -9970,6 +10014,7 @@ export function useAgentGUINodeController({
         currentUserId,
         data,
         selectedProviderTarget,
+        conversationFilter,
         conversations: visibleConversations,
         userProjects,
         activeConversation,
@@ -10034,6 +10079,7 @@ export function useAgentGUINodeController({
       canSubmit,
       canQueueWhileBusy,
       conversation,
+      conversationFilter,
       conversationDetail,
       controllerActions,
       data,
