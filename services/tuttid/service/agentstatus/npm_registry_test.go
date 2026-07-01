@@ -240,6 +240,28 @@ func TestRankedAgentNPMRegistriesMovesUnreachableOfficialBehindReachableMirror(t
 	}
 }
 
+func TestRankedAgentNPMRegistriesMovesHTTPErrorBehindSuccessfulMirror(t *testing.T) {
+	service := Service{
+		Environ: func() []string { return []string{"PATH=/usr/bin"} },
+		HTTPClient: &http.Client{Transport: networkRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+			status := http.StatusOK
+			if request.URL.Host == "registry.npmjs.org" {
+				status = http.StatusNotFound
+			}
+			return &http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(strings.NewReader("ok")),
+				Header:     make(http.Header),
+			}, nil
+		})},
+	}
+
+	got := service.rankedAgentNPMRegistries(context.Background(), "@openai/codex")
+	if len(got) == 0 || got[0] != "https://registry.npmmirror.com" {
+		t.Fatalf("rankedAgentNPMRegistries()[0] = %q, want first successful mirror; full order=%#v", got[0], got)
+	}
+}
+
 // cacheFromEnv extracts the npm_config_cache value from a command env.
 func cacheFromEnv(env []string) string {
 	const prefix = "npm_config_cache="

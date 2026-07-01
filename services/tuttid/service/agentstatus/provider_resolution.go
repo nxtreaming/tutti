@@ -51,14 +51,9 @@ func (s Service) ResolveProviderCommand(ctx context.Context, provider string) (P
 		reason := firstNonBlank(spec.AdapterUnavailableReasonCode, "acp_adapter_not_found")
 		return ProviderCommandResolution{}, fmt.Errorf("%s", reason)
 	}
-	env := cloneStrings(spec.AdapterEnv)
-	if spec.AdapterInstall.RegistryNPM != nil && adapterCommandUsesNPMExecFallback(spec.AdapterCommand) {
-		packageName, _ := splitNPMPackageSpec(spec.AdapterInstall.RegistryNPM.Package)
-		env = withAgentNPMRegistry(env, s.preferredAgentNPMRegistry(ctx, packageName))
-	}
 	return ProviderCommandResolution{
 		Command: cloneStrings(spec.AdapterCommand),
-		Env:     env,
+		Env:     s.adapterCommandEnv(ctx, spec),
 	}, nil
 }
 
@@ -140,10 +135,9 @@ func (s Service) resolveExternalRegistryNPMSpec(
 	command = append(command, distribution.Args...)
 	spec.AdapterCommand = command
 	spec.AdapterEnv = append(appRuntime.EnvOverrides, envMapToList(distribution.Env)...)
-	// Select the registry for the `npm exec` fallback (used when the installed bin
-	// isn't found). This single-shot path can't retry a chain, so use the primary
-	// registry (override, else official). Harmless when running the installed bin
-	// directly, which never consults npm.
+	// Seed the registry for the `npm exec` fallback. Callers that actually execute
+	// this fallback re-rank providers first, because this single-shot path can't
+	// retry a chain.
 	spec.AdapterEnv = withAgentNPMRegistry(spec.AdapterEnv, s.primaryAgentNPMRegistry())
 	// Pin a dedicated cache for the `npm exec` fallback too, so it never trips over
 	// a root-owned global ~/.npm. Harmless when running the installed bin directly.
@@ -158,6 +152,15 @@ func adapterCommandUsesNPMExecFallback(command []string) bool {
 		}
 	}
 	return false
+}
+
+func (s Service) adapterCommandEnv(ctx context.Context, spec ProviderSpec) []string {
+	env := cloneStrings(spec.AdapterEnv)
+	if spec.AdapterInstall.RegistryNPM == nil || !adapterCommandUsesNPMExecFallback(spec.AdapterCommand) {
+		return env
+	}
+	packageName, _ := splitNPMPackageSpec(spec.AdapterInstall.RegistryNPM.Package)
+	return withAgentNPMRegistry(env, s.preferredAgentNPMRegistry(ctx, packageName))
 }
 
 func (s Service) resolveExternalRegistryBinarySpec(spec ProviderSpec, agent externalagentregistry.Agent) ProviderSpec {

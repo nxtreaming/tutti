@@ -168,7 +168,7 @@ func (s Service) probeNPMRegistryPackage(ctx context.Context, registry string, p
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
-	return true
+	return response.StatusCode >= 200 && response.StatusCode < 300
 }
 
 func npmRegistryPackageEndpoint(registry string, packageName string) string {
