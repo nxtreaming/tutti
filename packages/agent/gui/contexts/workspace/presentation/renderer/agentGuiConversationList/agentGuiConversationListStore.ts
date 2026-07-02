@@ -161,27 +161,30 @@ function conversationFilterKey(
     return `legacy-provider:${provider}`;
   }
   const normalized = normalizeAgentGUIConversationFilter(filter);
-  return normalized.kind === "provider"
-    ? `provider:${normalized.provider}`
-    : "all";
+  if (normalized.kind === "all") {
+    return "all";
+  }
+  return `agent-target:${normalized.agentTargetId}`;
 }
 
 export function createAgentGUIConversationListQueryKey(
   input: AgentGUIConversationListQuery
 ): string | null {
   const normalized = normalizeQuery(input);
-  return normalized
-    ? [
-        normalized.workspaceId,
-        normalized.userId,
-        normalized.provider,
-        conversationFilterKey(
-          normalized.conversationFilter,
-          normalized.provider
-        ),
-        normalized.sessionOrigin
-      ].join("::")
-    : null;
+  if (!normalized) {
+    return null;
+  }
+  const providerScope = normalized.conversationFilter
+    ? "conversation-filter"
+    : normalized.provider;
+  const queryKey = [
+    normalized.workspaceId,
+    normalized.userId,
+    providerScope,
+    conversationFilterKey(normalized.conversationFilter, normalized.provider),
+    normalized.sessionOrigin
+  ].join("::");
+  return queryKey;
 }
 
 function createEmptyQueryState(
@@ -1188,6 +1191,14 @@ function getWorkspaceAgentSnapshotForConversations(input: {
   return workspaceAgentSnapshotForConversations(snapshot);
 }
 
+function shouldUseCurrentWorkspaceAgentSnapshotForRefresh(
+  reason: RefreshReason
+): boolean {
+  return (
+    reason === "workspace-agent-update" || reason === "session-overlay-update"
+  );
+}
+
 async function refreshAgentGUIConversationListQuery(
   query: AgentGUIConversationListQuery,
   reason: RefreshReason,
@@ -1220,9 +1231,16 @@ async function refreshAgentGUIConversationListQuery(
       sessionOrigin: state.query.sessionOrigin,
       userId: state.query.userId
     };
+    const currentWorkspaceAgentSnapshot =
+      getWorkspaceAgentSnapshotForConversations(workspaceAgentsInput);
+    const canProjectExplicitFilterFromCurrentSnapshot =
+      reason === "projection-sync" &&
+      state.query.conversationFilter !== null &&
+      currentWorkspaceAgentSnapshot.sessions.length > 0;
     const workspaceAgentSnapshot =
-      reason === "workspace-agent-update" || reason === "session-overlay-update"
-        ? getWorkspaceAgentSnapshotForConversations(workspaceAgentsInput)
+      shouldUseCurrentWorkspaceAgentSnapshotForRefresh(reason) ||
+      canProjectExplicitFilterFromCurrentSnapshot
+        ? currentWorkspaceAgentSnapshot
         : await loadWorkspaceAgentSnapshotForConversations(
             workspaceAgentsInput
           );

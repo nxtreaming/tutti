@@ -197,6 +197,12 @@ export function createDesktopAgentActivityAdapter({
     if (existing) {
       deleteClaudeDraft(existing);
     }
+    if (
+      existingSameRequestedSession &&
+      existingSameRequestedSession !== existing
+    ) {
+      deleteClaudeDraft(existingSameRequestedSession);
+    }
     return createClaudeDraft(
       shouldCreateFreshDraftSession
         ? { ...input, agentSessionId: null }

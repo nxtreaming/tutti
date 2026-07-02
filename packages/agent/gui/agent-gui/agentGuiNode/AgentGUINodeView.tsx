@@ -464,6 +464,10 @@ interface AgentGUINodeViewProps {
     updateConversationFilter: (
       filter: AgentGUINodeViewModel["conversationFilter"]
     ) => void;
+    selectConversationFilterTarget: (input: {
+      provider: AgentGUIProvider;
+      providerTargetId?: string | null;
+    }) => void;
     createConversation: (options?: {
       projectPath?: string | null;
       source?: string;
@@ -1275,10 +1279,12 @@ export function AgentGUINodeView({
         selectedProviderTarget: viewModel.selectedProviderTarget,
         providerTargets: viewModel.providerTargets,
         providerTargetsLoading: viewModel.providerTargetsLoading,
+        conversationScope: viewModel.conversationScope,
         conversationFilter: viewModel.conversationFilter,
         onCreateConversation: requestCreateConversation,
         onUpdateConversationFilter: actions.updateConversationFilter,
-        onSelectProvider: actions.selectProvider,
+        onSelectConversationFilterTarget:
+          actions.selectConversationFilterTarget,
         onOpenAgentEnvSetup: openAgentEnvSetup,
         onRetryOpenclawGateway: retryOpenclawGateway,
         onSelectConversation: selectConversation,
@@ -1319,6 +1325,7 @@ export function AgentGUINodeView({
         viewModel.providerTargetsLoading,
         toggleConversationPinned,
         uiLanguage,
+        viewModel.conversationScope,
         viewModel.conversationFilter,
         viewModel.activeConversationId,
         viewModel.isDeletingConversation,
@@ -2199,6 +2206,11 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     },
     [submitInteractivePrompt]
   );
+  const canSwitchComposerProvider =
+    viewModel.conversationScope === "multi-provider";
+  const composerProviderTargets = canSwitchComposerProvider
+    ? viewModel.providerTargets
+    : [viewModel.selectedProviderTarget];
   const bottomDockComposerProps = useMemo<AgentComposerProps>(
     () => ({
       workspaceId: viewModel.workspaceId,
@@ -2206,8 +2218,9 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       currentUserId: viewModel.currentUserId,
       provider: viewModel.data.provider,
       selectedProviderTarget: viewModel.selectedProviderTarget,
-      providerTargets: viewModel.providerTargets,
-      providerSelectReadonly: viewModel.activeConversationId !== null,
+      providerTargets: composerProviderTargets,
+      providerSelectReadonly:
+        !canSwitchComposerProvider || viewModel.activeConversationId !== null,
       slashStatus,
       usage: viewModel.usage,
       draftContent: viewModel.draftContent,
@@ -2246,7 +2259,9 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       onDraftContentChange: updateDraftContent,
       onProjectPathChange: updateSelectedProjectPath,
       onSettingsChange: updateComposerSettings,
-      onProviderSelect: actions.selectProvider,
+      onProviderSelect: canSwitchComposerProvider
+        ? actions.selectProvider
+        : undefined,
       onSubmit: submitPromptAndScrollToBottom,
       onSubmitGuidance: submitGuidancePromptAndScrollToBottom,
       onPromptImagesUnsupported: showPromptImagesUnsupported,
@@ -2265,7 +2280,9 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     }),
     [
       canQueueWhileBusy,
+      canSwitchComposerProvider,
       capabilityMenuState,
+      composerProviderTargets,
       composerDisabled,
       composerDisabledReason,
       composerFocusRequestSequence,
@@ -2307,7 +2324,6 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       viewModel.currentUserId,
       viewModel.data.provider,
       viewModel.selectedProviderTarget,
-      viewModel.providerTargets,
       viewModel.draftContent,
       viewModel.draftPrompt,
       viewModel.drainingQueuedPromptId,
@@ -3097,11 +3113,12 @@ interface AgentGUIConversationRailPaneProps {
   selectedProviderTarget: AgentGUINodeViewModel["selectedProviderTarget"];
   providerTargets: AgentGUINodeViewModel["providerTargets"];
   providerTargetsLoading: AgentGUINodeViewModel["providerTargetsLoading"];
+  conversationScope: AgentGUINodeViewModel["conversationScope"];
   conversationFilter: AgentGUINodeViewModel["conversationFilter"];
   onUpdateConversationFilter: (
     filter: AgentGUINodeViewModel["conversationFilter"]
   ) => void;
-  onSelectProvider: AgentGUINodeViewProps["actions"]["selectProvider"];
+  onSelectConversationFilterTarget: AgentGUINodeViewProps["actions"]["selectConversationFilterTarget"];
   onCreateConversation: (options?: {
     projectPath?: string | null;
     source?: string;
@@ -3196,9 +3213,11 @@ function agentGUIConversationRailStoreSnapshotsEqual(
     current.selectedProviderTarget === next.selectedProviderTarget &&
     current.providerTargets === next.providerTargets &&
     current.providerTargetsLoading === next.providerTargetsLoading &&
+    current.conversationScope === next.conversationScope &&
     current.conversationFilter === next.conversationFilter &&
     current.onUpdateConversationFilter === next.onUpdateConversationFilter &&
-    current.onSelectProvider === next.onSelectProvider &&
+    current.onSelectConversationFilterTarget ===
+      next.onSelectConversationFilterTarget &&
     current.onCreateConversation === next.onCreateConversation &&
     current.onOpenAgentEnvSetup === next.onOpenAgentEnvSetup &&
     current.onRetryOpenclawGateway === next.onRetryOpenclawGateway &&
@@ -3422,46 +3441,13 @@ function agentGUIProviderRailLabel(
   return targetLabel;
 }
 
-function isAgentGUILocalDefaultTarget(
-  target: AgentGUINodeViewModel["providerTargets"][number]
+function agentGUIProviderTargetMatchesConversationFilter(
+  target: AgentGUINodeViewModel["providerTargets"][number],
+  filter: AgentGUINodeViewModel["conversationFilter"]
 ): boolean {
   return (
-    (target.provider === "codex" || target.provider === "claude-code") &&
-    (target.targetId === `local:${target.provider}` ||
-      target.targetId === `local-${target.provider}`)
-  );
-}
-
-function agentGUIProviderTargetsEqual(
-  left: AgentGUINodeViewModel["providerTargets"][number],
-  right: AgentGUINodeViewModel["providerTargets"][number]
-): boolean {
-  if (left.provider !== right.provider) {
-    return false;
-  }
-  const leftAgentTargetId = left.agentTargetId?.trim() ?? "";
-  const rightAgentTargetId = right.agentTargetId?.trim() ?? "";
-  if (leftAgentTargetId && rightAgentTargetId) {
-    return leftAgentTargetId === rightAgentTargetId;
-  }
-  return left.targetId === right.targetId;
-}
-
-function resolveAgentGUIAllProvidersTarget(
-  targets: readonly AgentGUINodeViewModel["providerTargets"][number][]
-): AgentGUINodeViewModel["providerTargets"][number] | null {
-  return (
-    targets.find(
-      (target) =>
-        target.provider === "codex" &&
-        isAgentGUILocalDefaultTarget(target) &&
-        target.disabled !== true
-    ) ??
-    targets.find(
-      (target) => target.provider === "codex" && target.disabled !== true
-    ) ??
-    targets.find((target) => target.disabled !== true) ??
-    null
+    filter.kind === "agentTarget" &&
+    (target.agentTargetId?.trim() ?? "") === filter.agentTargetId
   );
 }
 
@@ -3471,8 +3457,7 @@ interface AgentGUIProviderRailProps {
   previewMode: boolean;
   providerTargets: AgentGUINodeViewModel["providerTargets"];
   providerTargetsLoading: AgentGUINodeViewModel["providerTargetsLoading"];
-  selectedProviderTarget: AgentGUINodeViewModel["selectedProviderTarget"];
-  onSelectProvider: AgentGUINodeViewProps["actions"]["selectProvider"];
+  onSelectConversationFilterTarget: AgentGUINodeViewProps["actions"]["selectConversationFilterTarget"];
   onUpdateConversationFilter: (
     filter: AgentGUINodeViewModel["conversationFilter"]
   ) => void;
@@ -3484,8 +3469,7 @@ const AgentGUIProviderRail = memo(function AgentGUIProviderRail({
   previewMode,
   providerTargets,
   providerTargetsLoading,
-  selectedProviderTarget,
-  onSelectProvider,
+  onSelectConversationFilterTarget,
   onUpdateConversationFilter
 }: AgentGUIProviderRailProps): React.JSX.Element {
   "use memo";
@@ -3517,44 +3501,18 @@ const AgentGUIProviderRail = memo(function AgentGUIProviderRail({
       );
     });
   }, [providerTargets]);
-  const allTileSelected =
-    conversationFilter.kind === "all" &&
-    selectedProviderTarget.provider === "codex" &&
-    isAgentGUILocalDefaultTarget(selectedProviderTarget);
+  const allTileSelected = conversationFilter.kind === "all";
   const selectAllProviders = useCallback(() => {
-    const allTarget = resolveAgentGUIAllProvidersTarget(providerTiles);
-    if (
-      allTarget &&
-      !agentGUIProviderTargetsEqual(selectedProviderTarget, allTarget)
-    ) {
-      onSelectProvider({
-        provider: allTarget.provider,
-        providerTargetId: allTarget.targetId
-      });
-    }
     onUpdateConversationFilter({ kind: "all" });
-  }, [
-    onSelectProvider,
-    onUpdateConversationFilter,
-    providerTiles,
-    selectedProviderTarget
-  ]);
+  }, [onUpdateConversationFilter]);
   const selectProviderTile = useCallback(
     (target: AgentGUINodeViewModel["providerTargets"][number]) => {
-      if (target.provider === "codex" || target.provider === "claude-code") {
-        onUpdateConversationFilter({
-          kind: "provider",
-          provider: target.provider
-        });
-      } else {
-        onUpdateConversationFilter({ kind: "all" });
-      }
-      onSelectProvider({
+      onSelectConversationFilterTarget({
         provider: target.provider,
         providerTargetId: target.targetId
       });
     },
-    [onSelectProvider, onUpdateConversationFilter]
+    [onSelectConversationFilterTarget]
   );
 
   return (
@@ -3601,13 +3559,11 @@ const AgentGUIProviderRail = memo(function AgentGUIProviderRail({
           ))
         : null}
       {providerTiles.map((target) => {
-        const targetSelected = agentGUIProviderTargetsEqual(
-          selectedProviderTarget,
-          target
-        );
         const providerSelected =
-          targetSelected &&
-          !(allTileSelected && isAgentGUILocalDefaultTarget(target));
+          agentGUIProviderTargetMatchesConversationFilter(
+            target,
+            conversationFilter
+          );
         return (
           <button
             key={`${target.provider}:${target.targetId}`}
@@ -3654,12 +3610,12 @@ const AgentGUIConversationRailPane = memo(
     openclawGateway,
     isCollapsed,
     slashStatusLimits,
-    selectedProviderTarget,
     providerTargets,
     providerTargetsLoading,
+    conversationScope,
     conversationFilter,
     onUpdateConversationFilter,
-    onSelectProvider,
+    onSelectConversationFilterTarget,
     onCreateConversation,
     onOpenAgentEnvSetup,
     onRetryOpenclawGateway,
@@ -3676,11 +3632,14 @@ const AgentGUIConversationRailPane = memo(
     onConfirmDeleteConversation
   }: AgentGUIConversationRailPaneProps): React.JSX.Element {
     "use memo";
+    const showProviderRail = conversationScope === "multi-provider";
     const [conversationQuery, setConversationQuery] = useState("");
     const updateConversationFilter = useStableEventCallback(
       onUpdateConversationFilter
     );
-    const selectProvider = useStableEventCallback(onSelectProvider);
+    const selectConversationFilterTarget = useStableEventCallback(
+      onSelectConversationFilterTarget
+    );
     const [collapsedProjectSectionIds, setCollapsedProjectSectionIds] =
       useState<ReadonlySet<string>>(() => new Set());
     const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
@@ -3816,16 +3775,17 @@ const AgentGUIConversationRailPane = memo(
             <span>{labels.newConversation}</span>
           </Button>
         </div>
-        <AgentGUIProviderRail
-          conversationFilter={conversationFilter}
-          labels={labels}
-          previewMode={previewMode}
-          providerTargets={providerTargets}
-          providerTargetsLoading={providerTargetsLoading}
-          selectedProviderTarget={selectedProviderTarget}
-          onSelectProvider={selectProvider}
-          onUpdateConversationFilter={updateConversationFilter}
-        />
+        {showProviderRail ? (
+          <AgentGUIProviderRail
+            conversationFilter={conversationFilter}
+            labels={labels}
+            previewMode={previewMode}
+            providerTargets={providerTargets}
+            providerTargetsLoading={providerTargetsLoading}
+            onSelectConversationFilterTarget={selectConversationFilterTarget}
+            onUpdateConversationFilter={updateConversationFilter}
+          />
+        ) : null}
         {openclawGateway?.status === "starting" ? (
           <div className={styles.gatewayStatus} data-state="starting">
             <StatusDot

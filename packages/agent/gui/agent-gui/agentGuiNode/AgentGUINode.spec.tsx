@@ -7688,6 +7688,7 @@ function createViewModel(
     },
     inlineNotice: null,
     ...overrides,
+    conversationScope: overrides.conversationScope ?? "single-provider",
     conversationFilter: overrides.conversationFilter ?? { kind: "all" },
     listError: overrides.listError ?? null
   };

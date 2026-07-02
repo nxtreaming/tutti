@@ -69,6 +69,7 @@ export {
 export interface AgentGUIConversationSummary {
   id: string;
   userId?: string;
+  agentTargetId?: string | null;
   provider: AgentGUIResolvedProvider;
   resumable?: boolean;
   title: string;
@@ -90,6 +91,7 @@ export type AgentGUIConversationProjectionSource = Pick<
   AgentGUIConversationSummary,
   | "id"
   | "userId"
+  | "agentTargetId"
   | "provider"
   | "title"
   | "titleFallback"
@@ -205,8 +207,7 @@ export function buildAgentGUIConversationSummaries({
   if (conversationFilter) {
     return filterAgentGUIConversationSummaries(
       conversations,
-      normalizeAgentGUIConversationFilter(conversationFilter),
-      { includeUnknownProvider: true }
+      normalizeAgentGUIConversationFilter(conversationFilter)
     );
   }
   return conversations.filter(
@@ -399,6 +400,7 @@ export function conversationSummaryFromAgentSession(
   return {
     id: session.agentSessionId.trim(),
     userId: "",
+    agentTargetId: session.agentTargetId ?? null,
     provider,
     resumable: session.resumable,
     title,
@@ -537,6 +539,7 @@ function conversationSummaryFromActivity(
   return {
     id: activity.sessionId,
     userId: session?.userId?.trim() ?? "",
+    agentTargetId: session?.agentTargetId ?? null,
     provider,
     resumable: session?.resumable,
     title,

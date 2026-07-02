@@ -1244,6 +1244,10 @@ test("desktop agent activity adapter uses a fresh Claude draft id after target s
     })
   );
   await firstSubmission;
+  await waitForCondition(
+    () => calls.includes(`delete:${fixedAgentSessionId}`),
+    "expected the stale Claude draft from the previous target to be deleted"
+  );
 });
 
 test("desktop agent activity adapter loads Claude options without mutating draft sessions", async () => {

@@ -320,6 +320,7 @@ describe("useAgentGUINodeController", () => {
           providerTargetId: "local:codex",
           providerTargetRef: { kind: "local-provider", provider: "codex" }
         }),
+        conversationScope: "multi-provider",
         onDataChange,
         onRememberComposerDefaults
       })
@@ -341,15 +342,16 @@ describe("useAgentGUINodeController", () => {
 
     act(() => {
       result.current.actions.updateConversationFilter({
-        kind: "provider",
-        provider: "claude-code"
+        kind: "agentTarget",
+        agentTargetId: "local:claude-code"
       });
     });
 
     await waitFor(() => {
-      expect(
-        result.current.viewModel.conversations.map((item) => item.id)
-      ).toEqual(["claude-session"]);
+      expect(result.current.viewModel.conversationFilter).toEqual({
+        kind: "agentTarget",
+        agentTargetId: "local:claude-code"
+      });
     });
 
     expect(result.current.viewModel.data.provider).toBe("codex");
@@ -374,6 +376,243 @@ describe("useAgentGUINodeController", () => {
       });
     }
     expect(onRememberComposerDefaults).not.toHaveBeenCalled();
+  });
+
+  it("selects a rail target by updating the conversation filter and composer provider target", async () => {
+    installAgentHostApi({
+      list: vi.fn(async () => ({
+        presences: [],
+        sessions: [
+          workspaceAgentSession("codex-session", {
+            provider: "codex",
+            title: "Codex session",
+            updatedAtUnixMs: 3
+          }),
+          workspaceAgentSession("claude-session", {
+            provider: "claude-code",
+            title: "Claude session",
+            updatedAtUnixMs: 2
+          })
+        ]
+      })),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+    const onDataChange = vi.fn();
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData(null, "codex", {
+          agentTargetId: "local:codex"
+        }),
+        conversationScope: "multi-provider",
+        providerTargets: [
+          {
+            targetId: "local:codex",
+            agentTargetId: "local:codex",
+            provider: "codex",
+            ref: { kind: "local-provider", provider: "codex" },
+            label: "Codex"
+          },
+          {
+            targetId: "local:claude-code",
+            agentTargetId: "local:claude-code",
+            provider: "claude-code",
+            ref: { kind: "local-provider", provider: "claude-code" },
+            label: "Claude Code"
+          }
+        ],
+        onDataChange
+      })
+    );
+
+    await waitFor(() => {
+      expect(
+        result.current.viewModel.conversations.map((item) => item.id)
+      ).toEqual(["codex-session", "claude-session"]);
+    });
+    onDataChange.mockClear();
+
+    act(() => {
+      result.current.actions.selectConversationFilterTarget({
+        provider: "claude-code",
+        providerTargetId: "local:claude-code"
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.conversationFilter).toEqual({
+        kind: "agentTarget",
+        agentTargetId: "local:claude-code"
+      });
+    });
+    const currentData = agentGuiData(null, "codex", {
+      agentTargetId: "local:codex",
+      composerOverrides: { model: "gpt-5" }
+    });
+    const nextData = onDataChange.mock.calls
+      .map(([updater]) =>
+        typeof updater === "function" ? updater(currentData) : null
+      )
+      .find((candidate) => candidate?.provider === "claude-code");
+    expect(nextData).toMatchObject({
+      provider: "claude-code",
+      agentTargetId: "local:claude-code",
+      lastActiveAgentSessionId: null,
+      providerTargetId: null,
+      providerTargetRef: null,
+      composerOverrides: { model: "gpt-5" }
+    });
+  });
+
+  it("does not persist provider target ids as agent target ids", async () => {
+    installAgentHostApi({
+      list: vi.fn(async () => ({ presences: [], sessions: [] })),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+    const onDataChange = vi.fn();
+    const initialData = agentGuiData(null, "claude-code", {
+      agentTargetId: "local:claude-code",
+      composerOverrides: { model: "sonnet" }
+    });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: initialData,
+        conversationScope: "multi-provider",
+        providerTargets: [
+          {
+            targetId: "shared-agent:codex-1",
+            provider: "codex",
+            ref: {
+              kind: "shared-agent",
+              provider: "codex",
+              sharedAgentId: "codex-1"
+            },
+            label: "Alice's Codex"
+          }
+        ],
+        onDataChange
+      })
+    );
+
+    act(() => {
+      result.current.actions.selectConversationFilterTarget({
+        provider: "codex",
+        providerTargetId: "shared-agent:codex-1"
+      });
+    });
+
+    const nextData = onDataChange.mock.calls
+      .map(([updater]) =>
+        typeof updater === "function" ? updater(initialData) : null
+      )
+      .find((candidate) => candidate?.provider === "codex");
+    expect(nextData).toMatchObject({
+      provider: "codex",
+      agentTargetId: null,
+      lastActiveAgentSessionId: null,
+      providerTargetId: null,
+      providerTargetRef: null,
+      composerOverrides: { model: "sonnet" }
+    });
+  });
+
+  it("keeps provider filters disabled for single-provider conversation scope", async () => {
+    installAgentHostApi({
+      list: vi.fn(async () => ({
+        presences: [],
+        sessions: [
+          workspaceAgentSession("codex-session", {
+            provider: "codex",
+            title: "Codex session",
+            updatedAtUnixMs: 3
+          }),
+          workspaceAgentSession("claude-session", {
+            provider: "claude-code",
+            title: "Claude session",
+            updatedAtUnixMs: 2
+          })
+        ]
+      })),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+
+    const onDataChange = vi.fn();
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: agentGuiData(null, "codex"),
+        providerTargets: [
+          {
+            targetId: "local:codex",
+            agentTargetId: "local:codex",
+            provider: "codex",
+            ref: { kind: "local-provider", provider: "codex" },
+            label: "Codex"
+          },
+          {
+            targetId: "local:claude-code",
+            agentTargetId: "local:claude-code",
+            provider: "claude-code",
+            ref: { kind: "local-provider", provider: "claude-code" },
+            label: "Claude Code"
+          }
+        ],
+        onDataChange
+      })
+    );
+
+    await waitFor(() => {
+      expect(
+        result.current.viewModel.conversations.map((item) => item.id)
+      ).toEqual(["codex-session"]);
+    });
+
+    act(() => {
+      result.current.actions.updateConversationFilter({
+        kind: "agentTarget",
+        agentTargetId: "local:claude-code"
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.conversationFilter).toEqual({
+        kind: "all"
+      });
+    });
+    expect(
+      result.current.viewModel.conversations.map((item) => item.id)
+    ).toEqual(["codex-session"]);
+
+    onDataChange.mockClear();
+    act(() => {
+      result.current.actions.selectConversationFilterTarget({
+        provider: "claude-code",
+        providerTargetId: "local:claude-code"
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.viewModel.conversationFilter).toEqual({
+        kind: "all"
+      });
+    });
+    expect(onDataChange).not.toHaveBeenCalled();
+    expect(result.current.viewModel.data.provider).toBe("codex");
   });
 
   it("keeps the visible conversation list reference for equal project reloads", async () => {
@@ -1209,7 +1448,7 @@ describe("useAgentGUINodeController", () => {
     });
   });
 
-  it("does not send a fallback local provider target ref when provider targets are omitted", async () => {
+  it("sends fallback local agent target ids without provider target refs when provider targets are omitted", async () => {
     const activate = vi.fn(
       async (input: AgentHostActivateAgentSessionInput) => ({
         session: agentSession(input.agentSessionId, {
@@ -1246,6 +1485,7 @@ describe("useAgentGUINodeController", () => {
       expect(activate).toHaveBeenCalledWith(
         expect.objectContaining({
           mode: "new",
+          agentTargetId: "local:codex",
           provider: "codex",
           providerTargetRef: null
         })
@@ -1260,6 +1500,13 @@ describe("useAgentGUINodeController", () => {
             (next.providerTargetRef ?? null) !== null)
       );
     expect(providerTargetUpdates).toEqual([]);
+    const agentTargetUpdates = onDataChange.mock.calls
+      .map(([updater]) => updater(initialData))
+      .filter((next) => next !== initialData && next.agentTargetId != null);
+    expect(agentTargetUpdates.at(-1)).toMatchObject({
+      agentTargetId: "local:codex",
+      provider: "codex"
+    });
   });
 
   it("blocks submit when no explicit target matches the provider", async () => {

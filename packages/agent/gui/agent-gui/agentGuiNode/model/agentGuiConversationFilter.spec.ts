@@ -8,44 +8,30 @@ import {
 } from "./agentGuiConversationFilter.ts";
 
 describe("agentGuiConversationFilter", () => {
-  it("includes Codex and Claude Code historical sessions for the all filter", () => {
+  it("does not constrain sessions by agent target for the all filter", () => {
     expect(
       filterWorkspaceAgentActivitySessionsForConversations(
         [
-          session("codex-1", "codex"),
-          session("claude-1", "claude-code"),
-          session("gemini-1", "gemini")
+          session("codex-local", "local:codex"),
+          session("codex-shared", "shared:codex"),
+          session("targetless", null)
         ],
         { kind: "all" }
       ).map((item) => item.agentSessionId)
-    ).toEqual(["codex-1", "claude-1"]);
+    ).toEqual(["codex-local", "codex-shared", "targetless"]);
   });
 
-  it("filters summaries by the selected provider only", () => {
+  it("filters summaries by the selected agent target only", () => {
     expect(
       filterAgentGUIConversationSummaries(
         [
-          conversation("codex-1", "codex"),
-          conversation("claude-1", "claude-code"),
-          conversation("unknown-1", "unknown")
+          conversation("codex-local", "local:codex"),
+          conversation("codex-shared", "shared:codex"),
+          conversation("targetless", null)
         ],
-        { kind: "provider", provider: "claude-code" }
+        { kind: "agentTarget", agentTargetId: "local:codex" }
       ).map((item) => item.id)
-    ).toEqual(["claude-1"]);
-  });
-
-  it("can preserve unknown-provider historical summaries for compatibility", () => {
-    expect(
-      filterAgentGUIConversationSummaries(
-        [
-          conversation("codex-1", "codex"),
-          conversation("claude-1", "claude-code"),
-          conversation("unknown-1", "unknown")
-        ],
-        { kind: "provider", provider: "codex" },
-        { includeUnknownProvider: true }
-      ).map((item) => item.id)
-    ).toEqual(["codex-1", "unknown-1"]);
+    ).toEqual(["codex-local"]);
   });
 
   it("keeps the filter model independent from composer state", () => {
@@ -55,14 +41,14 @@ describe("agentGuiConversationFilter", () => {
     });
 
     const filterState = createAgentGUIConversationFilterState({
-      kind: "provider",
-      provider: "claude-code"
+      kind: "agentTarget",
+      agentTargetId: "local:claude-code"
     });
 
     expect(filterState).toEqual({
       filter: {
-        kind: "provider",
-        provider: "claude-code"
+        kind: "agentTarget",
+        agentTargetId: "local:claude-code"
       }
     });
     expect(filterState).not.toHaveProperty("defaultProviderTargetId");
@@ -76,12 +62,13 @@ describe("agentGuiConversationFilter", () => {
 
 function session(
   agentSessionId: string,
-  provider: WorkspaceAgentActivitySession["provider"]
+  agentTargetId: string | null
 ): WorkspaceAgentActivitySession {
   return {
     agentSessionId,
+    agentTargetId,
     cwd: "/repo",
-    provider,
+    provider: "codex",
     status: "completed",
     title: agentSessionId,
     updatedAtUnixMs: 1,
@@ -91,12 +78,13 @@ function session(
 
 function conversation(
   id: string,
-  provider: AgentGUIConversationSummary["provider"]
+  agentTargetId: string | null
 ): AgentGUIConversationSummary {
   return {
     id,
+    agentTargetId,
     cwd: "/repo",
-    provider,
+    provider: "codex",
     status: "completed",
     title: id,
     updatedAtUnixMs: 1

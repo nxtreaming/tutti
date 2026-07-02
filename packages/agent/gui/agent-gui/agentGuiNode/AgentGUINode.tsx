@@ -40,6 +40,7 @@ import type {
   AgentGUIPrefillPromptRequest,
   AgentGUIRememberComposerDefaultsInput
 } from "./controller/useAgentGUINodeController";
+import type { AgentGUIConversationScope } from "./model/agentGuiNodeTypes";
 import {
   AgentGUINodeView,
   type AgentGUIViewLabels,
@@ -185,6 +186,7 @@ export interface AgentGUINodeProps {
   providerTargets?: readonly AgentGUIProviderTarget[];
   providerTargetsLoading?: boolean;
   defaultProviderTargetId?: string | null;
+  conversationScope?: AgentGUIConversationScope;
   onWorkspaceFileReferencesAdded?: (input: {
     provider: AgentProvider;
     references: readonly WorkspaceFileReference[];
@@ -504,6 +506,7 @@ function areAgentGUINodePropsEqual(
     previous.providerTargets === next.providerTargets &&
     previous.providerTargetsLoading === next.providerTargetsLoading &&
     previous.defaultProviderTargetId === next.defaultProviderTargetId &&
+    previous.conversationScope === next.conversationScope &&
     previous.onClose === next.onClose &&
     previous.onResize === next.onResize &&
     previous.onUpdateNode === next.onUpdateNode &&
@@ -562,6 +565,7 @@ export const AgentGUINode = memo(function AgentGUINode({
   providerTargets,
   providerTargetsLoading = false,
   defaultProviderTargetId = null,
+  conversationScope = "single-provider",
   onWorkspaceFileReferencesAdded,
   onOpenConversationWindow,
   onClose,
@@ -727,6 +731,7 @@ export const AgentGUINode = memo(function AgentGUINode({
     workspacePath,
     avoidGroupingEdits: agentSettings.avoidGroupingEdits,
     data: state,
+    conversationScope,
     openSessionRequest,
     prefillPromptRequest,
     providerTargets,
@@ -741,11 +746,13 @@ export const AgentGUINode = memo(function AgentGUINode({
     (...args: Parameters<typeof actions.createConversation>) => {
       if (!previewMode) {
         onUpdateNode((current) =>
-          current.lastActiveAgentSessionId === null
+          current.lastActiveAgentSessionId === null &&
+          (current.lastActiveConversationTitle ?? null) === null
             ? current
             : {
                 ...current,
-                lastActiveAgentSessionId: null
+                lastActiveAgentSessionId: null,
+                lastActiveConversationTitle: null
               }
         );
       }
@@ -783,6 +790,34 @@ export const AgentGUINode = memo(function AgentGUINode({
         language: locale
       })
     : null;
+  useEffect(() => {
+    if (previewMode || !viewModel.activeConversation) {
+      return;
+    }
+    const conversationTitle = activeConversationDockTitle?.trim() ?? "";
+    if (!conversationTitle) {
+      return;
+    }
+    const conversationId = viewModel.activeConversation.id;
+    onUpdateNode((current) => {
+      if (
+        current.lastActiveAgentSessionId === conversationId &&
+        current.lastActiveConversationTitle === conversationTitle
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        lastActiveAgentSessionId: conversationId,
+        lastActiveConversationTitle: conversationTitle
+      };
+    });
+  }, [
+    activeConversationDockTitle,
+    onUpdateNode,
+    previewMode,
+    viewModel.activeConversation
+  ]);
   const labels = useMemo<AgentGUIViewLabels>(
     () => ({
       initialPlaceholder: t("agentHost.agentGui.initialPlaceholder", {

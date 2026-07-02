@@ -197,6 +197,7 @@ func TestTuttidBlackBoxEventStreamPreferenceIntentPublishesUpdatedEvent(t *testi
 			Payload: mustMarshalRawJSON(t, eventprotocol.PreferencesDesktopUpdateRequestedPayload{
 				Preferences: eventprotocol.PreferencesDesktopPreferences{
 					AgentConversationDetailMode: "general",
+					AgentDockLayout:             "unified",
 					AppCatalogChannel:           "staging",
 					DefaultAgentProvider:        "codex",
 
@@ -248,13 +249,14 @@ func TestTuttidBlackBoxEventStreamPreferenceIntentPublishesUpdatedEvent(t *testi
 	}
 	if updated.Preferences.DefaultAgentProvider != "codex" ||
 		updated.Preferences.AgentConversationDetailMode != "general" ||
+		updated.Preferences.AgentDockLayout != "unified" ||
 		updated.Preferences.AppCatalogChannel != "staging" ||
 		updated.Preferences.DockPlacement != "bottom" ||
 		updated.Preferences.Locale != "zh-CN" ||
 		updated.Preferences.ThemeSource != "dark" ||
 		updated.Preferences.UpdateChannel != "stable" ||
 		updated.Preferences.UpdatePolicy != "prompt" {
-		t.Fatalf("updated payload = %#v, want staging/codex/general/bottom/zh-CN/dark/stable/prompt", updated)
+		t.Fatalf("updated payload = %#v, want staging/codex/general/unified/bottom/zh-CN/dark/stable/prompt", updated)
 	}
 
 	after := mustRequestJSON[tuttigenerated.DesktopPreferencesStateResponse](
@@ -276,6 +278,9 @@ func TestTuttidBlackBoxEventStreamPreferenceIntentPublishesUpdatedEvent(t *testi
 	}
 	if after.Preferences.AgentConversationDetailMode != tuttigenerated.General {
 		t.Fatalf("stored agentConversationDetailMode = %q, want %q", after.Preferences.AgentConversationDetailMode, tuttigenerated.General)
+	}
+	if after.Preferences.AgentDockLayout != tuttigenerated.Unified {
+		t.Fatalf("stored agentDockLayout = %q, want %q", after.Preferences.AgentDockLayout, tuttigenerated.Unified)
 	}
 	if after.Preferences.AppCatalogChannel != tuttigenerated.Staging {
 		t.Fatalf("stored appCatalogChannel = %q, want %q", after.Preferences.AppCatalogChannel, tuttigenerated.Staging)

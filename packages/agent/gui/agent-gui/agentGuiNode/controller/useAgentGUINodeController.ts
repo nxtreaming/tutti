@@ -85,6 +85,7 @@ import type {
 } from "../../../host/agentHostApi";
 import type {
   AgentComposerDraft,
+  AgentGUIConversationScope,
   AgentGUIComposerSettingOption,
   AgentGUIComposerSettingsVM,
   AgentGUIProviderSkillOption,
@@ -3269,6 +3270,7 @@ interface UseAgentGUINodeControllerInput {
   workspacePath: string;
   avoidGroupingEdits: boolean;
   data: AgentGUINodeData;
+  conversationScope?: AgentGUIConversationScope;
   providerTargets?: readonly AgentGUIProviderTarget[];
   providerTargetsLoading?: boolean;
   defaultProviderTargetId?: string | null;
@@ -3306,6 +3308,7 @@ export function useAgentGUINodeController({
   workspacePath,
   avoidGroupingEdits,
   data,
+  conversationScope = "single-provider",
   providerTargets,
   providerTargetsLoading = false,
   defaultProviderTargetId = null,
@@ -3398,10 +3401,16 @@ export function useAgentGUINodeController({
     useState<AgentGUIConversationFilter>(
       () => createAgentGUIConversationFilterState().filter
     );
-  const queryConversationFilter =
-    data.provider === "codex" || data.provider === "claude-code"
-      ? conversationFilter
-      : null;
+  const canUseConversationTargetFilter = conversationScope === "multi-provider";
+  const queryConversationFilter = canUseConversationTargetFilter
+    ? conversationFilter
+    : null;
+  useEffect(() => {
+    if (canUseConversationTargetFilter || conversationFilter.kind === "all") {
+      return;
+    }
+    setConversationFilter({ kind: "all" });
+  }, [canUseConversationTargetFilter, conversationFilter]);
   const conversationListQuery =
     useMemo<AgentGUIConversationListQuery | null>(() => {
       const userId = currentUserId?.trim() ?? "";
@@ -6574,9 +6583,7 @@ export function useAgentGUINodeController({
         const provider = target.provider;
         const shouldUseProviderTargetRef =
           selectedProviderTargetIsExplicitRef.current;
-        const agentTargetId = shouldUseProviderTargetRef
-          ? (target.agentTargetId ?? null)
-          : null;
+        const agentTargetId = target.agentTargetId?.trim() || null;
         onDataChangeRef.current((current) =>
           current.provider === provider &&
           (current.agentTargetId ?? null) === agentTargetId
@@ -9920,9 +9927,13 @@ export function useAgentGUINodeController({
 
   const updateConversationFilter = useCallback(
     (filter: AgentGUIConversationFilter) => {
+      if (!canUseConversationTargetFilter) {
+        setConversationFilter({ kind: "all" });
+        return;
+      }
       setConversationFilter(normalizeAgentGUIConversationFilter(filter));
     },
-    []
+    [canUseConversationTargetFilter]
   );
   const selectProvider = useCallback(
     (input: {
@@ -9966,7 +9977,7 @@ export function useAgentGUINodeController({
       persistActiveConversation(null);
       onDataChangeRef.current((current) => {
         const nextAgentTargetId = shouldUseProviderTargetRef
-          ? (nextTarget.agentTargetId ?? nextTarget.targetId)
+          ? (nextTarget.agentTargetId ?? null)
           : null;
         const nextData: AgentGUINodeData = {
           ...current,
@@ -9994,9 +10005,49 @@ export function useAgentGUINodeController({
       shouldFallbackToLocalProviderTargets
     ]
   );
+  const selectConversationFilterTarget = useCallback(
+    (input: {
+      provider: AgentGUIProvider;
+      providerTargetId?: string | null;
+    }) => {
+      if (!canUseConversationTargetFilter) {
+        setConversationFilter({ kind: "all" });
+        return;
+      }
+      const nextTarget = resolveAgentGUIProviderTarget({
+        defaultProviderTargetId,
+        fallbackToLocal: shouldFallbackToLocalProviderTargets,
+        provider: input.provider,
+        providerTargetId: input.providerTargetId,
+        providerTargets: normalizedProviderTargets
+      });
+      if (!nextTarget || nextTarget.disabled === true) {
+        return;
+      }
+      const agentTargetId = nextTarget.agentTargetId?.trim() ?? "";
+      const nextFilter = agentTargetId
+        ? { kind: "agentTarget" as const, agentTargetId }
+        : { kind: "all" as const };
+      setConversationFilter(nextFilter);
+      selectProvider({
+        provider: nextTarget.provider,
+        providerTargetId: nextTarget.targetId
+      });
+    },
+    [
+      canUseConversationTargetFilter,
+      defaultProviderTargetId,
+      normalizedProviderTargets,
+      selectProvider,
+      shouldFallbackToLocalProviderTargets
+    ]
+  );
   const stableCreateConversation =
     useStableControllerEventCallback(createConversation);
   const stableSelectProvider = useStableControllerEventCallback(selectProvider);
+  const stableSelectConversationFilterTarget = useStableControllerEventCallback(
+    selectConversationFilterTarget
+  );
   const stableSelectConversation =
     useStableControllerEventCallback(selectConversation);
   const stableSubmitPrompt = useStableControllerEventCallback(submitPrompt);
@@ -10065,6 +10116,7 @@ export function useAgentGUINodeController({
   const controllerActions = useMemo(
     () => ({
       updateConversationFilter: stableUpdateConversationFilter,
+      selectConversationFilterTarget: stableSelectConversationFilterTarget,
       selectProvider: stableSelectProvider,
       createConversation: stableCreateConversation,
       selectConversation: stableSelectConversation,
@@ -10114,6 +10166,7 @@ export function useAgentGUINodeController({
       stableRetryActivation,
       stableRetryOpenclawGateway,
       stableSelectConversation,
+      stableSelectConversationFilterTarget,
       stableSelectProvider,
       stableSendQueuedPromptNext,
       stableSubmitGuidancePrompt,
@@ -10139,6 +10192,7 @@ export function useAgentGUINodeController({
         selectedProviderTarget,
         providerTargets: normalizedProviderTargets,
         providerTargetsLoading,
+        conversationScope,
         conversationFilter,
         conversations: visibleConversations,
         userProjects,
@@ -10204,6 +10258,7 @@ export function useAgentGUINodeController({
       canSubmit,
       canQueueWhileBusy,
       conversation,
+      conversationScope,
       conversationFilter,
       conversationDetail,
       controllerActions,

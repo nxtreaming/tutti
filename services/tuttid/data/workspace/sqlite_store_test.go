@@ -11,6 +11,7 @@ import (
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agentactivity/daemon/activity"
 	agentactivitybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentactivity"
+	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
 )
 
@@ -76,11 +77,18 @@ func TestSQLiteStoreMigrationRepairsAgentTargetIDColumnWhenMarkerExists(t *testi
 	if !ok {
 		t.Fatal("ListSessions() ok = false, want true")
 	}
-	if len(sessions) != 1 {
-		t.Fatalf("ListSessions() len = %d, want 1", len(sessions))
+	if len(sessions) != 2 {
+		t.Fatalf("ListSessions() len = %d, want 2", len(sessions))
 	}
-	if sessions[0].AgentTargetID != "" {
-		t.Fatalf("AgentTargetID = %q, want empty legacy value", sessions[0].AgentTargetID)
+	targetBySessionID := map[string]string{}
+	for _, session := range sessions {
+		targetBySessionID[session.ID] = session.AgentTargetID
+	}
+	if targetBySessionID["session-legacy"] != agenttargetbiz.IDLocalCodex {
+		t.Fatalf("codex AgentTargetID = %q, want %s", targetBySessionID["session-legacy"], agenttargetbiz.IDLocalCodex)
+	}
+	if targetBySessionID["session-legacy-claude"] != agenttargetbiz.IDLocalClaudeCode {
+		t.Fatalf("claude AgentTargetID = %q, want %s", targetBySessionID["session-legacy-claude"], agenttargetbiz.IDLocalClaudeCode)
 	}
 }
 
@@ -1576,6 +1584,13 @@ INSERT INTO workspace_agent_sessions (
 ) VALUES (
   'ws-legacy-agent-target-id', 'session-legacy', 'runtime', 'codex', 'provider-session-legacy', '',
   '{}', '{}', '/', 'Legacy Session', 'running', 'idle',
+  '', 0, 1, 1,
+  0, 0, 1, 1,
+  0
+),
+(
+  'ws-legacy-agent-target-id', 'session-legacy-claude', 'runtime', 'claude-code', 'provider-session-legacy-claude', '',
+  '{}', '{}', '/', 'Legacy Claude Session', 'running', 'idle',
   '', 0, 1, 1,
   0, 0, 1, 1,
   0

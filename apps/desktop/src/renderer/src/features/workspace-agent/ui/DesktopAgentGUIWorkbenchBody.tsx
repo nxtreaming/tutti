@@ -962,6 +962,11 @@ function DesktopAgentGUIWorkbenchBodyImpl({
         providerTargets={providerTargetsLoading ? [] : providerTargets}
         providerTargetsLoading={providerTargetsLoading}
         defaultProviderTargetId={defaultProviderTargetId}
+        conversationScope={
+          desktopPreferencesState.agentDockLayout === "unified"
+            ? "multi-provider"
+            : "single-provider"
+        }
         workspaceAgentProbes={workspaceAgentProbes}
         onAgentProbeDemandChange={
           previewMode ? undefined : handleAgentProbeDemandChange

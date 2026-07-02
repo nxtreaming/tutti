@@ -160,6 +160,9 @@ and must not switch the running session. Do not encode provider switching only
 as a conversation-list filter; filters can scope the visible Codex/Claude
 session list, while provider selection changes which provider a new empty
 composer will launch.
+UI affordances that aggregate across providers, such as rail provider filters
+and composer provider switching, belong to the current conversation scope
+derived by the host/workbench presentation, not to durable AgentGUI node data.
 
 This means an AgentGUI bug can start at several different interfaces. Do not
 assume that a visible UI symptom starts in the visible UI component.
@@ -594,10 +597,20 @@ User-visible rules:
   runtime update time.
 - Search and project grouping are list-query concerns. They may hide a session
   from the rail, but must not delete or unactivate the session.
-- Conversation provider filters are also list-query concerns. The All, Codex,
-  and Claude Code rail filters match historical sessions by `session.provider`;
-  they must not mutate workbench node `provider`, provider target fields,
-  composer drafts, desktop default provider, or composer-default preferences.
+- Conversation target filters are also list-query concerns. The All rail filter
+  applies no `agentTargetId` constraint; provider target rail filters such as
+  Codex and Claude Code match sessions by `session.agentTargetId`, not by
+  `session.provider`. Filter normalization and list projection helpers must not
+  mutate workbench node `provider`, provider target fields, composer drafts,
+  desktop default provider, or composer-default preferences. All-filter clicks
+  must only clear the `agentTargetId` constraint. Provider target rail clicks
+  that should also change the empty composer launch target must flow through a
+  single controller action that updates both the conversation filter and the
+  composer provider target; React view components must not dispatch separate
+  filter and provider-selection actions for one click.
+  Apply them only for multi-provider conversation scopes. Single-provider
+  panels should let the node provider constrain the query and collapse target
+  filter actions back to All in the controller.
 - A pending create row can appear before the daemon-created session is
   authoritative. It must be replaced by the authoritative session or removed on
   create failure.

@@ -14,8 +14,9 @@
 
 PRD 要求第一阶段把 Codex 与 Claude Code 的 dock 入口聚合成一个 Agent dock
 entry，但不能把 AgentGUI 节点变成单例，也不能迁移历史 session/workbench
-state。也就是说，本需求是 dock presentation 与可选 Agent Target registry
-的演进，不是 provider runtime、composer target UX 或历史数据重写。
+state。实现范围已明确比最初保守草案更进一步：本期包含 system Agent Target
+id 的 target-first launch/runtime attribution，以及 target-scoped composer options
+缓存；但仍不包含完整 target-aware composer UX、用户自定义 persona 或历史数据重写。
 
 现有实现证据:
 
@@ -45,6 +46,11 @@ state。也就是说，本需求是 dock presentation 与可选 Agent Target reg
 6. legacy launch id、历史 workbench node state、历史 session 继续兼容。
 7. unified AgentGUI 顶部 filter 仅影响 conversation list，不能联动 composer
    provider/target/defaults。
+8. system Agent Target id 可作为本期本地 CLI launch 的首选 authority；daemon
+   负责从 `agent_targets.launch_ref_json` 派生 provider/runtime ref。
+9. AgentGUI `@` 面板把 agent 候选从 `workspace-app` 迁出到独立
+   `agent-target` provider；`workspace-app` 不再返回 `agent-codex` /
+   `agent-claude-code` 伪应用。
 
 ## 非目标
 
@@ -54,8 +60,15 @@ state。也就是说，本需求是 dock presentation 与可选 Agent Target reg
 - 不删除 `agent-gui`、`agent-gui:codex`、`agent-gui:claude-code` 等 legacy
   兼容路径。
 - 不把所有 provider 强制塞进一个 singleton AgentGUI window。
-- 不设计 target-aware composer UX；composer 的 provider/target/defaults 在本阶段保持
-  既有 provider-specific 行为。
+- 不设计完整 target-aware composer UX；本阶段允许持久化和使用 system
+  Agent Target id 做 launch/runtime attribution 与 target-scoped composer options
+  缓存，但不做 user-defined persona、target 编辑、target 默认模型/权限、
+  prompt template、skill 或 MCP 配置。
+- 不保留历史 `mention://workspace-app/agent-codex?...` /
+  `mention://workspace-app/agent-claude-code?...` 的特殊打开或解析兼容；它们可作为
+  历史展示 token 存在，但不再作为新 `@` 查询或 launch authority。
+- 不删除 `tutti codex start` / `tutti claude start` 等 provider 便利 CLI 命令；
+  breaking change 只作用在 `@` mention discovery identity。
 
 ## 术语
 
@@ -69,6 +82,10 @@ state。也就是说，本需求是 dock presentation 与可选 Agent Target reg
 - Conversation filter: AgentGUI 顶部列表筛选状态，取值 `all | provider`。
 - Composer state: draft、provider target、model/reasoning/permission defaults 等创建或提交
   会话所需状态。
+- External `@` provider: rich-text `@` 面板与 `window.tuttiExternal.at.query`
+  暴露的 provider id，例如 `workspace-app`、`agent-session`、`agent-target`。
+- Agent Target `@` provider: 新增 `agent-target` provider，以 Agent Target id
+  作为 item/entity identity，承载 Codex、Claude Code 以及未来自定义 agents。
 
 ## 用户行为
 
@@ -82,7 +99,8 @@ state。也就是说，本需求是 dock presentation 与可选 Agent Target reg
 
 ### Unified Dock
 
-- 用户通过偏好设置切到 unified。
+- 首轮 rollout 中，用户通过 Developer 设置面板中的 `agentDockLayout` 控制切到
+  unified。该入口位置是 rollout 决策；底层仍走现有 desktop preference system。
 - Dock 只展示一个 Agent entry。
 - 如果已有 AgentGUI nodes，dock popup/minimized preview 按现有 grouped dock 行为展示
   Codex 与 Claude Code nodes。
@@ -98,6 +116,20 @@ state。也就是说，本需求是 dock presentation 与可选 Agent Target reg
 - provider filter 使用 `session.provider` 筛选，历史 session 没有 `agent_target_id`
   也必须可见。
 - 切换 filter 不改变 composer provider、selected target、draft 或 default provider。
+
+### AgentGUI `@` 面板
+
+- `@` 面板新增 Agents tab，数据源是 `agent-target` provider。
+- `@` 面板 Apps tab 继续使用 `workspace-app` provider，但不再包含 agent 伪应用。
+- 第一阶段 Agents tab 展示 `local:codex` 与 `local:claude-code`。
+- 选择 agent 候选插入 `agent-target` mention，而不是
+  `workspace-app` mention。
+- 第三方 app 调 `window.tuttiExternal.at.query` 且不传 `providers` 时，默认结果仍包含
+  agents，因为默认 provider 集合包含 `agent-target`。
+- 第三方 app 显式传 `providers: ["workspace-app"]` 时，只返回应用，不返回 agents。
+- 历史 `mention://workspace-app/agent-codex?...` /
+  `mention://workspace-app/agent-claude-code?...` 不再需要可打开；新查询不得继续生成这种
+  mention。
 
 ## 数据模型
 
@@ -143,6 +175,49 @@ type AgentTargetLaunchRef = {
   `launch_ref_json`。
 - 未来 profile 配置应放在独立 profile/config table，再由 union 只引用稳定 id。
 
+### External `@` Provider Contract
+
+新增 provider id:
+
+```ts
+type TuttiExternalAtProviderId =
+  | "file"
+  | "workspace-issue"
+  | "workspace-app"
+  | "agent-session"
+  | "agent-generated-file"
+  | "agent-target";
+```
+
+第一阶段 `agent-target` query result:
+
+- `providerId`: `agent-target`
+- `itemId`: Agent Target id，例如 `local:codex`
+- `insert.mention.entityId`: Agent Target id
+- `insert.mention.scope`: 第一阶段 local Agent Target 可省略；除非未来
+  multi-workspace/shared-target 需要额外上下文，否则 canonical mention 不携带
+  workspace id
+- `insert.mention.presentation`: display name、icon、provider metadata
+
+新 URI 形态:
+
+```text
+mention://agent-target/local:codex
+mention://agent-target/local:claude-code
+```
+
+当前 workspace 仍由 AgentGUI props 或 `window.tuttiExternal.at.query` 的 host
+上下文提供，不进入 `agent-target` mention URI。
+
+约束:
+
+- `agent-target` provider 只暴露可发现/可选择的 Agent Target，不暴露
+  `launch_ref_json` 作为自由 launch payload。
+- 启动新会话时仍以 `agentTargetId` 为 authority，由 daemon 从
+  `agent_targets.launch_ref_json` 派生 provider/runtime ref。
+- 未来自定义 agent 扩展到 `agent-target` provider，而不是新增一批 workspace app
+  ids 或一批 provider-specific CLI shortcut。
+
 ## 偏好设置
 
 新增 desktop preference:
@@ -155,9 +230,12 @@ const defaultAgentDockLayout = "legacySplit";
 边界:
 
 - 存储、默认值、OpenAPI/client/event contract 属于现有 desktop preferences 链路。
-- `apps/desktop` 只负责偏好 UI、订阅、workbench contribution 配置。
+- `apps/desktop` 只负责 Developer 设置入口、偏好 UI、订阅、workbench contribution
+  配置。
 - 该偏好只影响 dock presentation，不影响 session storage、provider runtime、Agent Target
   records 或 composer defaults。
+- 首轮入口放在 Developer 面板，不代表新增独立开发者偏好系统；验收仍以
+  `agentDockLayout` 的 desktop preference contract 为准。
 
 ## Dock 行为
 
@@ -218,7 +296,8 @@ Conversation list query 应改为:
 ## Composer 独立性
 
 Composer 继续由 node provider、selected provider target、draft settings 和 daemon composer
-options 决定。顶部 filter 不得调用:
+options 决定。当前迭代允许 system Agent Target id 参与 target-backed local CLI
+launch、runtime attribution 和 composer options cache key；顶部 filter 不得调用:
 
 - `onDataChange` 更新 `data.provider` / `providerTargetId` / `providerTargetRef`。
 - `rememberAgentComposerDefaults`。
@@ -228,14 +307,36 @@ options 决定。顶部 filter 不得调用:
 建议增加 controller 级测试: 切换 filter 后 `viewModel.composerSettings`、`selectedProviderTarget`、
 `data.provider`、home draft key 均不变。
 
+## Target-First Launch/Runtime Attribution
+
+本期允许比最初保守草案更深入地使用 Agent Target:
+
+- AgentGUI/workbench 可以把 first-iteration system target id 写入 node state，并随
+  create/activate session 请求传给 Agent Activity runtime。
+- desktop adapter 在有 `agentTargetId` 时不应让 opaque `providerTargetRef` 成为
+  runtime launch authority。
+- tuttid session create 以 `agentTargetId` 为首选 authority：读取
+  `agent_targets`，校验 enabled 与 controlled launch ref，派生真实 provider 和
+  provider-facing runtime ref。
+- 如果请求同时带 `provider`，它必须与 target launch ref 派生 provider 一致。
+- session projection 和 activity event 可以携带 `agentTargetId`，但历史无
+  `agentTargetId` 的 session 继续按 `session.provider` 工作。
+- 该范围仍不是完整 target-aware composer UX；target editing、persona/profile、
+  model/permission defaults、prompt/skill/MCP 配置继续留到后续设计。
+
 ## API / Runtime 边界
 
 - `services/tuttid`: `agent_targets` storage、default rows、launch ref validation、desktop
-  preference persistence、OpenAPI contract。
+  preference persistence、OpenAPI contract、target-first create-session resolution、
+  Agent Target candidate listing。
 - `apps/desktop`: preference wiring、provider availability probing、workbench contribution
-  layout mode、settings UI copy/i18n。
+  layout mode、Developer-panel rollout entry、settings UI copy/i18n、rich-text
+  `agent-target` provider wiring、`window.tuttiExternal.at.query` bridge。
 - `@tutti-os/agent-gui`: reusable presentation、target list consumption、conversation filter model、
-  controller/view-model 行为。
+  first-iteration system target id propagation、controller/view-model 行为、`@` 面板
+  Agents tab 分组与 `agent-target` mention 插入。
+- `@tutti-os/workspace-external-core`: `agent-target` external `@` provider id
+  public contract 与默认 provider 列表。
 - `@tutti-os/workbench-surface`: 不理解 Agent Target 业务语义，只消费 dock entries、
   launch payload、dock grouping。
 
@@ -264,6 +365,18 @@ options 决定。顶部 filter 不得调用:
    - 风险: 误把 filter provider 写回 composer/node provider。
    - 测试: all/provider filtering、历史 session provider fallback、filter 切换不改变 composer。
 
+4. 拆分 AgentGUI `@` 面板 agent discovery
+   - 文件:
+     `packages/workspace/external-core/src/contracts/index.ts`、
+     `apps/desktop/src/renderer/src/features/rich-text-at/services/internal/desktopRichTextAtService.ts`、
+     `apps/desktop/src/renderer/src/features/workspace-workbench/services/internal/workspaceWorkbenchHostService.ts`、
+     `packages/agent/gui/agent-gui/agentGuiNode/AgentMentionSearchController.ts`。
+   - 收益: Apps tab 与 Agents tab 语义分离，为未来大量 custom agents 留出扩展位。
+   - 风险: 第三方 app 显式查询 `workspace-app` 时不再看到 agents；这是产品接受的
+     breaking change。
+   - 测试: external provider ids、默认 provider 列表、显式 `workspace-app` 过滤、
+     `agent-target` query/serialize、AgentGUI tab grouping。
+
 不建议在实现前做大整理:
 
 - 不拆 `useAgentGUINodeController.ts` 大模块。
@@ -275,9 +388,14 @@ options 决定。顶部 filter 不得调用:
 
 1. Daemon 加 `agent_targets` 与 desktop preference contract，默认 `legacySplit`。
 2. AgentGUI workbench 层完成 layout mode builder 与 launch descriptor 测试。
-3. Desktop wiring 根据 preference 选择 split/unified contribution。
+3. Desktop wiring 根据 preference 选择 split/unified contribution，并把首轮入口放在
+   Developer 设置面板。
 4. AgentGUI 增加 list filter model 与 UI，保持 composer provider 独立。
-5. 追加 e2e/manual 验收: AB 切换、历史 session/node、legacy launch、filter/composer 不联动。
+5. AgentGUI `@` 面板迁移: 新增 `agent-target` provider，移除 `workspace-app`
+   agent 伪应用，接入 Agents tab。
+6. 接入 system Agent Target id 的 target-first launch/runtime attribution。
+7. 追加 e2e/manual 验收: AB 切换、历史 session/node、legacy launch、filter/composer 不联动、
+   `@` 面板 Agents/Apps 分组与 external `@` bridge provider 过滤。
 
 ## Loop Primitive RD Acceptance Test
 
@@ -287,22 +405,25 @@ options 决定。顶部 filter 不得调用:
 - RISK: 约束清楚，但实现前需要上述小型整理或新增测试防回归。
 - BLOCKED: 存在缺失决策、架构冲突或实现无法在限制内完成。
 
-| Primitive                                      | 结果 | 证据                                                                                                                 | 后续要求                                                                                                   |
-| ---------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| AB 默认 `legacySplit`                          | RISK | 现有 desktop preferences 有成熟链路与 default provider 字段，但尚无 `agentDockLayout` 字段。                         | 新增 preference 必须默认 `legacySplit`，并补 daemon/desktop/client/event 测试。                            |
-| Unified 只聚合 dock 入口                       | RISK | Workbench dock entry model 支持 entry-level `matchNode`；当前 contribution 按 provider map 出 dock entries。         | 先抽 `buildAgentGuiDockEntries`，unified 只改变 entries，不改 node type/runtime。                          |
-| Provider-specific AgentGUI 节点可多开          | PASS | AgentGUI node definition 使用 `instance: { mode: "multi" }`，launch descriptor 生成 provider-specific instance ids。 | unified entry 不得改为 singleton/reuse all providers。                                                     |
-| 历史 dock/session/workbench state 兼容         | PASS | `launch.test.ts` 覆盖 `agent-gui` legacy default；`state.test.ts` 覆盖 provider normalizer 和 opaque node state。    | 保留 normalizer；unified 用 fallback match 聚合历史 nodes。                                                |
-| 不删除 legacy 兼容路径                         | PASS | `agentGuiWorkbenchProviderFromIdentifier("agent-gui")` 返回 Codex；`agent-gui:<provider>` 仍可解析。                 | 新增 unified id 时不能替换 legacy ids 的解析语义。                                                         |
-| `agent_targets` daemon-owned                   | RISK | 现有 repo 未见 `agent_targets` 持久模型；desktop preferences/storage 模式可复用。                                    | 在 `services/tuttid` 建表、默认 rows、service validation；不要只放 desktop。                               |
-| `launch_ref_json` 是受控 union                 | RISK | 现有 AgentGUI `providerTargetRef` 是 host-owned opaque ref，适合 UI 透传但不能直接等同 daemon launch ref。           | daemon 引入 strict union validator；拒绝 unknown discriminator/provider mismatch/free-form config。        |
-| Launch 兼容 provider resolution                | PASS | `agentGuiWorkbenchProviderFromLaunchRequest` payload provider 优先，再看 dock id/type id，fallback Codex。           | session-id launch 需要补“按 session provider resolution”的实现测试。                                       |
-| Default target resolution                      | RISK | 现有 `defaultAgentProvider` 与 provider status service 可作为输入，但还没有 Agent Target registry。                  | 顺序必须是 default provider 可用 -> enabled target by sort_order 且 provider available -> Codex fallback。 |
-| Conversation filter 只影响 list                | RISK | 当前 `AgentGUIConversationListQuery` 必填单 provider，controller 用 `data.provider` 构造 query。                     | 增加独立 filter model/query key；filter mutation 不写 node data。                                          |
-| Historical sessions 按 `session.provider` 可见 | RISK | Conversation summaries 已含 `provider`；当前 query 是单 provider。                                                   | all/provider filter 以 session.provider 为 fallback，不能要求 agent_target_id。                            |
-| Composer provider/target/defaults 独立         | RISK | 当前 composer target/defaults 从 `data.provider` 与 selected target 派生；这正是不可联动边界。                       | filter UI 不得调用 data/default mutation；加 controller 测试。                                             |
-| API/runtime 边界                               | PASS | AgentGuiNode architecture 明确 runtime chain；PRD ownership 与现有边界一致。                                         | Agent Target 业务规则落 daemon；desktop 只 wiring。                                                        |
-| 不迁移历史数据                                 | PASS | 需求可通过 additive preference/table/default rows + normalizer 实现。                                                | 不写 snapshot/session migration；仅 schema additive。                                                      |
+| Primitive                                      | 结果 | 证据                                                                                                                     | 后续要求                                                                                                                |
+| ---------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| AB 默认 `legacySplit`                          | RISK | 现有 desktop preferences 有成熟链路与 default provider 字段，但尚无 `agentDockLayout` 字段。                             | 新增 preference 必须默认 `legacySplit`，并补 daemon/desktop/client/event 测试。                                         |
+| Unified 只聚合 dock 入口                       | RISK | Workbench dock entry model 支持 entry-level `matchNode`；当前 contribution 按 provider map 出 dock entries。             | 先抽 `buildAgentGuiDockEntries`，unified 只改变 entries，不改 node type/runtime。                                       |
+| Provider-specific AgentGUI 节点可多开          | PASS | AgentGUI node definition 使用 `instance: { mode: "multi" }`，launch descriptor 生成 provider-specific instance ids。     | unified entry 不得改为 singleton/reuse all providers。                                                                  |
+| 历史 dock/session/workbench state 兼容         | PASS | `launch.test.ts` 覆盖 `agent-gui` legacy default；`state.test.ts` 覆盖 provider normalizer 和 opaque node state。        | 保留 normalizer；unified 用 fallback match 聚合历史 nodes。                                                             |
+| 不删除 legacy 兼容路径                         | PASS | `agentGuiWorkbenchProviderFromIdentifier("agent-gui")` 返回 Codex；`agent-gui:<provider>` 仍可解析。                     | 新增 unified id 时不能替换 legacy ids 的解析语义。                                                                      |
+| `agent_targets` daemon-owned                   | RISK | 现有 repo 未见 `agent_targets` 持久模型；desktop preferences/storage 模式可复用。                                        | 在 `services/tuttid` 建表、默认 rows、service validation；不要只放 desktop。                                            |
+| `launch_ref_json` 是受控 union                 | RISK | 现有 AgentGUI `providerTargetRef` 是 host-owned opaque ref，适合 UI 透传但不能直接等同 daemon launch ref。               | daemon 引入 strict union validator；拒绝 unknown discriminator/provider mismatch/free-form config。                     |
+| Launch 兼容 provider resolution                | PASS | `agentGuiWorkbenchProviderFromLaunchRequest` payload provider 优先，再看 dock id/type id，fallback Codex。               | session-id launch 需要补“按 session provider resolution”的实现测试。                                                    |
+| Default target resolution                      | RISK | 现有 `defaultAgentProvider` 与 provider status service 可作为输入，但还没有 Agent Target registry。                      | 顺序必须是 default provider 可用 -> enabled target by sort_order 且 provider available -> Codex fallback。              |
+| Conversation filter 只影响 list                | RISK | 当前 `AgentGUIConversationListQuery` 必填单 provider，controller 用 `data.provider` 构造 query。                         | 增加独立 filter model/query key；filter mutation 不写 node data。                                                       |
+| Historical sessions 按 `session.provider` 可见 | RISK | Conversation summaries 已含 `provider`；当前 query 是单 provider。                                                       | all/provider filter 以 session.provider 为 fallback，不能要求 agent_target_id。                                         |
+| Composer provider/target/defaults 独立         | RISK | 当前 composer target/defaults 从 `data.provider` 与 selected target 派生；这正是不可联动边界。                           | filter UI 不得调用 data/default mutation；加 controller 测试。                                                          |
+| Target-first launch/runtime attribution        | RISK | Agent Target registry 是 daemon-owned；AgentGUI 已有 provider target state，Activity runtime 可携带 session metadata。   | 有 `agentTargetId` 时 daemon 派生 provider/runtime ref；desktop 不让 opaque `providerTargetRef` 覆盖 target authority。 |
+| Agent 从 `workspace-app` 迁到 `agent-target`   | RISK | 当前 external `@` provider id 列表没有 `agent-target`；rich-text service 对 `agent-codex` / `agent-claude-code` 有特判。 | 新增 public provider id；默认查询包含 `agent-target`；显式 `workspace-app` 查询不再返回 agents。                        |
+| 历史 agent workspace-app mention 兼容          | PASS | 产品接受旧 `mention://workspace-app/agent-codex?...` 不再可打开，只作为历史展示存在。                                    | 删除特殊 open/resolve 兼容时不要影响普通 workspace-app mention。                                                        |
+| API/runtime 边界                               | PASS | AgentGuiNode architecture 明确 runtime chain；PRD ownership 与现有边界一致。                                             | Agent Target 业务规则落 daemon；desktop 只 wiring。                                                                     |
+| 不迁移历史数据                                 | PASS | 需求可通过 additive preference/table/default rows + normalizer 实现。                                                    | 不写 snapshot/session migration；仅 schema additive。                                                                   |
 
 无 BLOCKED 项。主要风险都可通过窄 cleanup 与测试覆盖消解。
 
@@ -385,9 +506,11 @@ pnpm check:full
    `agent-gui:codex` / `agent-gui:claude-code`。
 4. 下一步可以按以下顺序推进:
    - daemon `agent_targets` storage + strict `launch_ref_json` union validation。
-   - desktop `agentDockLayout` preference，默认 `legacySplit`。
+   - desktop `agentDockLayout` preference，默认 `legacySplit`，首轮入口在 Developer
+     设置面板。
    - AgentGUI/workbench contribution 根据 preference 选择 split/unified dock entries。
    - AgentGUI 顶部 filter UI 接入已落地的 pure filter model，并验证不联动 composer。
+   - system Agent Target id 贯穿 target-first launch/runtime attribution。
    - 历史 workbench/session 兼容与 legacy launch 回归测试。
 
 ## 验收标准
@@ -402,6 +525,7 @@ pnpm check:full
 
 - `agentDockLayout` 走现有 desktop preference system。
 - 默认值是 `legacySplit`。
+- 首轮 UI 控制位于 Developer 设置面板。
 - 修改 setting 后 dock presentation 热更新，不要求 app restart。
 
 ### Dock
@@ -417,6 +541,10 @@ pnpm check:full
 - `agent-gui`、`agent-gui:codex`、`agent-gui:claude-code` 都路由到正确 provider。
 - payload provider 优先于 dock id。
 - session launch 使用 session provider 聚焦/打开对应 node。
+- 有 `agentTargetId` 的 session create 由 daemon 派生 provider/runtime ref。
+- `agentTargetId` 与显式 provider 不一致时拒绝创建。
+- target-backed local CLI launch 不让 opaque `providerTargetRef` 覆盖 daemon-derived
+  runtime authority。
 - AB 切换不删除、不合并、不重写历史 nodes。
 
 ### Filtering / Composer
@@ -425,6 +553,19 @@ pnpm check:full
 - Filter 只改变 conversation list。
 - 切 filter 后 composer provider、selected target、draft、default provider、composer defaults 不变。
 - 历史 sessions 没有 target id 时仍按 `session.provider` 出现在 provider filter 下。
+
+### AgentGUI `@` 面板 / External `@`
+
+- External `@` provider id 列表包含 `agent-target`。
+- 默认 external `@` 查询包含 `agent-target` results。
+- 显式 `providers: ["workspace-app"]` 查询不返回 agents。
+- `workspace-app` provider 不再返回 `agent-codex` / `agent-claude-code`。
+- `agent-target` provider 第一阶段返回 `local:codex` / `local:claude-code`。
+- AgentGUI Agents tab 使用 `agent-target` provider。
+- AgentGUI Apps tab 使用 `workspace-app` provider 且不显示 agents。
+- 选择 Codex / Claude Code agent 插入 `mention://agent-target/<targetId>`。
+- 新 `@` 查询不再生成 `mention://workspace-app/agent-codex?...` /
+  `mention://workspace-app/agent-claude-code?...`。
 
 ## 测试策略
 
@@ -437,6 +578,14 @@ Focused unit tests:
 - `agentGuiConversationListStore` tests: `all` filter、provider filter、historical `session.provider` fallback。
 - `useAgentGUINodeController` tests: filter 切换不改变 `data.provider`、`selectedProviderTarget`、
   `composerSettings`、draft settings。
+- `packages/workspace/external-core`: `agent-target` provider id normalize/default list。
+- `DesktopRichTextAtService`: `agent-target` query maps Agent Target rows; `workspace-app`
+  excludes `agent-codex` / `agent-claude-code`。
+- `workspaceWorkbenchHostService.queryWorkspaceAppExternalAt`: omitted providers include
+  `agent-target`; explicit `workspace-app` excludes agents。
+- `workspaceAppExternalAtSerialization`: serializes `agent-target` query results and
+  preserves item/entity id as Agent Target id。
+- `AgentMentionSearchController` / palette model: Agents tab vs Apps tab grouping。
 
 Integration / local validation:
 
@@ -454,6 +603,12 @@ Manual acceptance:
 4. Legacy launch from CLI/app links still opens correct provider。
 5. Restore old workbench snapshot: nodes render and group under unified entry。
 6. Switch filter All/Codex/Claude Code: list changes, composer provider/defaults/draft do not。
+7. Type `@` in AgentGUI: Codex and Claude Code appear under Agents, not Apps。
+8. In a workspace app, call `window.tuttiExternal.at.query({ keyword: "codex" })`:
+   Codex appears as `providerId: "agent-target"`。
+9. In a workspace app, call
+   `window.tuttiExternal.at.query({ keyword: "codex", providers: ["workspace-app"] })`:
+   Codex does not appear。
 
 ## 原始 RD 结论
 
