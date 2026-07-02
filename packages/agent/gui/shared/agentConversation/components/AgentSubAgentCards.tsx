@@ -1,5 +1,6 @@
 import { memo, useState, type JSX } from "react";
-import { AlertCircle, Bot, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { AgentLinedIcon } from "../../../app/renderer/components/icons/AgentLinedIcon";
 import { translate } from "../../../i18n/index";
 import type { AgentTaskSubAgentVM } from "../contracts/agentTaskItemVM";
 import type { AgentToolCallVM } from "../contracts/agentToolCallVM";
@@ -127,7 +128,7 @@ function SubAgentHeader({
         {subAgent.status === "failed" ? (
           <AlertCircle size={16} strokeWidth={2} aria-hidden="true" />
         ) : (
-          <Bot size={16} strokeWidth={2} aria-hidden="true" />
+          <AgentLinedIcon width={16} height={16} aria-hidden="true" />
         )}
       </div>
       <div className="workspace-agents-status-panel__detail-tool-row-text">
