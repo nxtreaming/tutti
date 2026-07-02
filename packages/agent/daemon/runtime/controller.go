@@ -863,6 +863,7 @@ func (c *Controller) runExecTurn(ctx context.Context, session Session, adapter A
 		if shouldAdvanceSessionUpdatedAtFromEvents(events) {
 			session.UpdatedAtUnixMS = unixMS(now())
 		}
+		session = c.preserveCurrentSessionSettings(session)
 		c.store(session)
 		emitted = append(emitted, events...)
 		c.publish(session, events)
@@ -934,6 +935,7 @@ func (c *Controller) runAsyncExecTurn(ctx context.Context, session Session, adap
 		if shouldAdvanceSessionUpdatedAtFromEvents(events) {
 			session.UpdatedAtUnixMS = unixMS(now())
 		}
+		session = c.preserveCurrentSessionSettings(session)
 		c.store(session)
 		c.publish(session, events)
 		c.enqueueSessionReport(ctx, session, events)
@@ -1246,6 +1248,51 @@ func (c *Controller) preserveActiveTurnStatus(session Session, turnID string, pr
 	return session
 }
 
+func (c *Controller) preserveCurrentSessionSettings(session Session) Session {
+	if c == nil {
+		return session
+	}
+	key := sessionKey(session.RoomID, session.AgentSessionID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.preserveCurrentSessionSettingsLocked(key, session)
+}
+
+func (c *Controller) preserveCurrentSessionSettingsLocked(key string, session Session) Session {
+	if c == nil {
+		return session
+	}
+	current, ok := c.sessions[key]
+	if !ok ||
+		strings.TrimSpace(current.RoomID) != strings.TrimSpace(session.RoomID) ||
+		strings.TrimSpace(current.AgentSessionID) != strings.TrimSpace(session.AgentSessionID) ||
+		strings.TrimSpace(current.Provider) != strings.TrimSpace(session.Provider) {
+		return session
+	}
+	session.PermissionModeID = strings.TrimSpace(current.PermissionModeID)
+	if current.Settings != nil {
+		settings := normalizeSessionSettings(current.Settings, current.Provider, session.PermissionModeID)
+		session.Settings = cloneSessionSettings(settings)
+	} else {
+		session.Settings = nil
+	}
+	session.RuntimeContext = runtimeContextWithSessionSettings(session.RuntimeContext, session.SettingsValue())
+	return session
+}
+
+func runtimeContextWithSessionSettings(runtimeContext map[string]any, settings SessionSettings) map[string]any {
+	next := clonePayload(runtimeContext)
+	if next == nil {
+		next = map[string]any{}
+	}
+	next["permissionModeId"] = strings.TrimSpace(settings.PermissionModeID)
+	next["planMode"] = settings.PlanMode
+	next["model"] = strings.TrimSpace(settings.Model)
+	next["reasoningEffort"] = strings.TrimSpace(settings.ReasoningEffort)
+	next["speed"] = strings.TrimSpace(settings.Speed)
+	return next
+}
+
 func sessionHasDifferentLiveTurn(session Session, turnID string) bool {
 	if !sessionHasLiveTurnLifecycle(session) {
 		return false
@@ -1371,6 +1418,7 @@ func (c *Controller) finishTurn(session Session, turnID string) {
 		c.mu.Unlock()
 		return
 	}
+	session = c.preserveCurrentSessionSettingsLocked(key, session)
 	session = settleFinishedTurnLifecycle(session, turnID)
 	session = c.reconcileSessionStatusLocked(key, session)
 	c.sessions[key] = session

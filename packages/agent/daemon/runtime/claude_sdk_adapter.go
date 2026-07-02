@@ -1,3 +1,4 @@
+//revive:disable:file-length-limit
 package agentruntime
 
 import (
@@ -110,7 +111,7 @@ func NewClaudeCodeSDKAdapter(transport ProcessTransport) *ClaudeCodeSDKAdapter {
 	}
 }
 
-func (a *ClaudeCodeSDKAdapter) Provider() string {
+func (_ *ClaudeCodeSDKAdapter) Provider() string {
 	return ProviderClaudeCode
 }
 
@@ -216,7 +217,7 @@ func (*ClaudeCodeSDKAdapter) CanResume(session Session) bool {
 	return strings.TrimSpace(session.ProviderSessionID) != ""
 }
 
-func (a *ClaudeCodeSDKAdapter) Close(ctx context.Context, session Session) error {
+func (a *ClaudeCodeSDKAdapter) Close(_ context.Context, session Session) error {
 	adapterSession := a.getSession(session.AgentSessionID)
 	if adapterSession == nil {
 		return nil
@@ -470,7 +471,7 @@ func (a *ClaudeCodeSDKAdapter) SessionCommandSnapshot(session Session) (AgentSes
 	return adapterSession.commandSnapshot(session.AgentSessionID)
 }
 
-func (a *ClaudeCodeSDKAdapter) applySidecarSessionEvent(adapterSession *claudeSDKAdapterSession, session Session, event claudeSDKSidecarEvent) []activityshared.Event {
+func (_ *ClaudeCodeSDKAdapter) applySidecarSessionEvent(adapterSession *claudeSDKAdapterSession, session Session, event claudeSDKSidecarEvent) []activityshared.Event {
 	if event.Type == "usage_updated" {
 		adapterSession.applyUsageUpdated(event.Payload)
 		return nil

@@ -2434,12 +2434,14 @@ func (*steeringAsyncExecAdapter) Cancel(context.Context, Session, string) ([]act
 }
 
 type blockingExecAdapter struct {
-	mu       sync.Mutex
-	seen     []string
-	displays []string
-	contexts chan context.Context
-	started  chan string
-	releases chan struct{}
+	mu                  sync.Mutex
+	seen                []string
+	displays            []string
+	contexts            chan context.Context
+	started             chan string
+	releases            chan struct{}
+	provider            string
+	interactiveOptionID string
 }
 
 func newBlockingExecAdapter() *blockingExecAdapter {
@@ -2450,7 +2452,12 @@ func newBlockingExecAdapter() *blockingExecAdapter {
 	}
 }
 
-func (*blockingExecAdapter) Provider() string { return ProviderCodex }
+func (a *blockingExecAdapter) Provider() string {
+	if a != nil && strings.TrimSpace(a.provider) != "" {
+		return strings.TrimSpace(a.provider)
+	}
+	return ProviderCodex
+}
 
 func (*blockingExecAdapter) Start(context.Context, Session) ([]activityshared.Event, error) {
 	return nil, nil
@@ -2485,11 +2492,19 @@ func (*blockingExecAdapter) Cancel(context.Context, Session, string) ([]activity
 	return nil, nil
 }
 
-func (*blockingExecAdapter) SubmitInteractive(_ context.Context, session Session, input SubmitInteractiveInput) (SubmitInteractiveResult, error) {
+func (a *blockingExecAdapter) SubmitInteractive(_ context.Context, session Session, input SubmitInteractiveInput) (SubmitInteractiveResult, error) {
+	optionID := strings.TrimSpace(a.interactiveOptionID)
+	if optionID == "" {
+		optionID = strings.TrimSpace(input.OptionID)
+	}
+	if optionID == "" && input.Payload != nil {
+		optionID = strings.TrimSpace(asString(input.Payload["optionId"]))
+	}
 	return SubmitInteractiveResult{
 		AgentSessionID: session.AgentSessionID,
 		RequestID:      strings.TrimSpace(input.RequestID),
 		Accepted:       true,
+		OptionID:       optionID,
 	}, nil
 }
 
@@ -3411,6 +3426,64 @@ func TestControllerSubmitInteractiveExitsPlanModeOnPermissionSelection(t *testin
 	}
 }
 
+func TestControllerSubmitInteractiveModeSurvivesActiveTurnStaleSession(t *testing.T) {
+	t.Parallel()
+
+	adapter := newBlockingExecAdapter()
+	adapter.provider = ProviderClaudeCode
+	adapter.interactiveOptionID = "bypassPermissions"
+	controller := NewController([]Adapter{adapter}, nil)
+	started, err := controller.Start(context.Background(), StartInput{
+		RoomID:           "room-1",
+		AgentSessionID:   "agent-session-exit-plan-stale-turn",
+		Provider:         ProviderClaudeCode,
+		CWD:              "/workspace",
+		Title:            "Claude Code",
+		PermissionModeID: "default",
+		Settings:         &SessionSettings{PlanMode: true, PermissionModeID: "default"},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if _, err := controller.Exec(context.Background(), ExecInput{
+		RoomID:         "room-1",
+		AgentSessionID: started.Session.AgentSessionID,
+		Content:        []PromptContentBlock{{Type: "text", Text: "implement"}},
+	}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	adapter.waitForPrompt(t, "implement")
+
+	if _, err := controller.SubmitInteractive(context.Background(), SubmitInteractiveInput{
+		RoomID:         "room-1",
+		AgentSessionID: started.Session.AgentSessionID,
+		RequestID:      "permission-1",
+		OptionID:       "bypassPermissions",
+	}); err != nil {
+		t.Fatalf("SubmitInteractive: %v", err)
+	}
+	session, ok := controller.Session("room-1", started.Session.AgentSessionID)
+	if !ok {
+		t.Fatal("Session returned ok=false")
+	}
+	if session.Settings == nil || session.Settings.PlanMode || session.PermissionModeID != "bypassPermissions" {
+		t.Fatalf("session after exit = %#v, want planMode=false and bypassPermissions", session)
+	}
+
+	adapter.releaseNext()
+	session = waitForSessionStatus(t, controller, "room-1", started.Session.AgentSessionID, SessionStatusReady)
+	if session.Settings == nil || session.Settings.PlanMode || session.PermissionModeID != "bypassPermissions" {
+		t.Fatalf("session after stale turn completion = %#v, want planMode=false and bypassPermissions", session)
+	}
+	if got, _ := session.RuntimeContext["planMode"].(bool); got {
+		t.Fatalf("runtime context planMode = %#v, want false", session.RuntimeContext["planMode"])
+	}
+	if got, _ := session.RuntimeContext["permissionModeId"].(string); got != "bypassPermissions" {
+		t.Fatalf("runtime context permissionModeId = %#v, want bypassPermissions", session.RuntimeContext["permissionModeId"])
+	}
+}
+
 func TestControllerSubmitInteractiveKeepPlanningStaysInPlanMode(t *testing.T) {
 	t.Parallel()
 
@@ -3645,6 +3718,21 @@ func hasActivityEvent(events []activityshared.Event, eventType activityshared.Ev
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+func hasActivityMessage(events []activityshared.Event, role activityshared.MessageRole, content string) bool {
+	for _, event := range events {
+		if event.Type != activityshared.EventMessageAppended {
+			continue
+		}
+		if role != "" && event.Payload.Role != role {
+			continue
+		}
+		if event.Payload.Content == content {
+			return true
+		}
 	}
 	return false
 }
