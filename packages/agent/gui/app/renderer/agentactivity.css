@@ -276,6 +276,7 @@
   --agent-gui-package-danger: var(--state-danger);
   --agent-gui-accent: var(--agent-gui-package-accent);
   --agent-gui-accent-strong: var(--agent-gui-package-accent-strong);
+  --agent-gui-mention-app-color: var(--tutti-purple);
   --agent-gui-success: var(--agent-gui-package-success);
   --agent-gui-warning: var(--agent-gui-package-warning);
   --agent-gui-danger: var(--agent-gui-package-danger);
@@ -3467,6 +3468,21 @@ aside.workspace-agents-status-panel
   justify-items: end;
 }
 
+.agent-gui-conversation__user-image-grid {
+  display: grid;
+  gap: 8px;
+  justify-self: end;
+}
+
+.agent-gui-conversation__user-image-thumbnail {
+  box-sizing: border-box;
+  max-height: 80px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+
 .agent-gui-conversation__assistant-message-flow {
   gap: 0;
 }
@@ -3914,8 +3930,9 @@ aside.workspace-agents-status-panel
   -webkit-mask-size: 16px 16px;
 }
 
-[data-agent-mention-kind="workspace-app"].tsh-agent-object-token--entity {
-  color: var(--tutti-purple);
+[data-agent-mention-kind="workspace-app"].tsh-agent-object-token--entity,
+[data-agent-mention-kind="workspace-reference"][data-agent-reference-source="app"].tsh-agent-object-token--entity {
+  color: var(--agent-gui-mention-app-color, var(--tutti-purple));
 }
 
 [data-agent-mention-kind="skill"].tsh-agent-object-token--entity,
@@ -3951,6 +3968,9 @@ aside.workspace-agents-status-panel
 }
 
 [data-agent-mention-kind="workspace-app"]
+  [data-agent-mention-app-icon="true"]
+  .tsh-agent-object-token__kind-icon,
+[data-agent-mention-kind="workspace-reference"][data-agent-reference-source="app"]
   [data-agent-mention-app-icon="true"]
   .tsh-agent-object-token__kind-icon {
   display: block;
@@ -4116,6 +4136,7 @@ aside.workspace-agents-status-panel
   --agent-gui-accent-strong: var(--agent-gui-package-accent-strong);
   --agent-gui-accent-bg: var(--agent-gui-package-accent-bg);
   --agent-gui-border-focus: var(--agent-gui-package-border-focus);
+  --agent-gui-mention-app-color: var(--tutti-purple);
   --agent-gui-success: var(--agent-gui-package-success);
   --agent-gui-warning: var(--agent-gui-package-warning);
   --agent-gui-danger: var(--agent-gui-package-danger);
@@ -5781,29 +5802,34 @@ button.agent-gui-node__conversation-section-toggle:hover
   --agent-message-locator-hit-size: 18px;
   --agent-message-locator-center-offset: 10px;
   --agent-message-locator-visible-height: 100vh;
+  --agent-message-locator-visible-top-offset: 0px;
+  --agent-message-locator-viewport-height: var(--agent-message-locator-height);
 
   position: sticky;
   top: max(
     0px,
     calc(
-      (
-          var(--agent-message-locator-visible-height) -
-            var(--agent-message-locator-height)
-        ) /
-        2
+      var(--agent-message-locator-visible-top-offset) +
+        (
+          (
+              var(--agent-message-locator-visible-height) -
+                var(--agent-message-locator-viewport-height)
+            ) /
+            2
+        )
     )
   );
   right: 0;
   z-index: 7;
   justify-self: stretch;
   width: calc(100% + var(--agent-gui-message-locator-inline-offset));
-  height: var(--agent-message-locator-height);
+  height: var(--agent-message-locator-viewport-height);
   margin-right: calc(-1 * var(--agent-gui-message-locator-inline-offset));
-  margin-bottom: calc(-1 * var(--agent-message-locator-height));
+  margin-bottom: calc(-1 * var(--agent-message-locator-viewport-height));
   pointer-events: none;
 }
 
-.agent-gui-message-locator::before {
+.agent-gui-message-locator__viewport {
   position: absolute;
   top: 0;
   right: calc(
@@ -5812,17 +5838,30 @@ button.agent-gui-node__conversation-section-toggle:hover
   );
   width: var(--agent-message-locator-hit-size);
   height: 100%;
-  content: "";
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.agent-gui-message-locator__viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.agent-gui-message-locator__content {
+  position: relative;
+  min-height: 100%;
+  height: var(--agent-message-locator-height);
 }
 
 .agent-gui-message-locator__track-segment {
   position: absolute;
   top: var(--agent-message-locator-segment-position);
-  right: var(--agent-message-locator-center-offset);
+  left: 50%;
   width: 1px;
   height: 8px;
-  transform: translateX(50%);
+  transform: translateX(-50%);
   background: color-mix(
     in srgb,
     var(--line-2, var(--tutti-line-2)) 82%,
@@ -5833,10 +5872,7 @@ button.agent-gui-node__conversation-section-toggle:hover
 .agent-gui-message-locator__tick {
   position: absolute;
   top: var(--agent-message-locator-position);
-  right: calc(
-    var(--agent-message-locator-center-offset) -
-      var(--agent-message-locator-hit-size) / 2
-  );
+  left: 0;
   display: grid;
   width: var(--agent-message-locator-hit-size);
   height: var(--agent-message-locator-hit-size);
@@ -5909,7 +5945,9 @@ button.agent-gui-node__conversation-section-toggle:hover
   display: grid;
   width: min(360px, calc(100vw - 112px));
   max-width: max-content;
+  max-height: calc(var(--agent-message-locator-visible-height) - 32px);
   gap: 12px;
+  overflow-y: auto;
   padding: 16px;
   border: 1px solid
     color-mix(in srgb, var(--line-2, var(--tutti-line-2)) 72%, transparent);
@@ -8303,7 +8341,6 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   display: block;
 }
 
-
 .workspace-agents-status-panel__detail-subagent-log {
   display: flex;
   flex-direction: column;
@@ -8339,7 +8376,6 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 .workspace-agents-status-panel__detail-subagent-activity--failure {
   color: var(--tutti-status-danger, #c0392b);
 }
-
 
 .workspace-agents-status-panel__detail-subagent-name {
   color: var(--tutti-text-primary, rgba(0, 0, 0, 0.85));
