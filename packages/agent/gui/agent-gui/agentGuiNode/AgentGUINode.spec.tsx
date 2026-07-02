@@ -4530,10 +4530,7 @@ describe("AgentGUINode", () => {
 
     renderAgentGUINode();
 
-    const addReferenceTrigger = screen.getByRole("combobox", {
-      name: "agentHost.issue.referenceWorkspaceFiles"
-    });
-    fireEvent.click(addReferenceTrigger);
+    await openSharedWorkspaceReferencePicker();
 
     expect(
       await screen.findByRole("dialog", {
@@ -4553,11 +4550,7 @@ describe("AgentGUINode", () => {
 
     renderAgentGUINode({ onWorkspaceFileReferencesAdded });
 
-    fireEvent.click(
-      screen.getByRole("combobox", {
-        name: "agentHost.issue.referenceWorkspaceFiles"
-      })
-    );
+    await openSharedWorkspaceReferencePicker();
     await screen.findByRole("dialog", {
       name: "agentHost.agentGui.referencePicker.title"
     });
@@ -4621,11 +4614,7 @@ describe("AgentGUINode", () => {
       } as unknown as AgentActivityRuntime
     });
 
-    fireEvent.click(
-      screen.getByRole("combobox", {
-        name: "agentHost.issue.referenceWorkspaceFiles"
-      })
-    );
+    await openSharedWorkspaceReferencePicker();
     await screen.findByRole("dialog", {
       name: "agentHost.agentGui.referencePicker.title"
     });
@@ -4856,11 +4845,7 @@ describe("AgentGUINode", () => {
       workspaceFileReferenceAdapter: { listDirectory, loadReferenceTree }
     });
 
-    fireEvent.click(
-      screen.getByRole("combobox", {
-        name: "agentHost.issue.referenceWorkspaceFiles"
-      })
-    );
+    await openSharedWorkspaceReferencePicker();
 
     await waitFor(() =>
       expect(loadReferenceTree).toHaveBeenCalledWith(
@@ -7016,6 +7001,26 @@ describe("AgentGUINode", () => {
   });
 });
 
+async function openSharedWorkspaceReferencePicker(): Promise<void> {
+  const legacyReferenceTrigger = screen.queryByRole("combobox", {
+    name: "agentHost.issue.referenceWorkspaceFiles"
+  });
+  if (legacyReferenceTrigger) {
+    fireEvent.click(legacyReferenceTrigger);
+    return;
+  }
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "agentHost.agentGui.addReference"
+    })
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", {
+      name: "agentHost.issue.referenceWorkspaceFiles"
+    })
+  );
+}
+
 function renderAgentGUINode({
   onLinkAction,
   onAgentProviderLogin,
@@ -7266,13 +7271,6 @@ function createNoopAgentActivityRuntime(): AgentActivityRuntime {
     async listAgentGeneratedFiles(input) {
       return { workspaceId: input.workspaceId, entries: [] };
     },
-    async listSessionsPage(input) {
-      return {
-        workspaceId: input.workspaceId,
-        sessions: [],
-        hasMore: false
-      };
-    },
     async load(workspaceId) {
       return createAgentActivitySnapshotFromViewModel(workspaceId);
     },
@@ -7420,6 +7418,8 @@ function createViewModel(
       conversationRailWidthPx: null
     },
     selectedProviderTarget: createLocalAgentGUIProviderTarget("codex"),
+    providerTargets: [createLocalAgentGUIProviderTarget("codex")],
+    providerTargetsLoading: false,
     conversations: [],
     userProjects: [],
     activeConversation: null,
@@ -7492,6 +7492,8 @@ function createViewModel(
     },
     inlineNotice: null,
     ...overrides,
+    conversationScope: overrides.conversationScope ?? "single-provider",
+    conversationFilter: overrides.conversationFilter ?? { kind: "all" },
     listError: overrides.listError ?? null
   };
 }

@@ -23,6 +23,9 @@ function createTransportClient(
   overrides: Partial<TuttidClient> = {}
 ): TuttidClient {
   return {
+    async listAgentTargets() {
+      throw new Error("not used");
+    },
     async startAccountLogin() {
       throw new Error("not used");
     },
@@ -285,9 +288,6 @@ function createTransportClient(
       throw new Error("not used");
     },
     async listWorkspaceAgentSessions() {
-      throw new Error("not used");
-    },
-    async listWorkspaceAgentSessionGroups() {
       throw new Error("not used");
     },
     async scanWorkspaceExternalAgentSessionImports() {

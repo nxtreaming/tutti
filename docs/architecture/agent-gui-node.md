@@ -130,11 +130,39 @@ Workbench and desktop product integration wrap that chain:
 
 ```text
 Workbench dock or external launch
+  -> buildAgentGuiDockEntries
   -> createAgentGuiWorkbenchLaunchDescriptor
   -> DesktopAgentGUIWorkbenchBody
   -> workbench node state + desktop preferences + mention providers
   -> <AgentGUI ... />
 ```
+
+`agentDockLayout` is a daemon-owned desktop preference that changes only the
+dock presentation. `legacySplit` keeps provider-specific Codex and Claude Code
+dock entries. `unified` exposes one Agent dock entry that matches Codex and
+Claude Code AgentGUI nodes, but launches still create provider-specific
+multi-instance AgentGUI nodes. The unified entry may choose a default target or
+provider for its launch payload; that selection must not synthesize a provider
+or replace the provider identity recorded on the node/session.
+Unified workbench chrome should keep the generic Agent title and use generic
+Agent artwork instead of provider-branded icons even when the underlying
+launch/session provider is Codex or Claude Code.
+
+AgentGuiNode may expose provider target selection in multiple UI-local entry
+points, including the conversation rail target grid and the provider select next
+to the composer add/reference control.
+These controls are launch/default selection surfaces only: they must flow
+through the controller's provider-selection action, resolve an
+`AgentGUIProviderTarget`, return the node to the home composer when switching
+providers, and preserve the real provider identity used by runtime create/send
+commands. Once a session is active, the composer provider select is display-only
+and must not switch the running session. Do not encode provider switching only
+as a conversation-list filter; filters can scope the visible Codex/Claude
+session list, while provider selection changes which provider a new empty
+composer will launch.
+UI affordances that aggregate across providers, such as rail provider filters
+and composer provider switching, belong to the current conversation scope
+derived by the host/workbench presentation, not to durable AgentGUI node data.
 
 This means an AgentGUI bug can start at several different interfaces. Do not
 assume that a visible UI symptom starts in the visible UI component.
@@ -365,12 +393,9 @@ AgentGUI / AgentGuiNode mount
   -> AgentActivityController.load
   -> desktopAgentActivityAdapter.listSessions
   -> tuttid ListWorkspaceAgentSessions
-  -> agent.Service.ListPage
+  -> agent.Service.ListFiltered
   -> live RuntimeController sessions + persisted ActivityProjection sessions
   -> AgentActivityController snapshot
-  -> AgentActivityRuntime.listSessionGroups
-  -> tuttid ListWorkspaceAgentSessionGroups
-  -> agent.Service.ListGroups
   -> conversation-list projection/store
   -> rail and active-session fallback selection
 ```
@@ -379,14 +404,11 @@ The session list is not owned by AgentGuiNode. AgentGuiNode may keep query,
 selection, pending create/delete/submit overlays, and read-state UI metadata.
 The session rows themselves come from the runtime snapshot and are refreshed
 through `load`, event reconciliation, or explicit session fetches.
-The default rail uses grouped session summaries, not a global recent-session
-slice as the source of project truth. `ListWorkspaceAgentSessionGroups` scans
-the durable summary set once, returns project/group counts, latest session
-times, and the first bounded page of sessions per group. Per-project "load
-more" calls `ListWorkspaceAgentSessions` with `cwd`, `cursor`, and `limit`.
-Search is a separate full-summary query path with its own cursor. Keep heavy
-detail data, especially messages and timeline pages, out of list and group
-loads.
+The desktop adapter should keep broad session-list loads bounded before they
+enter `AgentActivityRuntime`; large workspaces can accumulate hundreds or
+thousands of historical agent sessions, and pushing all of them through the
+runtime snapshot forces AgentGuiNode to repeatedly project and reconcile data
+the user is unlikely to inspect in the rail.
 Conversation-list read-state metadata is notification-style UI state. Historical
 imports that carry `runtimeContext.imported === true` should remain visible in
 the rail, but they must not seed unread completion lamps as though they just
@@ -677,7 +699,7 @@ state should map to one owner and one clearing condition.
 ### Rail And Conversation List
 
 ```text
-runtime snapshot sessions + grouped session pages
+runtime snapshot sessions
   -> conversation list query/search/project filters
   -> local pending create/submit/delete overlays
   -> activeConversationId highlight
@@ -692,13 +714,20 @@ User-visible rules:
   runtime update time.
 - Search and project grouping are list-query concerns. They may hide a session
   from the rail, but must not delete or unactivate the session.
-- The default rail view should render bounded session pages per group, not a
-  global top-N session window. Empty project sections are derived from group
-  counts plus user projects, so a project outside the first visible session page
-  must not be shown as empty.
-- When a search result is opened and search is later cleared, the selected
-  session must remain visible through an active-session overlay until its group
-  page contains the authoritative row.
+- Conversation target filters are also list-query concerns. The All rail filter
+  applies no `agentTargetId` constraint; provider target rail filters such as
+  Codex and Claude Code match sessions by `session.agentTargetId`, not by
+  `session.provider`. Filter normalization and list projection helpers must not
+  mutate workbench node `provider`, provider target fields, composer drafts,
+  desktop default provider, or composer-default preferences. All-filter clicks
+  must only clear the `agentTargetId` constraint. Provider target rail clicks
+  that should also change the empty composer launch target must flow through a
+  single controller action that updates both the conversation filter and the
+  composer provider target; React view components must not dispatch separate
+  filter and provider-selection actions for one click.
+  Apply them only for multi-provider conversation scopes. Single-provider
+  panels should let the node provider constrain the query and collapse target
+  filter actions back to All in the controller.
 - A pending create row can appear before the daemon-created session is
   authoritative. It must be replaced by the authoritative session or removed on
   create failure.
@@ -723,10 +752,9 @@ User-visible rules:
 - AgentGUI conversation titles must use the shared title projection before they
   reach desktop-owned chrome, dock previews, message center cards, or toast
   notifications. Do not display raw `session.title.trim()` in those surfaces.
-- Live runtime snapshot data is the primary source for workbench and dock
-  titles. `lastActiveConversationTitle` is a hydration fallback only; it must not
-  override a current snapshot title and must be cleared when starting a new
-  conversation.
+- Live runtime snapshot data is the source for workbench and dock titles. Do
+  not persist or restore `lastActiveConversationTitle` from workbench node
+  state.
 - Title projection must normalize rich mention markdown, strip provider-only and
   untitled placeholders from workbench chrome, and use cached first-user-message
   content only when the session title is not displayable.
@@ -793,6 +821,10 @@ User-visible rules:
 - User composer defaults are owned by desktop preferences. AgentGUI may request
   a defaults write only from the home/new composer path, through an explicit host
   callback.
+- Target-backed home/new composer defaults and draft settings must be keyed by
+  `agentTargetId` first. Provider-keyed defaults are legacy fallback only, so two
+  targets under the same provider cannot share model, permission, reasoning,
+  speed, or draft state by accident.
 - Active session settings are session state. Opening, restoring, or editing an
   active session must not promote that session's model, permission mode, or
   reasoning setting into user defaults.
@@ -1042,30 +1074,55 @@ activity data source:
 
 ### Provider Targets
 
-AgentGUI distinguishes real provider identity from launch targets. `provider`
-continues to mean the concrete provider family (`codex`, `claude-code`,
-`nexight`, and so on) and remains the key for composer options, settings,
-icons, probes, provider status, and adapter policy.
+AgentGUI distinguishes launch authority, real provider identity, and legacy
+provider-target compatibility. `agentTargetId` is the authority for new
+session launches, workbench target selection, and AgentGUI node state. The
+daemon resolves that id against `agent_targets` and derives the execution
+provider and runtime `providerTargetRef` from the trusted target `launchRef`.
+Target-backed create requests may omit `provider`; if a request supplies both
+`agentTargetId` and `provider`, the daemon rejects mismatches. Client-supplied
+`providerTargetRef` must not override the daemon-derived target ref when
+`agentTargetId` is present. `provider` continues to mean the concrete provider
+family (`codex`, `claude-code`, `nexight`, and so on) and remains the key for
+display labels/icons, probes, provider status, historical conversation filters,
+telemetry, and provider execution policy.
 
 `providerTargets` lets a host expose multiple targets under that same provider.
 AgentGUI owns only target display and passthrough:
 
 - show `target.label` for new-session surfaces
 - keep provider behavior keyed by `target.provider`
-- persist `providerTargetId` / `providerTargetRef` in workbench node state
-- pass `providerTargetRef` through `AgentActivityRuntime.activateSession`
+- persist `agentTargetId` in new workbench node state when the host target has
+  one
+- read legacy `providerTargetId` / `providerTargetRef` from old workbench node
+  state to recover the selected target
+- pass `agentTargetId` through `AgentActivityRuntime.activateSession`
+- pass `providerTargetRef` only as a legacy opaque compatibility hint for
+  provider-only launches
 
-`providerTargetRef` is an opaque host reference, not authority. AgentGUI must
-not interpret `ref.kind`, mint invocation-control tokens, resolve invocation
-plans, contact command gateways, or handle raw credentials. Host/trusted code
-must re-authenticate the current user and workspace and resolve any invocation
-plan before launching. A target may identify shared, local, remote, or other
-host-owned launch mechanisms, but those meanings stay outside AgentGUI.
+`providerTargetId` and `providerTargetRef` are transition fields, not daemon
+authority. AgentGUI must not interpret `ref.kind`, mint invocation-control
+tokens, resolve invocation plans, contact command gateways, or handle raw
+credentials. Host/trusted code must re-authenticate the current user and
+workspace and resolve any invocation plan before launching. When
+`agentTargetId` is present, the daemon maps the stored launch ref to the runtime
+target ref shape, currently `{ kind: launchRef.type, provider, targetId }`, and
+runtime session reuse must match that ref as part of the launch key. A target
+may identify shared, local, remote, or other host-owned launch mechanisms, but
+those meanings stay outside AgentGUI.
 
-When `providerTargets` is omitted or empty, AgentGUI may synthesize local
-targets from the static provider catalog for picker/display compatibility. Those
-fallback targets do not change the legacy activation contract: AgentGUI does not
-persist or send their `providerTargetRef`.
+When `providerTargets` is omitted, package-level AgentGUI hosts may synthesize
+local targets from the static provider catalog for picker/display compatibility.
+An explicit `providerTargets` array, including an empty array, is authoritative
+and must not fall back to static local targets. Desktop workbench loads this
+array from tuttid `agent_targets`; while that fetch is in progress it passes an
+empty array plus a loading flag so the rail can show a loading state instead of
+pretending Codex or Claude Code came from durable target data. Fallback targets
+do not change the legacy activation contract: AgentGUI does not persist or send
+their `providerTargetRef`. For system local Codex and Claude Code targets, the
+synthesized targets may expose `local:codex` and `local:claude-code` as
+`agentTargetId`, matching the legacy local `providerTargetId` format so old node
+state can fall back without remapping.
 
 ### Conversation Projection
 

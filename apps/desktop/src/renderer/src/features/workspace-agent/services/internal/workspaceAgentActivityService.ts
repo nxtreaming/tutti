@@ -161,60 +161,6 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
     );
   }
 
-  async listSessionGroups(
-    input: Parameters<IWorkspaceAgentActivityService["listSessionGroups"]>[0]
-  ): ReturnType<IWorkspaceAgentActivityService["listSessionGroups"]> {
-    return this.dependencies.tuttidClient.listWorkspaceAgentSessionGroups(
-      normalizeWorkspaceId(input.workspaceId),
-      {
-        sessionLimit: input.sessionLimit,
-        visibleOnly: input.visibleOnly ?? true
-      }
-    );
-  }
-
-  async listSessionsPage(
-    input: Parameters<IWorkspaceAgentActivityService["listSessionsPage"]>[0]
-  ): ReturnType<IWorkspaceAgentActivityService["listSessionsPage"]> {
-    return this.dependencies.tuttidClient.listWorkspaceAgentSessions(
-      normalizeWorkspaceId(input.workspaceId),
-      {
-        cursor: input.cursor,
-        cwd: input.cwd,
-        limit: input.limit,
-        visibleOnly: input.visibleOnly ?? true
-      }
-    );
-  }
-
-  async searchSessions(
-    input: Parameters<IWorkspaceAgentActivityService["searchSessions"]>[0]
-  ): ReturnType<IWorkspaceAgentActivityService["searchSessions"]> {
-    const workspaceId = normalizeWorkspaceId(input.workspaceId);
-    const query = input.query.trim();
-    if (!query) {
-      return { hasMore: false, sessions: [], workspaceId };
-    }
-    const response =
-      await this.dependencies.tuttidClient.listWorkspaceAgentSessions(
-        workspaceId,
-        {
-          limit: input.limit ?? 100,
-          cursor: input.cursor,
-          searchQuery: query,
-          visibleOnly: true
-        }
-      );
-    return {
-      hasMore: response.hasMore,
-      nextCursor: response.nextCursor,
-      sessions: response.sessions.map((session) =>
-        agentActivitySessionFromTuttidSession(workspaceId, session)
-      ),
-      workspaceId: response.workspaceId
-    };
-  }
-
   async scanExternalSessionImports(
     workspaceId: string,
     request?: Parameters<
@@ -316,7 +262,8 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
       event: "activity_service.create.entered",
       metadata: input.metadata,
       provider: input.provider,
-      workspaceId: input.workspaceId
+      workspaceId: input.workspaceId,
+      fields: { agentTargetId: input.agentTargetId ?? null }
     });
     const entry = this.controllerEntry(input.workspaceId);
     reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
@@ -324,9 +271,13 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
       event: "activity_service.create.adapter_requested",
       metadata: input.metadata,
       provider: input.provider,
-      workspaceId: input.workspaceId
+      workspaceId: input.workspaceId,
+      fields: { agentTargetId: input.agentTargetId ?? null }
     });
-    const session = await entry.adapter.createSession(input);
+    const adapterInput = input.agentTargetId
+      ? { ...input, providerTargetRef: null }
+      : input;
+    const session = await entry.adapter.createSession(adapterInput);
     reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
       agentSessionId: session.agentSessionId,
       event: "activity_service.create.adapter_resolved",
@@ -360,7 +311,7 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
       metadata: input.metadata,
       provider,
       workspaceId,
-      fields: { mode: input.mode }
+      fields: { agentTargetId: input.agentTargetId ?? null, mode: input.mode }
     });
     if (input.mode === "new") {
       reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
@@ -386,7 +337,10 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
         metadata: input.metadata,
         provider,
         workspaceId,
-        fields: { cwd: resolvedCwd?.cwd ?? null }
+        fields: {
+          agentTargetId: input.agentTargetId ?? null,
+          cwd: resolvedCwd?.cwd ?? null
+        }
       });
     }
     let session: AgentActivitySession;
@@ -398,11 +352,13 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
         event: "activity_service.activate.create_requested",
         metadata: input.metadata,
         provider,
-        workspaceId
+        workspaceId,
+        fields: { agentTargetId: input.agentTargetId ?? null }
       });
       session = await this.createSession({
         workspaceId,
         agentSessionId: requestedAgentSessionId,
+        ...(input.agentTargetId ? { agentTargetId: input.agentTargetId } : {}),
         cwd: resolvedCwd?.cwd ?? null,
         initialContent: input.initialContent ?? [],
         initialDisplayPrompt: input.initialDisplayPrompt ?? null,
@@ -411,7 +367,9 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
         planMode: input.settings?.planMode ?? null,
         permissionModeId: resolveComposerPermissionMode(input.settings),
         provider,
-        providerTargetRef: input.providerTargetRef ?? null,
+        ...(input.agentTargetId
+          ? {}
+          : { providerTargetRef: input.providerTargetRef ?? null }),
         reasoningEffort: input.settings?.reasoningEffort ?? null,
         speed: input.settings?.speed ?? null,
         title: input.title ?? null,
@@ -641,6 +599,7 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
   }
 
   async getComposerOptions(input: {
+    agentTargetId?: string | null;
     cwd?: string | null;
     force?: boolean;
     provider?: string;
@@ -652,6 +611,7 @@ export class WorkspaceAgentActivityService implements IWorkspaceAgentActivitySer
     return this.controllerEntry(
       input.workspaceId
     ).controller.loadComposerOptions({
+      agentTargetId: input.agentTargetId,
       provider,
       cwd: input.cwd,
       force: input.force,

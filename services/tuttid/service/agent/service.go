@@ -3,12 +3,16 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
+	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
 	agentsidecarservice "github.com/tutti-os/tutti/services/tuttid/service/agentsidecar"
 )
 
@@ -33,13 +37,73 @@ func NewService(runtime RuntimeController) *Service {
 	}
 }
 
+func (s *Service) List(ctx context.Context, workspaceID string) ([]Session, error) {
+	return s.ListFiltered(ctx, workspaceID, ListSessionsInput{})
+}
+
+func (s *Service) ListFiltered(ctx context.Context, workspaceID string, input ListSessionsInput) ([]Session, error) {
+	_ = ctx
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, ErrInvalidArgument
+	}
+	sessionByID := make(map[string]Session)
+	if s.SessionReader != nil {
+		if persisted, ok := s.SessionReader.ListSessions(workspaceID); ok {
+			for _, session := range persisted {
+				sessionByID[strings.TrimSpace(session.ID)] = sessionFromPersisted(
+					session,
+					persistedSessionCanResume(s.controller(), session),
+				)
+			}
+		}
+	}
+	sessions := s.controller().Sessions(workspaceID)
+	for _, session := range sessions {
+		service := serviceSession(
+			session,
+			s.controller().CanResume(runtimeResumeInputFromRuntimeSession(session)),
+		)
+		if s.SessionReader != nil {
+			if persisted, ok := s.SessionReader.GetSession(workspaceID, session.ID); ok {
+				service = mergePersistedSessionState(service, persisted)
+			}
+		}
+		sessionByID[strings.TrimSpace(session.ID)] = service
+	}
+	result := make([]Session, 0, len(sessionByID))
+	for _, session := range sessionByID {
+		result = append(result, cloneSession(session))
+	}
+
+	result = filterSessions(result, input)
+	sort.SliceStable(result, func(left, right int) bool {
+		leftUpdatedAtUnixMS := sessionUpdatedAtUnixMS(result[left])
+		rightUpdatedAtUnixMS := sessionUpdatedAtUnixMS(result[right])
+		if leftUpdatedAtUnixMS == rightUpdatedAtUnixMS {
+			return strings.TrimSpace(result[left].ID) < strings.TrimSpace(result[right].ID)
+		}
+		return leftUpdatedAtUnixMS > rightUpdatedAtUnixMS
+	})
+	if input.Limit > 0 && len(result) > input.Limit {
+		result = result[:input.Limit]
+	}
+	return result, nil
+}
+
 func (s *Service) Create(ctx context.Context, workspaceID string, input CreateSessionInput) (Session, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
-	provider := strings.TrimSpace(input.Provider)
+	input.AgentTargetID = strings.TrimSpace(input.AgentTargetID)
+	launch, err := s.resolveCreateSessionLaunch(ctx, input)
+	if err != nil {
+		return Session{}, err
+	}
+	provider := launch.Provider
 	if workspaceID == "" || provider == "" {
 		return Session{}, ErrInvalidArgument
 	}
 	input.Provider = provider
+	input.ProviderTargetRef = launch.ProviderTargetRef
 	input.ConversationDetailMode = preferencesbiz.NormalizeDesktopAgentConversationDetailMode(input.ConversationDetailMode)
 	if normalizedPermissionModeID := normalizePermissionModeIDForProvider(
 		provider,
@@ -117,6 +181,7 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateSe
 	session, err := s.controller().Start(ctx, RuntimeStartInput{
 		WorkspaceID:      workspaceID,
 		AgentSessionID:   strings.TrimSpace(input.AgentSessionID),
+		AgentTargetID:    input.AgentTargetID,
 		Provider:         provider,
 		Cwd:              prepared.Cwd,
 		Env:              prepared.Env,
@@ -209,6 +274,49 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateSe
 	), nil
 }
 
+type resolvedCreateSessionLaunch struct {
+	Provider          string
+	ProviderTargetRef map[string]any
+}
+
+func (s *Service) resolveCreateSessionLaunch(ctx context.Context, input CreateSessionInput) (resolvedCreateSessionLaunch, error) {
+	requestProvider := strings.TrimSpace(input.Provider)
+	agentTargetID := strings.TrimSpace(input.AgentTargetID)
+	if agentTargetID == "" {
+		return resolvedCreateSessionLaunch{}, fmt.Errorf("%w: agent target id is required for agent session launch", ErrInvalidArgument)
+	}
+	if s.AgentTargetStore == nil {
+		return resolvedCreateSessionLaunch{}, fmt.Errorf("%w: agent target store is unavailable", ErrInvalidArgument)
+	}
+	target, err := s.AgentTargetStore.GetAgentTarget(ctx, agentTargetID)
+	if err != nil {
+		if errors.Is(err, workspacedata.ErrAgentTargetNotFound) {
+			return resolvedCreateSessionLaunch{}, fmt.Errorf("%w: agent target not found", ErrInvalidArgument)
+		}
+		return resolvedCreateSessionLaunch{}, fmt.Errorf("get agent target: %w", err)
+	}
+	normalized, err := agenttargetbiz.NormalizeTarget(target)
+	if err != nil {
+		return resolvedCreateSessionLaunch{}, fmt.Errorf("%w: %v", ErrInvalidArgument, err)
+	}
+	if !normalized.Enabled {
+		return resolvedCreateSessionLaunch{}, fmt.Errorf("%w: agent target is disabled", ErrInvalidArgument)
+	}
+	derivedRef, err := agenttargetbiz.RuntimeProviderTargetRef(normalized)
+	if err != nil {
+		return resolvedCreateSessionLaunch{}, fmt.Errorf("%w: invalid agent target launch ref", ErrInvalidArgument)
+	}
+	derivedProvider, _ := derivedRef["provider"].(string)
+	derivedProvider = strings.TrimSpace(derivedProvider)
+	if requestProvider != "" && requestProvider != derivedProvider {
+		return resolvedCreateSessionLaunch{}, fmt.Errorf("%w: provider does not match agent target", ErrInvalidArgument)
+	}
+	return resolvedCreateSessionLaunch{
+		Provider:          derivedProvider,
+		ProviderTargetRef: derivedRef,
+	}, nil
+}
+
 func (s *Service) resolveCreateSessionModel(ctx context.Context, provider string, model *string) *string {
 	resolved := normalizeComposerModelForProvider(
 		provider,
@@ -244,6 +352,7 @@ func (s *Service) prepareRuntime(ctx context.Context, workspaceID string, cwd st
 	prepared, err := s.RuntimePreparer.Prepare(ctx, agentsidecarservice.PrepareInput{
 		WorkspaceID:       workspaceID,
 		AgentSessionID:    strings.TrimSpace(input.AgentSessionID),
+		AgentTargetID:     strings.TrimSpace(input.AgentTargetID),
 		Provider:          provider,
 		Cwd:               cwd,
 		Title:             value(input.Title),
@@ -652,81 +761,4 @@ func optionalInputString(input *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*input)
-}
-
-func (s *Service) ensureRuntimeSession(
-	ctx context.Context,
-	workspaceID string,
-	agentSessionID string,
-) (RuntimeSession, error) {
-	ensured, err := s.ensureRuntimeSessionResult(ctx, workspaceID, agentSessionID)
-	return ensured.Session, err
-}
-
-type ensuredRuntimeSession struct {
-	Session             RuntimeSession
-	StaleTurnReconciled bool
-}
-
-func (s *Service) ensureRuntimeSessionResult(
-	ctx context.Context,
-	workspaceID string,
-	agentSessionID string,
-) (ensuredRuntimeSession, error) {
-	if session, ok := s.controller().Session(workspaceID, agentSessionID); ok {
-		staleTurnReconciled := false
-		shouldReconcile, err := s.shouldReconcilePersistedStaleTurn(session, workspaceID, agentSessionID)
-		if err != nil {
-			return ensuredRuntimeSession{}, err
-		}
-		if shouldReconcile {
-			staleTurnReconciled, err = s.reconcilePersistedStaleTurn(ctx, workspaceID, agentSessionID)
-			if err != nil {
-				return ensuredRuntimeSession{}, err
-			}
-		}
-		return ensuredRuntimeSession{Session: session, StaleTurnReconciled: staleTurnReconciled}, nil
-	}
-	if s.SessionReader == nil {
-		return ensuredRuntimeSession{}, ErrSessionNotFound
-	}
-	persisted, ok := s.SessionReader.GetSession(workspaceID, agentSessionID)
-	if !ok || strings.TrimSpace(persisted.Provider) == "" {
-		return ensuredRuntimeSession{}, ErrSessionNotFound
-	}
-	// Imported sessions used to be rejected here, which is what surfaced the
-	// "can't resume on this device, start a new conversation" dead-end. They now
-	// resume in place (same-device) or, when the provider session can't be
-	// restored locally, get a fresh provider session created on demand. The
-	// recreate is opt-in (RecreateIfMissing) so it stays scoped to imported
-	// conversations and doesn't change restore-error handling for normal ones.
-	imported := strings.TrimSpace(persisted.Origin) == WorkspaceAgentSessionOriginImported
-	prepared, err := s.prepareRuntimeForResume(ctx, persisted)
-	if err != nil {
-		return ensuredRuntimeSession{}, err
-	}
-	session, err := s.controller().Resume(ctx, RuntimeResumeInput{
-		WorkspaceID:       strings.TrimSpace(persisted.WorkspaceID),
-		AgentSessionID:    strings.TrimSpace(persisted.ID),
-		Provider:          strings.TrimSpace(persisted.Provider),
-		ProviderSessionID: strings.TrimSpace(persisted.ProviderSessionID),
-		Cwd:               strings.TrimSpace(prepared.Cwd),
-		Env:               append([]string(nil), prepared.Env...),
-		Title:             strings.TrimSpace(persisted.Title),
-		Status:            strings.TrimSpace(persisted.Status),
-		Settings:          cloneComposerSettings(persisted.Settings),
-		CreatedAtUnixMS:   persisted.CreatedAtUnixMS,
-		UpdatedAtUnixMS:   persisted.UpdatedAtUnixMS,
-		Visible:           boolPointer(visibleFromRuntimeContext(persisted.RuntimeContext, true)),
-		RuntimeContext:    clonePayload(persisted.RuntimeContext),
-		RecreateIfMissing: imported,
-	})
-	if err != nil {
-		return ensuredRuntimeSession{}, normalizeRuntimeError(err)
-	}
-	staleTurnReconciled, err := s.reconcileStaleTurnOnResume(ctx, persisted)
-	if err != nil {
-		return ensuredRuntimeSession{}, err
-	}
-	return ensuredRuntimeSession{Session: session, StaleTurnReconciled: staleTurnReconciled}, nil
 }

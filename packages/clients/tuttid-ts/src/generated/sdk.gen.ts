@@ -190,6 +190,9 @@ import type {
   LaunchWorkspaceAppData,
   LaunchWorkspaceAppErrors,
   LaunchWorkspaceAppResponses,
+  ListAgentTargetsData,
+  ListAgentTargetsErrors,
+  ListAgentTargetsResponses,
   ListCliCapabilitiesData,
   ListCliCapabilitiesErrors,
   ListCliCapabilitiesResponses,
@@ -202,9 +205,6 @@ import type {
   ListWorkspaceAgentSessionGitBranchesData,
   ListWorkspaceAgentSessionGitBranchesErrors,
   ListWorkspaceAgentSessionGitBranchesResponses,
-  ListWorkspaceAgentSessionGroupsData,
-  ListWorkspaceAgentSessionGroupsErrors,
-  ListWorkspaceAgentSessionGroupsResponses,
   ListWorkspaceAgentSessionMessagesData,
   ListWorkspaceAgentSessionMessagesErrors,
   ListWorkspaceAgentSessionMessagesResponses,
@@ -705,6 +705,24 @@ export const attachEventStream = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/v1/events/ws",
+    ...options
+  });
+
+/**
+ * List daemon-owned Agent Targets
+ *
+ * Returns durable Agent Target records. The launch ref is a controlled union and not a free-form configuration blob.
+ */
+export const listAgentTargets = <ThrowOnError extends boolean = false>(
+  options?: Options<ListAgentTargetsData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    ListAgentTargetsResponses,
+    ListAgentTargetsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/agent-targets",
     ...options
   });
 
@@ -1501,24 +1519,6 @@ export const createWorkspaceAgentSession = <
       "Content-Type": "application/json",
       ...options.headers
     }
-  });
-
-/**
- * List grouped agent session summaries for one workspace
- */
-export const listWorkspaceAgentSessionGroups = <
-  ThrowOnError extends boolean = false
->(
-  options: Options<ListWorkspaceAgentSessionGroupsData, ThrowOnError>
-) =>
-  (options.client ?? client).get<
-    ListWorkspaceAgentSessionGroupsResponses,
-    ListWorkspaceAgentSessionGroupsErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/v1/workspaces/{workspaceID}/agent-sessions/groups",
-    ...options
   });
 
 /**

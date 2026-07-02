@@ -55,6 +55,7 @@ const (
 type StartInput struct {
 	RoomID               string
 	AgentSessionID       string
+	AgentTargetID        string
 	Provider             string
 	CWD                  string
 	Env                  []string
@@ -70,6 +71,7 @@ type StartInput struct {
 type ResumeInput struct {
 	RoomID            string
 	AgentSessionID    string
+	AgentTargetID     string
 	Provider          string
 	ProviderSessionID string
 	CWD               string
@@ -163,6 +165,7 @@ type PromptContentBlock struct {
 type Session struct {
 	RoomID               string              `json:"roomId"`
 	AgentSessionID       string              `json:"agentSessionId"`
+	AgentTargetID        string              `json:"agentTargetId,omitempty"`
 	Provider             string              `json:"provider"`
 	ProviderSessionID    string              `json:"providerSessionId"`
 	CWD                  string              `json:"cwd,omitempty"`
@@ -196,6 +199,7 @@ type SessionInteractivePrompt struct {
 type SessionStateSnapshot struct {
 	RoomID             string                    `json:"roomId"`
 	AgentSessionID     string                    `json:"agentSessionId"`
+	AgentTargetID      string                    `json:"agentTargetId,omitempty"`
 	Provider           string                    `json:"provider"`
 	ProviderSessionID  string                    `json:"providerSessionId,omitempty"`
 	Status             string                    `json:"status"`

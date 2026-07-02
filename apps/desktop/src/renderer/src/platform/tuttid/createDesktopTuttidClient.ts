@@ -22,6 +22,9 @@ export function createDesktopTuttidClient(
   };
 
   return {
+    async listAgentTargets() {
+      return (await resolveClient()).listAgentTargets();
+    },
     async startAccountLogin() {
       return (await resolveClient()).startAccountLogin();
     },
@@ -497,12 +500,6 @@ export function createDesktopTuttidClient(
     },
     async listWorkspaceAgentSessions(workspaceID, request) {
       return (await resolveClient()).listWorkspaceAgentSessions(
-        workspaceID,
-        request
-      );
-    },
-    async listWorkspaceAgentSessionGroups(workspaceID, request) {
-      return (await resolveClient()).listWorkspaceAgentSessionGroups(
         workspaceID,
         request
       );

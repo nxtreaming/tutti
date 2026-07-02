@@ -111,6 +111,14 @@ func RegisterRoutes(mux *http.ServeMux, routes Routes) {
 		}
 	})
 
+	mux.HandleFunc("/v1/agent-targets", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			tuttitypes.WriteMethodNotAllowed(w)
+			return
+		}
+		wrapper.ListAgentTargets(w, r)
+	})
+
 	mux.HandleFunc("/v1/user-projects", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -344,14 +352,6 @@ func RegisterRoutes(mux *http.ServeMux, routes Routes) {
 		default:
 			tuttitypes.WriteMethodNotAllowed(w)
 		}
-	})
-
-	mux.HandleFunc("/v1/workspaces/{workspaceID}/agent-sessions/groups", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			tuttitypes.WriteMethodNotAllowed(w)
-			return
-		}
-		wrapper.ListWorkspaceAgentSessionGroups(w, r)
 	})
 
 	mux.HandleFunc("/v1/workspaces/{workspaceID}/agent-sessions/external-imports/scan", func(w http.ResponseWriter, r *http.Request) {

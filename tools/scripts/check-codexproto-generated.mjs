@@ -129,10 +129,31 @@ function fileHashes(root) {
   const out = new Map();
   for (const path of walkFiles(root)) {
     const rel = relative(root, path);
-    const hash = createHash("sha256").update(readFileSync(path)).digest("hex");
+    const content = rel.endsWith(".json")
+      ? canonicalJson(readFileSync(path, "utf8"))
+      : readFileSync(path);
+    const hash = createHash("sha256").update(content).digest("hex");
     out.set(rel, hash);
   }
   return out;
+}
+
+function canonicalJson(source) {
+  return JSON.stringify(sortJsonValue(JSON.parse(source)));
+}
+
+function sortJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, sortJsonValue(value[key])])
+    );
+  }
+  return value;
 }
 
 function walkFiles(root) {

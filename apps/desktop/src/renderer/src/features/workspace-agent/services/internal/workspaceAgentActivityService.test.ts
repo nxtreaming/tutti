@@ -17,10 +17,7 @@ test("WorkspaceAgentActivityService.sendInput keeps activity snapshot working wh
   const readySession = workspaceAgentSession({ status: "ready" });
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
-      listWorkspaceAgentSessions: async () => ({
-        hasMore: false,
-        sessions: [readySession]
-      }),
+      listWorkspaceAgentSessions: async () => ({ sessions: [readySession] }),
       sendWorkspaceAgentSessionInput: async () => ({ session: readySession })
     } as unknown as TuttidClient,
     runtimeApi: {
@@ -45,7 +42,7 @@ test("WorkspaceAgentActivityService.sendInput keeps activity snapshot working wh
   assert.equal(snapshotSession?.currentPhase, "working");
 });
 
-test("WorkspaceAgentActivityService.activateSession forwards provider target refs to create", async () => {
+test("WorkspaceAgentActivityService.activateSession omits provider target refs for target-backed create", async () => {
   const createCalls: unknown[] = [];
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
@@ -64,6 +61,7 @@ test("WorkspaceAgentActivityService.activateSession forwards provider target ref
 
   await service.activateSession({
     agentSessionId: "11111111-1111-4111-8111-111111111111",
+    agentTargetId: "local:codex",
     cwd: "/workspace",
     initialContent: [{ type: "text", text: "hello" }],
     mode: "new",
@@ -83,6 +81,7 @@ test("WorkspaceAgentActivityService.activateSession forwards provider target ref
     workspaceId: "ws-1",
     request: {
       agentSessionId: "11111111-1111-4111-8111-111111111111",
+      agentTargetId: "local:codex",
       cwd: "/workspace",
       initialContent: [{ type: "text", text: "hello" }],
       initialDisplayPrompt: null,
@@ -90,17 +89,81 @@ test("WorkspaceAgentActivityService.activateSession forwards provider target ref
       permissionModeId: null,
       planMode: null,
       provider: "codex",
-      providerTargetRef: {
-        kind: "sharedAgent",
-        provider: "codex",
-        sharedAgentId: "agent-1"
-      },
       reasoningEffort: null,
       speed: null,
       title: "Shared Codex",
       visible: true
     }
   });
+});
+
+test("WorkspaceAgentActivityService composer options cache is agent target keyed", async () => {
+  const composerOptionCalls: unknown[] = [];
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      getAgentProviderComposerOptions: async (
+        provider: string,
+        request: unknown
+      ) => {
+        composerOptionCalls.push({ provider, request });
+        return {
+          provider,
+          modelConfig: {
+            configurable: true,
+            options: [{ value: `model-${composerOptionCalls.length}` }]
+          },
+          runtimeContext: {}
+        };
+      }
+    } as unknown as TuttidClient,
+    runtimeApi: {
+      logTerminalDiagnostic: async () => {}
+    }
+  });
+
+  const first = await service.getComposerOptions({
+    agentTargetId: "local:codex",
+    provider: "codex",
+    workspaceId: "ws-1"
+  });
+  const second = await service.getComposerOptions({
+    agentTargetId: "shared-codex",
+    provider: "codex",
+    workspaceId: "ws-1"
+  });
+  const firstCached = await service.getComposerOptions({
+    agentTargetId: "local:codex",
+    provider: "codex",
+    workspaceId: "ws-1"
+  });
+
+  assert.equal(composerOptionCalls.length, 2);
+  assert.equal(
+    service.getSnapshot("ws-1").composerOptionsByAgentTargetId?.["local:codex"]
+      ?.models[0]?.value,
+    "model-1"
+  );
+  assert.equal(
+    service.getSnapshot("ws-1").composerOptionsByAgentTargetId?.["shared-codex"]
+      ?.models[0]?.value,
+    "model-2"
+  );
+  assert.equal(
+    service.getSnapshot("ws-1").composerOptionsByProvider?.codex,
+    undefined
+  );
+  assert.equal(
+    (first as { models?: Array<{ value: string }> }).models?.[0]?.value,
+    "model-1"
+  );
+  assert.equal(
+    (second as { models?: Array<{ value: string }> }).models?.[0]?.value,
+    "model-2"
+  );
+  assert.equal(
+    (firstCached as { models?: Array<{ value: string }> }).models?.[0]?.value,
+    "model-1"
+  );
 });
 
 test("WorkspaceAgentActivityService.importExternalSessions refreshes sessions and projects", async () => {
@@ -126,7 +189,7 @@ test("WorkspaceAgentActivityService.importExternalSessions refreshes sessions an
       },
       listWorkspaceAgentSessions: async () => {
         listCalls += 1;
-        return { hasMore: false, sessions: [], workspaceId: "ws-1" };
+        return { sessions: [], workspaceId: "ws-1" };
       }
     } as unknown as TuttidClient,
     runtimeApi: {

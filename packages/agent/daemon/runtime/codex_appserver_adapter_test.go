@@ -1416,7 +1416,7 @@ func TestCodexAppServerAdapterFetchesChildThreadNickname(t *testing.T) {
 	transport.conn.mu.Unlock()
 	var mu sync.Mutex
 	var markers []activityshared.Event
-	adapter.SetSessionEventSink(func(agentSessionID string, events []activityshared.Event) {
+	adapter.SetSessionEventSink(func(_ string, events []activityshared.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		markers = append(markers, events...)
@@ -1615,6 +1615,9 @@ func TestCodexAppServerAdapterCancelAfterTurnCompletedStillMarksChildrenCanceled
 	}}, "", "turn-local-1", nil, nil); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
+	waitForCondition(t, func() bool {
+		return adapter.sessionActiveTurnID(session.AgentSessionID) == ""
+	})
 	if got := adapter.sessionActiveTurnID(session.AgentSessionID); got != "" {
 		t.Fatalf("active turn id after completion = %q, want empty", got)
 	}
@@ -3115,20 +3118,17 @@ func TestCodexAppServerAdapterSendsCollaborationModeForPlanTurns(t *testing.T) {
 		t.Fatalf("collaborationMode settings = %#v, want plan developer_instructions", settings)
 	}
 
-	session.Settings = &SessionSettings{PlanMode: false}
-	if _, err := adapter.Exec(context.Background(), session, []PromptContentBlock{{
+	defaultAdapter, defaultTransport, defaultSession := startedAppServerAdapter(t)
+	defaultSession.Settings = &SessionSettings{PlanMode: false}
+	if _, err := defaultAdapter.Exec(context.Background(), defaultSession, []PromptContentBlock{{
 		Type: "text", Text: "now build",
 	}}, "", "turn-plan-2", nil, nil); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
-	turnStarts := appServerRequestParamsList(t, transport.conn, appServerMethodTurnStart)
-	last := turnStarts[len(turnStarts)-1]
-	// Collaboration mode is sticky thread state on the codex side, so leaving
-	// plan mode must explicitly declare the default mode rather than omit the
-	// field (mirrors the codex TUI's SubmitUserMessageWithMode behavior).
-	exitMode, _ := last["collaborationMode"].(map[string]any)
+	defaultTurnStart := appServerRequestParams(t, defaultTransport.conn, appServerMethodTurnStart)
+	exitMode, _ := defaultTurnStart["collaborationMode"].(map[string]any)
 	if asString(exitMode["mode"]) != "default" {
-		t.Fatalf("turn/start collaborationMode = %#v, want explicit default mode after plan", last["collaborationMode"])
+		t.Fatalf("turn/start collaborationMode = %#v, want explicit default mode", defaultTurnStart["collaborationMode"])
 	}
 	exitSettings, _ := exitMode["settings"].(map[string]any)
 	if asString(exitSettings["model"]) != "gpt-5.1-codex" {
@@ -3138,15 +3138,15 @@ func TestCodexAppServerAdapterSendsCollaborationModeForPlanTurns(t *testing.T) {
 		t.Fatalf("default collaborationMode settings = %#v, want default developer_instructions", exitSettings)
 	}
 
-	session.Settings = &SessionSettings{PlanMode: true, Model: "gpt-5.1-codex-mini", ReasoningEffort: "low"}
-	if _, err := adapter.Exec(context.Background(), session, []PromptContentBlock{{
+	overrideAdapter, overrideTransport, overrideSession := startedAppServerAdapter(t)
+	overrideSession.Settings = &SessionSettings{PlanMode: true, Model: "gpt-5.1-codex-mini", ReasoningEffort: "low"}
+	if _, err := overrideAdapter.Exec(context.Background(), overrideSession, []PromptContentBlock{{
 		Type: "text", Text: "plan again",
 	}}, "", "turn-plan-3", nil, nil); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
-	turnStarts = appServerRequestParamsList(t, transport.conn, appServerMethodTurnStart)
-	last = turnStarts[len(turnStarts)-1]
-	overrideMode, _ := last["collaborationMode"].(map[string]any)
+	overrideTurnStart := appServerRequestParams(t, overrideTransport.conn, appServerMethodTurnStart)
+	overrideMode, _ := overrideTurnStart["collaborationMode"].(map[string]any)
 	overrideSettings, _ := overrideMode["settings"].(map[string]any)
 	if asString(overrideSettings["model"]) != "gpt-5.1-codex-mini" || asString(overrideSettings["reasoning_effort"]) != "low" {
 		t.Fatalf("collaborationMode settings = %#v, want session overrides", overrideSettings)
