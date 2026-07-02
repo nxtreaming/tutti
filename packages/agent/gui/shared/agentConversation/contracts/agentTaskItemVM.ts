@@ -10,15 +10,31 @@ export type AgentTaskSubAgentStatus =
 // The child thread's transcript rows are segregated out of the parent
 // conversation; this VM is the parent-side surface that keeps the sub-agent
 // perceivable while it runs.
+export type AgentTaskSubAgentActivityKind = "message" | "reasoning" | "tool";
+
+export interface AgentTaskSubAgentActivityVM {
+  kind: AgentTaskSubAgentActivityKind;
+  text: string;
+  atUnixMs: number | null;
+}
+
 export interface AgentTaskSubAgentVM {
   ownerThreadId: string;
   status: AgentTaskSubAgentStatus;
-  title: string;
+  // The sub-agent's own identity: its child thread name when known (daemon
+  // forwards child thread/name/updated as a subAgentName marker). Null until
+  // named - the view falls back to a localized numbered label, never the
+  // collab tool name.
+  name: string | null;
   task: string | null;
   laneIndex: number;
   laneCount: number;
   latestActivity: string | null;
-  latestActivityKind: "message" | "reasoning" | "tool" | null;
+  latestActivityKind: AgentTaskSubAgentActivityKind | null;
+  // Chronological recent activity (markers excluded), capped; older entries
+  // are summarized by activityOmittedCount.
+  activityLog: readonly AgentTaskSubAgentActivityVM[];
+  activityOmittedCount: number;
   failureDetail: string | null;
   startedAtUnixMs: number | null;
   latestActivityAtUnixMs: number | null;

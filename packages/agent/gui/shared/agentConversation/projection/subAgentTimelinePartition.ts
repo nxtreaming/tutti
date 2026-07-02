@@ -4,6 +4,7 @@ import {
   resolveWorkspaceAgentToolName
 } from "../../workspaceAgentToolCallDisplay";
 import type {
+  AgentTaskSubAgentActivityVM,
   AgentTaskSubAgentStatus,
   AgentTaskSubAgentVM
 } from "../contracts/agentTaskItemVM";
@@ -190,33 +191,104 @@ function toolCallRawId(id: string): string {
   return id.startsWith("call:") ? id.slice("call:".length) : id;
 }
 
+const SUB_AGENT_ACTIVITY_LOG_CAP = 20;
+
 function subAgentLane(
   ownerThreadId: string,
   sortedItems: readonly WorkspaceAgentActivityTimelineItem[],
   card: SubAgentCollabCard
 ): AgentTaskSubAgentVM {
-  const latest = latestDisplayableActivity(sortedItems);
+  const activity = subAgentActivityLog(sortedItems);
+  const latest = activity.entries[activity.entries.length - 1] ?? null;
   const terminal = latestTerminalMarker(sortedItems);
   const lastItem = sortedItems[sortedItems.length - 1];
   const status =
     terminal?.status ?? card.childStatuses.get(ownerThreadId) ?? "running";
   const terminalAtUnixMs = terminal?.occurredAtUnixMs ?? null;
-  const agentName = firstString(card.agentName, card.task);
   return {
     ownerThreadId,
     status,
-    title: agentName ?? ownerThreadId,
+    // The sub-agent's identity comes from its own thread name (subAgentName
+    // marker), never from the collab tool name; the view supplies a
+    // localized numbered fallback while unnamed.
+    name: latestNameMarker(sortedItems),
     task: card.task,
     laneIndex: 1,
     laneCount: 1,
     latestActivity: latest?.text ?? null,
     latestActivityKind: latest?.kind ?? null,
+    activityLog: activity.entries,
+    activityOmittedCount: activity.omittedCount,
     failureDetail: terminal?.detail ?? null,
     startedAtUnixMs: timelineItemTime(sortedItems[0]) || null,
     latestActivityAtUnixMs:
       terminalAtUnixMs ?? timelineItemTime(lastItem) ?? null,
     terminalAtUnixMs
   };
+}
+
+function latestNameMarker(
+  sortedItems: readonly WorkspaceAgentActivityTimelineItem[]
+): string | null {
+  for (let index = sortedItems.length - 1; index >= 0; index -= 1) {
+    const payload = sortedItems[index]?.payload;
+    if (payload?.messageKind !== "subAgentName") {
+      continue;
+    }
+    const name = stringValue(payload.subAgentName);
+    if (name) {
+      return name;
+    }
+  }
+  return null;
+}
+
+function isSubAgentMarkerItem(
+  item: WorkspaceAgentActivityTimelineItem
+): boolean {
+  const kind = item.payload?.messageKind;
+  return kind === "subAgentLifecycle" || kind === "subAgentName";
+}
+
+function subAgentActivityLog(
+  sortedItems: readonly WorkspaceAgentActivityTimelineItem[]
+): { entries: AgentTaskSubAgentActivityVM[]; omittedCount: number } {
+  const all: AgentTaskSubAgentActivityVM[] = [];
+  for (const item of sortedItems) {
+    if (!item || isSubAgentMarkerItem(item)) {
+      continue;
+    }
+    const entry = displayableActivityEntry(item);
+    if (entry) {
+      all.push(entry);
+    }
+  }
+  const omittedCount = Math.max(0, all.length - SUB_AGENT_ACTIVITY_LOG_CAP);
+  return { entries: all.slice(omittedCount), omittedCount };
+}
+
+function displayableActivityEntry(
+  item: WorkspaceAgentActivityTimelineItem
+): AgentTaskSubAgentActivityVM | null {
+  const atUnixMs = timelineItemTime(item) || null;
+  if (isWorkspaceAgentToolCallItem(item)) {
+    const name =
+      firstString(item.name, stringValue(item.payload?.name)) ?? null;
+    return name ? { kind: "tool", text: name, atUnixMs } : null;
+  }
+  const text = snippet(timelineItemText(item));
+  if (!text) {
+    return null;
+  }
+  const itemType = item.itemType?.trim().toLowerCase() ?? "";
+  const role = item.role?.trim().toLowerCase() ?? "";
+  if (
+    itemType === "message.assistant_thinking" ||
+    role === "assistant_thinking"
+  ) {
+    return { kind: "reasoning", text, atUnixMs };
+  }
+  return { kind: "message", text, atUnixMs };
 }
 
 function latestTerminalMarker(
@@ -237,42 +309,6 @@ function latestTerminalMarker(
       detail: stringValue(payload.detail) ?? null,
       occurredAtUnixMs: timelineItemTime(item) || null
     };
-  }
-  return null;
-}
-
-function latestDisplayableActivity(
-  sortedItems: readonly WorkspaceAgentActivityTimelineItem[]
-): { text: string; kind: "message" | "reasoning" | "tool" } | null {
-  for (let index = sortedItems.length - 1; index >= 0; index -= 1) {
-    const item = sortedItems[index];
-    if (!item) {
-      continue;
-    }
-    if (item.payload?.messageKind === "subAgentLifecycle") {
-      continue;
-    }
-    if (isWorkspaceAgentToolCallItem(item)) {
-      const name =
-        firstString(item.name, stringValue(item.payload?.name)) ?? null;
-      if (name) {
-        return { text: name, kind: "tool" };
-      }
-      continue;
-    }
-    const text = snippet(timelineItemText(item));
-    if (!text) {
-      continue;
-    }
-    const itemType = item.itemType?.trim().toLowerCase() ?? "";
-    const role = item.role?.trim().toLowerCase() ?? "";
-    if (
-      itemType === "message.assistant_thinking" ||
-      role === "assistant_thinking"
-    ) {
-      return { text, kind: "reasoning" };
-    }
-    return { text, kind: "message" };
   }
   return null;
 }

@@ -4,6 +4,7 @@ import { setAgentGuiI18nTestLocale } from "../../../../i18n/testUtils";
 import { type WorkspaceAgentSessionDetailToolCall } from "../../../workspaceAgentSessionDetailViewModel";
 import { projectAgentToolCall } from "../../projection/agentToolProjection";
 import { AgentExpandedToolContent } from "./AgentExpandedToolContent";
+import { AgentSubAgentCard } from "../AgentSubAgentCards";
 import { ToolMarkdownBlock } from "./agentToolContentShared";
 
 describe("AgentExpandedToolContent", () => {
@@ -1211,99 +1212,69 @@ describe("AgentExpandedToolContent", () => {
     expect(screen.getByText("Found issue TSH-456")).toBeTruthy();
   });
 
-  it("renders live sub-agent lanes on a running task card", async () => {
+  it("renders a named standalone sub-agent card with an activity log", async () => {
     setAgentGuiI18nTestLocale("en");
 
-    const call = projectAgentToolCall(
-      toolCall({
-        name: "spawnAgent",
-        toolName: "Agent",
-        status: "running",
-        statusKind: "working",
-        payload: {
-          input: { task: "inspect the repository", agentName: "spawnAgent" }
-        }
-      })
-    );
-    expect(call.task).not.toBeNull();
-
     render(
-      <AgentExpandedToolContent
-        call={{
-          ...call,
-          task: {
-            ...call.task!,
-            subAgents: [
-              {
-                ownerThreadId: "child-thread-1",
-                status: "running",
-                title: "spawnAgent",
-                task: "inspect the repository",
-                laneIndex: 1,
-                laneCount: 1,
-                latestActivity: "Run command",
-                latestActivityKind: "tool",
-                failureDetail: null,
-                startedAtUnixMs: 1_000,
-                latestActivityAtUnixMs: 101_000,
-                terminalAtUnixMs: null
-              }
-            ]
-          }
+      <AgentSubAgentCard
+        subAgent={{
+          ownerThreadId: "child-thread-1",
+          status: "running",
+          name: "Repo smell analyst",
+          task: "inspect the repository",
+          laneIndex: 1,
+          laneCount: 1,
+          latestActivity: "Run command",
+          latestActivityKind: "tool",
+          activityLog: [
+            { kind: "message", text: "Scanning layout", atUnixMs: 50_000 },
+            { kind: "tool", text: "Run command", atUnixMs: 101_000 }
+          ],
+          activityOmittedCount: 3,
+          failureDetail: null,
+          startedAtUnixMs: 1_000,
+          latestActivityAtUnixMs: 101_000,
+          terminalAtUnixMs: null
         }}
       />
     );
 
-    // The tool title and the sub-agent lane header both render the agent name.
-    expect(screen.getAllByText("spawnAgent").length).toBeGreaterThanOrEqual(2);
+    // Identity comes from the sub-agent's own thread name, never the tool name.
+    expect(screen.getByText("Repo smell analyst")).toBeTruthy();
+    expect(screen.queryByText("spawnAgent")).toBeNull();
     expect(screen.getByText("TASK")).toBeTruthy();
     expect(screen.getByText("PROGRESS")).toBeTruthy();
     expect(screen.getByText(/1m 40s · Running/)).toBeTruthy();
+    expect(screen.getByText("Scanning layout")).toBeTruthy();
     expect(screen.getByText("Run command")).toBeTruthy();
+    expect(screen.getByText("3 earlier steps omitted")).toBeTruthy();
   });
 
-  it("falls back to a starting label when a sub-agent lane has no activity yet", async () => {
+  it("titles an unnamed sub-agent with the localized fallback and starting label", async () => {
     setAgentGuiI18nTestLocale("en");
 
-    const call = projectAgentToolCall(
-      toolCall({
-        name: "spawnAgent",
-        toolName: "Agent",
-        status: "running",
-        statusKind: "working",
-        payload: {
-          input: { task: "inspect the repository", agentName: "spawnAgent" }
-        }
-      })
-    );
-
     render(
-      <AgentExpandedToolContent
-        call={{
-          ...call,
-          task: {
-            ...call.task!,
-            subAgents: [
-              {
-                ownerThreadId: "child-thread-1",
-                status: "running",
-                title: "spawnAgent",
-                task: "inspect the repository",
-                laneIndex: 1,
-                laneCount: 1,
-                latestActivity: null,
-                latestActivityKind: null,
-                failureDetail: null,
-                startedAtUnixMs: 1_000,
-                latestActivityAtUnixMs: 1_000,
-                terminalAtUnixMs: null
-              }
-            ]
-          }
+      <AgentSubAgentCard
+        subAgent={{
+          ownerThreadId: "child-thread-1",
+          status: "running",
+          name: null,
+          task: "inspect the repository",
+          laneIndex: 2,
+          laneCount: 3,
+          latestActivity: null,
+          latestActivityKind: null,
+          activityLog: [],
+          activityOmittedCount: 0,
+          failureDetail: null,
+          startedAtUnixMs: 1_000,
+          latestActivityAtUnixMs: 1_000,
+          terminalAtUnixMs: null
         }}
       />
     );
 
+    expect(screen.getByText("Sub-agent 2")).toBeTruthy();
     expect(screen.getByText("Starting…")).toBeTruthy();
   });
 });

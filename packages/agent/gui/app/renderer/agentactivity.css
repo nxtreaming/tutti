@@ -8133,3 +8133,40 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 [data-workspace-app-icon="true"] > .tsh-agent-object-token__kind-icon {
   display: block;
 }
+
+/* Standalone sub-agent cards (first-class rows, not tool chrome) */
+.workspace-agents-status-panel__detail-subagents--standalone {
+  margin: 4px 0;
+}
+
+.workspace-agents-status-panel__detail-subagent-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workspace-agents-status-panel__detail-subagent-log-entry {
+  color: var(--tutti-text-muted, rgba(0, 0, 0, 0.55));
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.workspace-agents-status-panel__detail-subagent-log-entry--latest {
+  color: var(--tutti-text-primary, rgba(0, 0, 0, 0.85));
+}
+
+.workspace-agents-status-panel__detail-subagent-log-entry--tool {
+  font-family: var(--tutti-font-mono, ui-monospace, monospace);
+}
+
+.workspace-agents-status-panel__detail-subagent-log-entry--failure {
+  color: var(--tutti-status-danger, #c0392b);
+}
+
+.workspace-agents-status-panel__detail-subagent-log-omitted {
+  color: var(--tutti-text-muted, rgba(0, 0, 0, 0.45));
+  font-size: 11px;
+  font-style: italic;
+}

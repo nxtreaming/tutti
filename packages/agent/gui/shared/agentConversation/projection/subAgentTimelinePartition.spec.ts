@@ -131,7 +131,7 @@ describe("subAgentTimelinePartition", () => {
         expect.objectContaining({
           ownerThreadId: "child-thread-1",
           status: "running",
-          title: "spawnAgent",
+          name: null,
           task: "inspect the repository",
           latestActivity: "Run command",
           latestActivityKind: "tool",
@@ -321,6 +321,45 @@ describe("subAgentTimelinePartition", () => {
       expect(
         buildSubAgentLanesByCallId(partition).get("spawn-1")?.[0]?.status
       ).toBe("running");
+    });
+
+    it("titles the lane from the subAgentName marker and hides markers from the log", () => {
+      const partition = partitionSubAgentTimelineItems([
+        collabCardItem({
+          id: 10,
+          eventId: "spawn-1-started",
+          callId: "spawn-1",
+          status: "running",
+          occurredAtUnixMs: 100
+        }),
+        childAssistantItem({
+          id: 11,
+          eventId: "child-msg-1",
+          ownerThreadId: "child-thread-1",
+          text: "working",
+          occurredAtUnixMs: 150
+        }),
+        timelineItem({
+          id: 12,
+          eventId: "child-name-1",
+          itemType: "message.assistant",
+          role: "assistant",
+          payload: {
+            ownerThreadId: "child-thread-1",
+            messageKind: "subAgentName",
+            subAgentName: "Repo smell analyst"
+          },
+          occurredAtUnixMs: 160
+        })
+      ]);
+
+      const lane = buildSubAgentLanesByCallId(partition).get("spawn-1")?.[0];
+
+      expect(lane?.name).toBe("Repo smell analyst");
+      // Markers are meta: they must not appear in the activity log or as the
+      // latest activity.
+      expect(lane?.activityLog.map((entry) => entry.text)).toEqual(["working"]);
+      expect(lane?.latestActivity).toBe("working");
     });
 
     it("marks lanes completed from child terminal markers", () => {

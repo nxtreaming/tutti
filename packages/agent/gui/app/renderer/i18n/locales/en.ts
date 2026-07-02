@@ -1359,6 +1359,8 @@ export const en = {
         delegateSession: "Delegate session",
         subAgents: "Sub-agents",
         subAgentStarting: "Starting…",
+        subAgentFallbackName: "Sub-agent",
+        subAgentEarlierOmitted: "{{count}} earlier steps omitted",
         subAgentTask: "TASK",
         subAgentProgress: "PROGRESS",
         missingFailureDetails: "The provider reported failure without details.",
