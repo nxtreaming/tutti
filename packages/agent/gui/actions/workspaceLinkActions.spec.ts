@@ -314,20 +314,20 @@ describe("resolveWorkspaceMentionLinkAction", () => {
 
   it("resolves clickable registered custom mentions to open-custom-mention", () => {
     registerAgentCustomMentionKind({
-      kind: "room-message",
+      kind: "external-note",
       clickable: true,
       present: (mention) => ({ name: mention.label })
     });
     try {
       expect(
         resolveWorkspaceMentionLinkAction({
-          href: "mention://room-message/msg-a?count=2&ids=msg-a%2Cmsg-b&preview=222&roomId=room-1",
+          href: "mention://external-note/note-a?ids=note-a%2Cnote-b&preview=hello&spaceId=space-1",
           source: "agent-markdown"
         })
       ).toEqual({
         type: "open-custom-mention",
-        kind: "room-message",
-        href: "mention://room-message/msg-a?count=2&ids=msg-a%2Cmsg-b&preview=222&roomId=room-1",
+        kind: "external-note",
+        href: "mention://external-note/note-a?ids=note-a%2Cnote-b&preview=hello&spaceId=space-1",
         source: "agent-markdown"
       });
     } finally {
@@ -337,13 +337,13 @@ describe("resolveWorkspaceMentionLinkAction", () => {
 
   it("does not resolve non-clickable registered custom mentions", () => {
     registerAgentCustomMentionKind({
-      kind: "room-message",
+      kind: "external-note",
       present: (mention) => ({ name: mention.label })
     });
     try {
       expect(
         resolveWorkspaceMentionLinkAction({
-          href: "mention://room-message/msg-a?roomId=room-1",
+          href: "mention://external-note/note-a?spaceId=space-1",
           source: "agent-markdown"
         })
       ).toBeNull();
@@ -355,7 +355,7 @@ describe("resolveWorkspaceMentionLinkAction", () => {
   it("does not resolve unregistered custom mention kinds", () => {
     expect(
       resolveWorkspaceMentionLinkAction({
-        href: "mention://room-message/msg-a?roomId=room-1",
+        href: "mention://external-note/note-a?spaceId=space-1",
         source: "agent-markdown"
       })
     ).toBeNull();

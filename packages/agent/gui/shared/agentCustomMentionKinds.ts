@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 // 自定义 mention kind 注册表:让宿主(如 tsh)从外部注册 mention://<kind>/... 链接的
-// 解析与 composer 内 chip 渲染,包内不再内置具体业务 kind(如 room-message)。
+// 解析与 composer 内 chip 渲染,包内不内置任何具体业务 kind。
 //
 // 管线接点:
 // - 解析:agentFileMentionExtension.parseMentionItemFromHref 命中注册 kind 时产出

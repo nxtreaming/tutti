@@ -13,11 +13,7 @@ import {
 } from "./lib/reactDiagnostics";
 import { createRendererDiagnosticSink } from "./app/windows/createRendererDiagnosticsContainer";
 import { DesktopToastProvider } from "./lib/toast";
-import { registerDesktopCustomMentionKinds } from "./features/workspace-agent/services/desktopCustomMentionKinds";
 import "./style.css";
-
-// 自定义 mention kind 须在首个 composer 挂载前注册(模块级注册表)。
-registerDesktopCustomMentionKinds();
 
 const root = document.querySelector<HTMLDivElement>("#app");
 

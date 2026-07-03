@@ -75,26 +75,26 @@ describe("parseAgentMentionMarkdown", () => {
 
   it("parses registered custom mention kinds into custom items", () => {
     registerAgentCustomMentionKind({
-      kind: "room-message",
+      kind: "external-note",
       present: (mention) => ({
         name: mention.label,
         summary: mention.scope?.preview?.trim() || undefined,
-        workspaceId: mention.scope?.roomId?.trim() || undefined
+        workspaceId: mention.scope?.spaceId?.trim() || undefined
       })
     });
     try {
       expect(
         parseAgentMentionMarkdown(
-          "[@郑伟滨 的 2 条群聊消息](mention://room-message/msg-a?count=2&ids=msg-a%2Cmsg-b&preview=222&roomId=room-1)"
+          "[@两条外部笔记](mention://external-note/note-a?ids=note-a%2Cnote-b&preview=hello&spaceId=space-1)"
         )
       ).toMatchObject({
         item: {
           kind: "custom",
-          customKind: "room-message",
-          workspaceId: "room-1",
-          targetId: "msg-a",
-          summary: "222",
-          name: "郑伟滨 的 2 条群聊消息"
+          customKind: "external-note",
+          workspaceId: "space-1",
+          targetId: "note-a",
+          summary: "hello",
+          name: "两条外部笔记"
         }
       });
     } finally {
@@ -105,32 +105,32 @@ describe("parseAgentMentionMarkdown", () => {
   it("rejects unregistered custom mention kinds", () => {
     expect(
       parseAgentMentionMarkdown(
-        "[@郑伟滨 的 2 条群聊消息](mention://room-message/msg-a?roomId=room-1)"
+        "[@两条外部笔记](mention://external-note/note-a?spaceId=space-1)"
       )
     ).toBeNull();
   });
 
   it("round-trips custom items through attrs", () => {
     registerAgentCustomMentionKind({
-      kind: "room-message",
+      kind: "external-note",
       present: (mention) => ({
         name: mention.label,
         summary: mention.scope?.preview?.trim() || undefined,
-        workspaceId: mention.scope?.roomId?.trim() || undefined
+        workspaceId: mention.scope?.spaceId?.trim() || undefined
       })
     });
     try {
       const href =
-        "mention://room-message/msg-a?count=2&ids=msg-a%2Cmsg-b&preview=222&roomId=room-1";
+        "mention://external-note/note-a?ids=note-a%2Cnote-b&preview=hello&spaceId=space-1";
       const parsed = parseMentionItemFromHref({
-        name: "郑伟滨 的 2 条群聊消息",
+        name: "两条外部笔记",
         href
       });
       expect(parsed).not.toBeNull();
       expect(attrsToMentionItem(mentionItemToAttrs(parsed!))).toEqual(parsed);
       // markdown 序列化走 default 分支(canonical href round-trip 无损)。
       expect(formatAgentMentionMarkdown(parsed!)).toContain(
-        "mention://room-message/msg-a"
+        "mention://external-note/note-a"
       );
     } finally {
       resetAgentCustomMentionKindsForTests();

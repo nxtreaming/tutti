@@ -140,49 +140,11 @@ export async function runDesktopAgentGUILinkAction(
         workspaceId: dependencies.workspaceId
       });
     }
-    case "open-custom-mention": {
-      // 宿主侧二次解析自定义 mention:desktop 目前只认识群聊消息引用
-      // (mention://room-message),打开群聊应用并定位到首条消息。
-      if (action.kind !== "room-message" || !dependencies.launchGroupChat) {
-        return false;
-      }
-      const roomMessage = parseRoomMessageMentionHref(action.href);
-      if (!roomMessage || roomMessage.roomId !== dependencies.workspaceId) {
-        return false;
-      }
-      return dependencies.launchGroupChat({
-        messageId: roomMessage.firstMessageId,
-        workspaceId: dependencies.workspaceId
-      });
-    }
+    case "open-custom-mention":
+      // 宿主注册的自定义 mention 的点击动作:desktop 宿主目前未注册任何自定义 kind,
+      // 统一不处理(具体 kind 的注册与落地都由各宿主自行实现)。
+      return false;
   }
-}
-
-// mention://room-message/<firstId>?ids=...&roomId=... 的宿主侧解析
-// (协议契约见 tsh 仓 openspecs/proposals/room-message-mention-contract.md)。
-function parseRoomMessageMentionHref(
-  href: string
-): { roomId: string; firstMessageId: string } | null {
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return null;
-  }
-  if (url.hostname.trim().toLowerCase() !== "room-message") {
-    return null;
-  }
-  const roomId = url.searchParams.get("roomId")?.trim() ?? "";
-  const ids = (url.searchParams.get("ids") ?? "")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const firstMessageId =
-    ids[0] ?? decodeURIComponent(url.pathname.replace(/^\//, "")).trim();
-  if (!roomId || !firstMessageId) {
-    return null;
-  }
-  return { roomId, firstMessageId };
 }
 
 type WorkspaceIssueManagerLaunchInput = Parameters<
