@@ -2105,14 +2105,12 @@ func (a *CodexAppServerAdapter) pauseActiveGoalForCancel(session Session) []acti
 		goal["status"] = "paused"
 		a.applyGoalUpdate(agentSessionID, goal)
 	}
+	// No transcript notice: pausing is a deliberate action and the banner
+	// already reflects the paused state; repeated stops would spam the
+	// timeline.
 	events := []activityshared.Event{}
 	if event, ok := acpGoalUpdatedEvent(session, "thread_goal_update"); ok {
 		events = append(events, event)
-	}
-	if noticeTurnID := a.sessionMarkerTurnID(agentSessionID); noticeTurnID != "" {
-		if notice := appServerGoalStatusNoticeEvent(session, noticeTurnID, "paused"); notice != nil {
-			events = append(events, *notice)
-		}
 	}
 	return events
 }

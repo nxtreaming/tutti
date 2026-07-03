@@ -2827,6 +2827,71 @@ func TestControllerCancelDuringGoalKeepsSettledState(t *testing.T) {
 	}
 }
 
+// Metadata-only session updates (usage/goal refreshes) must not flap an
+// adopted turn's status back to ready mid-turn: adopted turns have no
+// controller turn record, so they don't get preserveActiveTurnStatus's
+// protection and rely on the sink's lifecycle guard.
+func TestControllerAdoptedTurnStatusSurvivesMetadataEvents(t *testing.T) {
+	t.Parallel()
+
+	transport := newScriptedAppServerTransport()
+	adapter := NewCodexAppServerAdapter(transport)
+	controller := NewController([]Adapter{adapter}, nil)
+	started, err := controller.Start(context.Background(), StartInput{
+		RoomID:   "room-1",
+		Provider: ProviderCodex,
+		CWD:      "/workspace",
+		Title:    "Codex",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	agentSessionID := started.Session.AgentSessionID
+	adapter.applyGoalUpdate(agentSessionID, map[string]any{
+		"objective": "ship it",
+		"status":    "active",
+	})
+
+	// Codex self-starts a goal continuation turn; the reducer adopts it.
+	transport.conn.notify(appServerNotifyTurnStarted, map[string]any{
+		"threadId": "codex-thread-1",
+		"turn":     map[string]any{"id": "turn-goal-1", "status": "inProgress", "items": []any{}},
+	})
+	waitForCondition(t, func() bool {
+		session, ok := controller.get("room-1", agentSessionID)
+		return ok && session.Status == SessionStatusWorking
+	})
+
+	// Usage and goal refreshes arrive every few seconds during a turn.
+	transport.conn.notify(appServerNotifyTokenUsage, map[string]any{
+		"threadId":   "codex-thread-1",
+		"tokenUsage": map[string]any{"total": map[string]any{"totalTokens": 42}},
+	})
+	transport.conn.notify(appServerNotifyThreadGoalUpdated, map[string]any{
+		"threadId": "codex-thread-1",
+		"goal": map[string]any{
+			"objective": "ship it marker",
+			"status":    "active",
+		},
+	})
+	waitForCondition(t, func() bool {
+		return asStringRaw(adapter.sessionGoal(agentSessionID)["objective"]) == "ship it marker"
+	})
+	session, ok := controller.get("room-1", agentSessionID)
+	if !ok || session.Status != SessionStatusWorking {
+		t.Fatalf("status flapped during adopted turn: %q", session.Status)
+	}
+
+	transport.conn.notify(appServerNotifyTurnCompleted, map[string]any{
+		"threadId": "codex-thread-1",
+		"turn":     map[string]any{"id": "turn-goal-1", "status": "completed", "items": []any{}},
+	})
+	waitForCondition(t, func() bool {
+		session, ok := controller.get("room-1", agentSessionID)
+		return ok && session.Status != SessionStatusWorking
+	})
+}
+
 // Direct goal control (banner buttons) is a session-level operation: no
 // prompt, no turn, works whether or not a turn is running.
 func TestControllerGoalControl(t *testing.T) {

@@ -2711,12 +2711,22 @@ func (c *Controller) applySessionEventsByAgentSessionID(agentSessionID string, e
 		c.mu.Unlock()
 		return
 	}
+	previousStatus := session.Status
 	session = applySessionEvents(session, events)
 	// Adapter-initiated turns (goal continuation adoption) reach the
 	// controller only through this sink; apply their lifecycle so the GUI's
 	// stop button and submit availability track them like Exec-driven turns.
 	session = applyTurnLifecycleFromEvents(session, events)
 	session.Status = deriveSessionStatusFromEvents(events, session.Status)
+	// Metadata-only session updates (usage/goal refreshes) default to ready;
+	// while the lifecycle reports an active turn that would flap the status
+	// to idle mid-turn (Exec turns get the same protection from
+	// preserveActiveTurnStatus).
+	if session.Status == SessionStatusReady &&
+		session.TurnLifecycle != nil &&
+		session.TurnLifecycle.ActiveTurnID != nil {
+		session.Status = firstNonEmpty(previousStatus, SessionStatusWorking)
+	}
 	if shouldAdvanceSessionUpdatedAtFromEvents(events) {
 		session.UpdatedAtUnixMS = unixMS(now())
 	}

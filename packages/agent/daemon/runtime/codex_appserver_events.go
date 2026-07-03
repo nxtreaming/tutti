@@ -1706,12 +1706,13 @@ func appServerGoalNoticeEvent(session Session, turnID string, method string, res
 }
 
 // appServerGoalStatusNoticeEvent describes a goal status transition into a
-// non-progressing state, so the user learns why the goal stopped advancing.
+// non-progressing state the user did not ask for, so they learn why the goal
+// stopped advancing. Deliberate transitions (paused via Stop or the banner)
+// emit nothing: the banner already shows the state and repeated toggles would
+// spam the transcript.
 func appServerGoalStatusNoticeEvent(session Session, turnID string, newStatus string) *activityshared.Event {
 	title := ""
 	switch newStatus {
-	case "paused":
-		title = "Goal paused — resume it from the goal banner or with /goal active."
 	case "blocked":
 		title = "Goal blocked — the agent cannot continue without help."
 	case "usageLimited":
