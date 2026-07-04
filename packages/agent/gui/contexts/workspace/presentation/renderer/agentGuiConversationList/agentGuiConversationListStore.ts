@@ -1349,12 +1349,38 @@ async function refreshAgentGUIConversationListQuery(
         conversation
       ])
     );
-    const retainableForQueryFilter = (agentSessionId: string): boolean =>
-      conversationRetainableForQueryFilter(
+    const snapshotSessionAgentTargetIdById = new Map(
+      workspaceAgentSnapshot.sessions.flatMap((session) => {
+        const agentSessionId = session.agentSessionId.trim();
+        const agentTargetId = session.agentTargetId?.trim() ?? "";
+        return agentSessionId && agentTargetId
+          ? [[agentSessionId, agentTargetId] as const]
+          : [];
+      })
+    );
+    const retainableForQueryFilter = (agentSessionId: string): boolean => {
+      const filter = state.query.conversationFilter;
+      if (!filter || filter.kind !== "agentTarget") {
+        return true;
+      }
+      // The fresh snapshot session's target is authoritative over a possibly
+      // stale current summary.
+      const snapshotAgentTargetId =
+        snapshotSessionAgentTargetIdById.get(agentSessionId);
+      if (snapshotAgentTargetId) {
+        return snapshotAgentTargetId === filter.agentTargetId;
+      }
+      return conversationRetainableForQueryFilter(
         currentConversationsById.get(agentSessionId),
-        state.query.conversationFilter
+        filter
       );
-    const retainedSessionIds = new Set(retainedSnapshotSessionIds);
+    };
+    // Retention must never resurrect a row that contradicts this query's
+    // agent-target filter: the snapshot spans the whole workspace, so its
+    // session ids are filtered here as well.
+    const retainedSessionIds = new Set(
+      [...retainedSnapshotSessionIds].filter(retainableForQueryFilter)
+    );
     if (reason === "workspace-agent-update") {
       for (const conversation of currentConversations) {
         if (
