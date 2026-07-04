@@ -338,6 +338,24 @@ export const zhCN = {
       followupPlaceholder: "要求 {{provider}} 继续后续变更",
       installRequiredPlaceholder: "请先完成 {{provider}} 配置，然后再发送消息",
       installRequiredAction: "设置",
+      providerGateCheckingTitle: "正在检查 Agent",
+      providerGateCheckingDescription:
+        "稍等一下，我们正在确认 {{provider}} 是否已经可用。",
+      providerGateInstallTitle: "先安装 {{provider}}",
+      providerGateInstallDescription:
+        "需要先安装 {{provider}}，才能在这里开始新的对话。",
+      providerGateInstallAction: "安装",
+      providerGateLoginTitle: "登录 {{provider}}",
+      providerGateLoginDescription:
+        "{{provider}} 已安装。先完成一次登录，然后就可以开始对话。",
+      providerGateLoginAction: "登录",
+      providerGateUnavailableTitle: "{{provider}} 暂时还不可用",
+      providerGateUnavailableDescription:
+        "我们还不能确认 {{provider}} 已准备好，可以再检测一次。",
+      providerGateRetryAction: "重新检测",
+      providerGatePendingInstall: "正在安装…",
+      providerGatePendingLogin: "正在打开登录…",
+      providerGatePendingRefresh: "正在检测…",
       collaboratorSessionReadOnlyPlaceholder: "非当前用户会话，不可直接对话",
       send: "发送",
       modelLabel: "模型",
@@ -738,6 +756,9 @@ export const zhCN = {
       systemNoticeTransportFallback: "Codex 已切换到 HTTPS 传输",
       systemNoticeWarning: "Codex 警告",
       systemNoticeDefault: "Agent 通知",
+      contextCompactionInProgress: "正在压缩上下文",
+      contextCompactionCompleted: "已压缩上下文",
+      contextCompactionInterrupted: "上下文压缩已中断",
       turnSummary: "已变更文件",
       userMessageLocator: "用户消息",
       turnSummaryFilesChanged: "变更了 {{count}} 个文件",
@@ -861,6 +882,7 @@ export const zhCN = {
       fileMentionTabHint: "Tab 切换分类 ｜ ←→ 进入/返回文件夹 ｜ ↑↓ 切换选中",
       mentionPalette: "提及上下文",
       addReference: "添加引用",
+      addContent: "添加文件等内容",
       referenceWorkspaceFiles: "引用空间文件",
       referencePicker: {
         clearFilter: "清除筛选",

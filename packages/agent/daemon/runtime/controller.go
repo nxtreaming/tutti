@@ -1433,7 +1433,9 @@ func (c *Controller) foldTurnSessionEvents(session Session, events []activitysha
 	}
 	session = applySessionEvents(session, events)
 	session = applyTurnLifecycleFromEvents(session, events)
-	if execTurnID != "" {
+	if turnEventsAreTerminal(events) {
+		session = reconcileFinishedTurnStatus(session)
+	} else if execTurnID != "" {
 		session = c.preserveActiveTurnStatus(session, execTurnID, previousStatus)
 	}
 	return session
@@ -1908,16 +1910,32 @@ func (c *Controller) reconcileSessionStatusLocked(key string, session Session) S
 	if sessionHasLiveTurnLifecycle(session) {
 		return session
 	}
+	return reconcileFinishedTurnStatus(session)
+}
+
+func reconcileFinishedTurnStatus(session Session) Session {
+	if sessionHasLiveTurnLifecycle(session) {
+		return session
+	}
 	if sessionHasLiveBackgroundAgents(session) {
 		session.Status = SessionStatusWorking
 		session.SubmitAvailability = blockedSubmitAvailability("background_agent")
 		return session
 	}
-	if session.Status != SessionStatusWorking {
-		return session
+	if session.Status == SessionStatusWorking {
+		session.Status = SessionStatusReady
 	}
-	session.Status = SessionStatusReady
 	return session
+}
+
+func turnEventsAreTerminal(events []activityshared.Event) bool {
+	for _, event := range events {
+		switch event.Type {
+		case activityshared.EventTurnCompleted, activityshared.EventTurnFailed:
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Controller) UpdateSettings(ctx context.Context, input UpdateSettingsInput) (UpdateSettingsResult, error) {

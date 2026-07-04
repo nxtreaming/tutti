@@ -6,9 +6,10 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type FocusEvent as ReactFocusEvent,
   type FormEvent
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import type { AgentSessionCommand } from "../../shared/agentSessionTypes";
 import type { UiLanguage } from "../../contexts/settings/domain/agentSettings";
 import type {
@@ -22,8 +23,7 @@ import type {
 import {
   Popover,
   PopoverAnchor,
-  PopoverContent,
-  PopoverTrigger
+  PopoverContent
 } from "../../app/renderer/components/ui/popover";
 import { Spinner } from "../../app/renderer/components/ui/spinner";
 import {
@@ -222,6 +222,7 @@ export interface AgentComposerProps {
   uiLanguage?: UiLanguage;
   isActive?: boolean;
   previewMode?: boolean;
+  workspaceReferencePickerOpen?: boolean;
   promptImagesSupported?: boolean;
   composerFocusRequestSequence?: number | null;
   layoutMode?: "dock" | "hero";
@@ -358,6 +359,7 @@ export interface AgentComposerProps {
     mentionPalette: string;
     removeMention: string;
     addReference: string;
+    addContent: string;
     referenceWorkspaceFiles: string;
     providerSwitchLabel: string;
     projectLocked: string;
@@ -549,6 +551,7 @@ function AgentUsageChip({
   const usagePopoverHoverTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const usagePopoverContentRef = useRef<HTMLDivElement | null>(null);
   const clampedPercent = Math.max(0, Math.min(100, percentUsed));
   const chipLabel = labels.usageChipLabel({ percent: clampedPercent });
   const showTokens = usedTokens !== null && totalTokens !== null;
@@ -605,6 +608,25 @@ function AgentUsageChip({
     },
     [closeUsagePopover, openUsagePopover]
   );
+  const handleUsageTriggerBlur = useCallback(
+    (event: ReactFocusEvent<HTMLButtonElement>) => {
+      const nextFocusTarget = event.relatedTarget;
+      if (
+        nextFocusTarget instanceof Node &&
+        usagePopoverContentRef.current?.contains(nextFocusTarget)
+      ) {
+        clearUsagePopoverHoverTimer();
+        clearUsagePopoverCloseTimer();
+        return;
+      }
+      closeUsagePopover();
+    },
+    [
+      clearUsagePopoverCloseTimer,
+      clearUsagePopoverHoverTimer,
+      closeUsagePopover
+    ]
+  );
 
   useEffect(
     () => () => {
@@ -623,8 +645,7 @@ function AgentUsageChip({
       )}
       data-testid="agent-gui-usage-chip"
       data-usage-level={usageLevel}
-      onBlur={tooltipsEnabled ? closeUsagePopover : undefined}
-      onClick={tooltipsEnabled ? openUsagePopover : undefined}
+      onBlur={tooltipsEnabled ? handleUsageTriggerBlur : undefined}
       onFocus={tooltipsEnabled ? openUsagePopoverAfterHoverDelay : undefined}
       onPointerEnter={(event) => {
         if (tooltipsEnabled && event.pointerType !== "touch") {
@@ -653,9 +674,10 @@ function AgentUsageChip({
       open={usagePopoverOpen}
       onOpenChange={handleUsagePopoverOpenChange}
     >
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverAnchor asChild>{trigger}</PopoverAnchor>
       {usagePopoverOpen ? (
         <PopoverContent
+          ref={usagePopoverContentRef}
           side="bottom"
           align="end"
           className="w-[320px] max-w-[calc(100vw-32px)] gap-3 text-xs"
@@ -832,6 +854,7 @@ export function AgentComposer({
   uiLanguage = "en",
   isActive = true,
   previewMode = false,
+  workspaceReferencePickerOpen = false,
   promptImagesSupported = true,
   composerFocusRequestSequence = null,
   layoutMode = "dock",
@@ -1810,7 +1833,7 @@ export function AgentComposer({
   );
 
   useEffect(() => {
-    if (!showPalette) {
+    if (!showPalette || workspaceReferencePickerOpen) {
       return;
     }
     const handleDocumentKeyDown = (event: KeyboardEvent): void => {
@@ -1841,7 +1864,7 @@ export function AgentComposer({
         capture: true
       });
     };
-  }, [handlePaletteKeyDown, showPalette]);
+  }, [handlePaletteKeyDown, showPalette, workspaceReferencePickerOpen]);
 
   const handleFileMentionSuggestionChange = useCallback(
     (state: AgentFileMentionSuggestionState | null): void => {
@@ -2206,22 +2229,22 @@ export function AgentComposer({
     ]
   );
 
-  // @ 面板里点任务/应用行的「查看产物」入口:关掉面板,打开引用 picker 并定位到该实体;
+  // @ 面板里点任务/应用行的「查看产物」入口:保留面板,打开引用 picker 并定位到该实体;
   // 选中的文件仍按常规插入,但不会把该任务/应用本身作为 mention 插入。
   const handleOpenReferencesForEntity = useCallback(
     (entity: AgentContextMentionItem): void => {
-      clearActiveFileMentionTrigger();
-      closeFileMentionPalette();
       if (!onRequestWorkspaceReferences) {
         return;
       }
-      void onRequestWorkspaceReferences(entity).then((result) =>
-        applyReferencePickResult(result)
-      );
+      void onRequestWorkspaceReferences(entity).then((result) => {
+        if (result.files.length > 0 || result.mentionItems.length > 0) {
+          flushSync(clearActiveFileMentionTrigger);
+        }
+        return applyReferencePickResult(result);
+      });
     },
     [
       clearActiveFileMentionTrigger,
-      closeFileMentionPalette,
       applyReferencePickResult,
       onRequestWorkspaceReferences
     ]
@@ -3233,58 +3256,74 @@ export function AgentComposer({
             <div className={composerStyles.footerGroup}>
               <div className="inline-flex shrink-0 items-center gap-1">
                 {previewMode ? (
-                  <button
-                    type="button"
-                    aria-label={labels.referenceWorkspaceFiles}
-                    title={labels.referenceWorkspaceFiles}
-                    className={cn(
-                      styles.composerMenuTrigger,
-                      styles.composerReferenceTrigger,
-                      "w-auto justify-center text-[var(--agent-gui-text-secondary)] [&_svg]:shrink-0"
-                    )}
-                  >
-                    <AddIcon
-                      aria-hidden
-                      className="size-3.5"
-                      data-agent-reference-add-icon="true"
-                    />
-                  </button>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={labels.referenceWorkspaceFiles}
+                          className={cn(
+                            styles.composerMenuTrigger,
+                            styles.composerReferenceTrigger,
+                            "w-auto justify-center text-[var(--agent-gui-text-secondary)] [&_svg]:shrink-0"
+                          )}
+                        >
+                          <AddIcon
+                            aria-hidden
+                            className="size-3.5"
+                            data-agent-reference-add-icon="true"
+                          />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        {labels.addContent}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 ) : (
-                  <Select
-                    open={false}
-                    value={workspaceReferenceSelectValue}
-                    disabled={
-                      !onRequestWorkspaceReferences ||
-                      composerControlsHardDisabled
-                    }
-                    onOpenChange={(isOpen) => {
-                      if (isOpen) {
-                        void handleWorkspaceReferencePicker();
-                      }
-                    }}
-                    onValueChange={(nextValue) => {
-                      if (nextValue === workspaceReferenceOptionValue) {
-                        void handleWorkspaceReferencePicker();
-                      }
-                    }}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      aria-label={labels.referenceWorkspaceFiles}
-                      title={labels.referenceWorkspaceFiles}
-                      className={cn(
-                        styles.composerMenuTrigger,
-                        styles.composerReferenceTrigger,
-                        "w-auto justify-center text-[var(--agent-gui-text-secondary)] [&>svg:last-child]:hidden [&_svg]:shrink-0"
-                      )}
-                    >
-                      <AddIcon
-                        aria-hidden
-                        className="size-3.5"
-                        data-agent-reference-add-icon="true"
-                      />
-                    </SelectTrigger>
-                  </Select>
+                  <TooltipProvider delayDuration={120}>
+                    <Tooltip>
+                      <Select
+                        open={false}
+                        value={workspaceReferenceSelectValue}
+                        disabled={
+                          !onRequestWorkspaceReferences ||
+                          composerControlsHardDisabled
+                        }
+                        onOpenChange={(isOpen) => {
+                          if (isOpen) {
+                            void handleWorkspaceReferencePicker();
+                          }
+                        }}
+                        onValueChange={(nextValue) => {
+                          if (nextValue === workspaceReferenceOptionValue) {
+                            void handleWorkspaceReferencePicker();
+                          }
+                        }}
+                      >
+                        <TooltipTrigger asChild>
+                          <SelectTrigger
+                            size="sm"
+                            aria-label={labels.referenceWorkspaceFiles}
+                            className={cn(
+                              styles.composerMenuTrigger,
+                              styles.composerReferenceTrigger,
+                              "w-auto justify-center text-[var(--agent-gui-text-secondary)] [&>svg:last-child]:hidden [&_svg]:shrink-0"
+                            )}
+                          >
+                            <AddIcon
+                              aria-hidden
+                              className="size-3.5"
+                              data-agent-reference-add-icon="true"
+                            />
+                          </SelectTrigger>
+                        </TooltipTrigger>
+                      </Select>
+                      <TooltipContent side="top">
+                        {labels.addContent}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
                 <button
                   type="button"

@@ -818,7 +818,8 @@ func statePatchFromSessionEvent(source agentsessionstore.EventSource, event acti
 			patch.Turn.Phase = firstNonEmptyString(patch.Turn.Phase, patch.CurrentPhase)
 		}
 	case activityshared.EventTurnFailed:
-		patch.CurrentPhase = firstNonEmptyString(patch.CurrentPhase, string(activityshared.TurnPhaseFailed))
+		patch.LifecycleStatus = firstNonEmptyString(patch.LifecycleStatus, string(activityshared.SessionLifecycleStatusActive))
+		patch.CurrentPhase = firstNonEmptyString(patch.CurrentPhase, string(activityshared.TurnPhaseIdle))
 		if patch.Turn != nil {
 			patch.Turn.CompletedAtUnixMS = timestamp
 			patch.Turn.Phase = firstNonEmptyString(patch.Turn.Phase, patch.CurrentPhase)
@@ -977,7 +978,7 @@ func currentPhaseForSnapshotPhase(phase string, outcome string) string {
 }
 
 func applyExplicitTurnLifecycleToPatch(patch *agentsessionstore.WorkspaceAgentStatePatch, event activityshared.Event) {
-	if patch == nil || strings.TrimSpace(patch.Provider) != ProviderCodex {
+	if patch == nil || !providerUsesExplicitTurnLifecyclePatch(patch.Provider) {
 		return
 	}
 	turnID := strings.TrimSpace(event.Payload.TurnID)
@@ -994,6 +995,7 @@ func applyExplicitTurnLifecycleToPatch(patch *agentsessionstore.WorkspaceAgentSt
 	if lifecyclePhase == "settled" {
 		turnActive = nil
 		outcome = codexLifecycleOutcomeFromActivityEvent(event)
+		patch.CurrentPhase = string(activityshared.TurnPhaseIdle)
 	}
 	if patch.Turn == nil {
 		patch.Turn = &agentsessionstore.WorkspaceAgentTurnPatch{TurnID: turnID}
@@ -1014,6 +1016,15 @@ func applyExplicitTurnLifecycleToPatch(patch *agentsessionstore.WorkspaceAgentSt
 	}
 	if outcome != "" {
 		patch.TurnLifecycle.Outcome = &outcome
+	}
+}
+
+func providerUsesExplicitTurnLifecyclePatch(provider string) bool {
+	switch strings.TrimSpace(provider) {
+	case ProviderClaudeCode, ProviderCodex:
+		return true
+	default:
+		return false
 	}
 }
 

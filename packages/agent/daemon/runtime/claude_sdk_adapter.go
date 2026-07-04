@@ -31,6 +31,7 @@ const (
 	claudeSDKSidecarAdapterName    = "claude-agent-sdk"
 	claudeSDKSidecarDefaultNodeArg = "--experimental-strip-types"
 	claudeSDKDefaultContextWindow  = int64(200000)
+	claudeSDKAuthRefreshLogPrefix  = "CLAUDE_CODE_AUTH_REFRESH_DEBUG"
 )
 
 type ClaudeCodeSDKAdapter struct {
@@ -1664,10 +1665,32 @@ func claudeSDKContextWindowTokens(payload map[string]any) int64 {
 	); ok {
 		return total
 	}
-	modelUsage, _ := payload["modelUsage"].([]any)
-	for _, item := range modelUsage {
-		if candidate, ok := item.(map[string]any); ok {
-			if total := claudeSDKContextWindowTokens(candidate); total > 0 {
+	if total := claudeSDKContextWindowTokensFromValue(payload["modelUsage"]); total > 0 {
+		return total
+	}
+	return 0
+}
+
+func claudeSDKContextWindowTokensFromValue(value any) int64 {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if total := claudeSDKContextWindowTokensFromValue(item); total > 0 {
+				return total
+			}
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			if total := claudeSDKContextWindowTokens(item); total > 0 {
+				return total
+			}
+		}
+	case map[string]any:
+		if total := claudeSDKContextWindowTokens(typed); total > 0 {
+			return total
+		}
+		for _, item := range typed {
+			if total := claudeSDKContextWindowTokensFromValue(item); total > 0 {
 				return total
 			}
 		}
@@ -1769,6 +1792,7 @@ func (r *claudeSDKLineReader) next(ctx context.Context) (claudeSDKSidecarEvent, 
 			return claudeSDKSidecarEvent{}, err
 		}
 		if len(frame.Stderr) > 0 {
+			logClaudeSDKSidecarDebugStderr(frame.Stderr)
 			continue
 		}
 		if frame.ExitCode != nil {
@@ -1777,6 +1801,23 @@ func (r *claudeSDKLineReader) next(ctx context.Context) (claudeSDKSidecarEvent, 
 		if len(frame.Stdout) > 0 {
 			r.buffer += string(frame.Stdout)
 		}
+	}
+}
+
+func logClaudeSDKSidecarDebugStderr(content []byte) {
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, claudeSDKAuthRefreshLogPrefix) {
+			continue
+		}
+		payloadJSON := strings.TrimSpace(strings.TrimPrefix(line, claudeSDKAuthRefreshLogPrefix))
+		if payloadJSON == "" {
+			payloadJSON = "{}"
+		}
+		slog.Warn(claudeSDKAuthRefreshLogPrefix,
+			"event", "agent_session.claude_sdk.auth_refresh_debug",
+			"payload_json", payloadJSON,
+		)
 	}
 }
 

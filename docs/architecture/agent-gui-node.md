@@ -180,6 +180,17 @@ setup, follow the rail's active provider filter target in multi-provider scope;
 when the rail filter is `All`, they should stay hidden because there is no
 single provider target to inspect. In legacy single-provider dock scope, the
 same footer continues to use the node/session provider.
+Unified empty-home provider readiness is a host-projected, provider-scoped gate,
+not a durable session rule. Desktop may subscribe to its
+`agentProviderStatusService` and pass a narrow readiness map plus install,
+login, or refresh callbacks into AgentGUI only when `agentDockLayout` is
+`unified`. AgentGUI resolves the gate from the selected
+`AgentGUIProviderTarget.provider` first, from `agentTargetId` through the
+current provider target list second, and from legacy node/session `provider`
+only when no target can be resolved. A non-ready provider replaces only the
+empty-home composer with a friendly gate; active/history conversations,
+existing-session composer behavior, and the legacySplit dock hover
+install/login chain remain outside this gate.
 
 This means an AgentGUI bug can start at several different interfaces. Do not
 assume that a visible UI symptom starts in the visible UI component.
@@ -426,6 +437,31 @@ enter `AgentActivityRuntime`; large workspaces can accumulate hundreds or
 thousands of historical agent sessions, and pushing all of them through the
 runtime snapshot forces AgentGuiNode to repeatedly project and reconcile data
 the user is unlikely to inspect in the rail.
+AgentGUI rail sections are loaded from the daemon section contract, not inferred
+from conversation `cwd` values. The runtime exposes `listSessionSections` for
+section first pages and `listSessionSectionPage` for Show more; both are backed
+by `GET /v1/workspaces/{workspaceID}/agent-session-sections` and
+`GET /v1/workspaces/{workspaceID}/agent-session-sections/page`. Project
+sections come from current `userProjects` and use the stable
+`project:/canonical/path` `sectionKey`; the Chats section uses
+`conversations`. The daemon pages sessions by `rail_section_key`, so AgentGUI
+must render returned section props and use backend `hasMore`/`nextCursor`
+rather than cwd grouping, root filters, excluded project paths, or local
+Show more heuristics. Removing a project removes that rail section from the
+section list; re-adding the same path reveals historical sessions with the same
+section key.
+When the provider rail is scoped to a specific agent target, AgentGUI must pass
+that `agentTargetId` to both section endpoints. The daemon applies that filter
+before `LIMIT` and `hasMore` calculation; frontend filtering after an unscoped
+page is not equivalent and can leave sections with fewer visible rows but a
+stale Show more affordance.
+AgentGUI must not refetch section first pages merely because a user activates a
+conversation, the active detail provider changes, or an existing conversation
+summary receives detail/status/time updates. Those updates should refresh
+already-rendered row props locally while preserving backend section membership.
+First-page section refetches are reserved for workspace, rail filter, user
+project, or session membership changes; Show more continues to use the section
+page endpoint.
 Conversation-list read-state metadata is notification-style UI state. Historical
 imports that carry `runtimeContext.imported === true` should remain visible in
 the rail, but they must not seed unread completion lamps as though they just
@@ -646,6 +682,13 @@ may carry lifecycle status such as `active` while the visible state is derived
 from `currentPhase` or turn lifecycle. Projection layers that bridge into legacy
 Host DTOs must normalize the tuple together, or `active/idle` and
 `active/working` sessions will render as the wrong conversation state.
+Daemon terminal turn reports must settle the tuple atomically: clear
+`turn.activeTurnId` and `turnLifecycle.activeTurnId`, set
+`turnLifecycle.phase` to `settled`, set `currentPhase` to `idle`, and replace an
+`active_turn` submit block with `submitAvailability.state = "available"`.
+Message Center and AgentGUI should keep AgentActivityRuntime as the source of
+truth instead of guessing that a completed turn with stale active-turn fields is
+safe to treat as finished.
 
 When the visible symptom is a sticky error badge on a rail row, dock preview, or
 message-center trigger, also inspect the latest loaded turn messages. A
@@ -833,8 +876,41 @@ User-visible rules:
   and provider options. They should not be reconstructed from transcript rows.
 - Browser/computer capability controls come from daemon composer options and
   live runtime capabilities. `computerUse` must not be advertised or injected
-  unless the daemon can reach the local `cua-driver`; installed/authorization UI
-  is only the setup surface, not the runtime capability source.
+  unless the daemon can reach the local `cua-driver` and its read-only
+  `permissions status --json` reports Accessibility and Screen Recording are
+  granted. Installed/authorization UI is the setup surface and should guide
+  missing macOS grants in order. It may try CuaDriver's grant command, but must
+  keep that call single-flight and bounded by a timeout because macOS may not
+  re-show TCC prompts after a denial. When prompts are unavailable, the UI should
+  open the matching System Settings privacy pane and poll read-only status until
+  the permission state changes. Runtime tool startup must fail fast on missing
+  permission state instead of triggering CuaDriver authorization prompts. Treat
+  `screen_recording=true` with `screen_recording_capturable=false` as a CuaDriver
+  capture-availability problem, not as a promptable Screen Recording grant.
+  Permission setup is a user-driven, linear five-step wizard (install → grant
+  Accessibility → grant Screen Recording → check again → done). Guiding the
+  user's own actions is primary; status reads are auxiliary (per-step chips
+  and the initial-step guess) and must never gate navigation, because every
+  status source is unreliable in some window: `AXIsProcessTrusted` is cached
+  per-process (a fresh Accessibility grant stays invisible to the running
+  daemon), Screen Recording capturability freezes per-process, and toggling
+  Screen Recording kills the daemon outright. The grant command
+  fires-and-forgets only behind the user's explicit "Open Settings" click —
+  its only job is registering CuaDriver in the privacy panes and raising the
+  TCC prompt when macOS still shows one, and because the CLI may open windows
+  of its own it must never run on step entry; it is never awaited and never
+  becomes a blocking operation. The "check
+  again" step reconciles unconditionally: it always restarts the daemon
+  (`cua-driver stop`, relaunch the app bundle via `open -g -a` so the daemon
+  keeps its own TCC identity, then short-poll read-only status), which clears
+  every staleness at once, and passes `force` so a still-confirming grant
+  cannot make it hang. The restart itself must never call the grant command —
+  grant waits on TCC confirmation and would hang a fresh install; prompting
+  stays exclusive to the single-flight grant flow. Completing an install
+  advances the wizard straight into the first grant step. Status reads
+  in the Electron main process are coalesced so overlapping polls share one
+  subprocess, and the renderer re-checks on window focus/visibility and keeps
+  polling while the permission dialog is open and unauthorized.
 - User composer defaults are owned by desktop preferences. AgentGUI may request
   a defaults write only from the home/new composer path, through an explicit host
   callback.
