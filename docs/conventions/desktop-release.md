@@ -209,17 +209,7 @@ External download workers should treat these fields as a fail-closed contract. I
 
 The download worker may expose `channel=preview` and `channel=beta` query parameters for internal links. Missing `channel` must default to `stable`. `channel=preview` must read RC metadata only; it must not fall back to beta.
 
-The tracked Worker source lives at:
-
-```text
-cloudflare/tutti-desktop-download
-```
-
-Deploy it with Wrangler:
-
-```bash
-CLOUDFLARE_API_TOKEN=<token> pnpm dlx wrangler deploy --config cloudflare/tutti-desktop-download/wrangler.toml --env production
-```
+The `tutti-desktop-download` Worker is currently maintained directly in the Cloudflare Dashboard production editor, not in this repository. Update the production Worker there and keep this document aligned with the public contract.
 
 The Worker supports:
 

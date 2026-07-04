@@ -1028,7 +1028,8 @@ RC 是否写入长期 changelog：
 
 ### Step 4：加固 Cloudflare download worker
 
-- 找到 `tutti-desktop-download` worker 源码，并纳入版本管理。
+- 直接在 Cloudflare Dashboard 的 production editor 里更新
+  `tutti-desktop-download` worker；当前 worker 源码不放在这个仓库里维护。
 - worker 读取公共 `latest.json` 后校验它必须是 stable。
 - 没有 query 时默认返回 stable 包。
 - 支持 `channel=stable|preview|beta`：
@@ -1091,8 +1092,8 @@ node --test tools/scripts/desktop-release-changelog.test.mjs
 
 ## 待确认问题
 
-- `tutti-desktop-download` worker 源码现在是否在某个仓库里，还是只在
-  Cloudflare dashboard 里维护？
+- 后续是否要把 `tutti-desktop-download` worker 迁移进仓库版本管理；当前先按
+  Cloudflare dashboard 维护。
 - RC assets 是否需要继续上传到 S3 tag 目录，还是只保留 GitHub Release 下载？
 - QA 是否需要通过自动更新持续收到后续 RC 包，还是固定 RC 下载链接就够？
 - 是否需要增加 “stable draft release” 模式，让 QA 在对外 latest 更新前验证最终正式

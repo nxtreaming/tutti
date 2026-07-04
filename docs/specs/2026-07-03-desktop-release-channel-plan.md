@@ -234,9 +234,9 @@ verified before release.
 
 ### Step 4: Harden External Download Worker
 
-- Locate the worker source of
-  `tutti-desktop-download` and put it under version control if it is not already
-  tracked.
+- Update the production `tutti-desktop-download` Worker directly in the
+  Cloudflare Dashboard, because its source is currently maintained there rather
+  than in this repository.
 - Update the public endpoint to read the stable-only `latest.json`, validate
   that it is not prerelease metadata, and select the intended asset.
 - Consider a private/internal endpoint or parameter for RC downloads only if QA
