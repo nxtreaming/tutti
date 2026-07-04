@@ -152,12 +152,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 
 	analyticsConfig := tuttitypes.ResolveAnalyticsConfig()
-	var debugPublisher reporterservice.DebugPublisher
-	if analyticsConfig.Debug {
-		debugPublisher = analyticsDebugEventPublisher{
-			service: api.EventStreamService,
-		}
-	}
+	debugPublisher := resolveAnalyticsDebugPublisher(analyticsConfig, api.EventStreamService)
 	analyticsReporter, err := reporterservice.New(reporterservice.Config{
 		Analytics:      analyticsConfig,
 		DebugPublisher: debugPublisher,
@@ -172,6 +167,15 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	w.appCenterService = appCenterService
 	w.agentRuntime = agentRuntime
 	return nil
+}
+
+func resolveAnalyticsDebugPublisher(analyticsConfig tuttitypes.AnalyticsConfig, service analyticsDebugEventStream) reporterservice.DebugPublisher {
+	if analyticsConfig.Disabled || service == nil {
+		return nil
+	}
+	return analyticsDebugEventPublisher{
+		service: service,
+	}
 }
 
 func attachAnalyticsReporter(api *tuttiapi.DaemonAPI, analyticsReporter reporterservice.Reporter) {
