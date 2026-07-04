@@ -7310,24 +7310,27 @@ export function useAgentGUINodeController({
           activatedConversationIdsRef.current.add(conversation.id);
           setTransientConversation(conversation);
           if (conversationListQuery) {
-            // Pin the freshly created conversation under the query of its own
-            // target tab, and move the filter there when it points elsewhere:
-            // a conversation must never stay pinned in a tab it does not
-            // belong to.
+            // A conversation must never stay pinned in a tab it does not
+            // belong to: when the current agent-target filter excludes the
+            // created conversation, pin it under its own target tab's query
+            // and move the filter there.
             const createdAgentTargetId =
               normalizeOptionalText(conversation.agentTargetId) ??
               targetData.agentTargetId;
+            const currentQueryFilter = conversationListQuery.conversationFilter;
+            const filterExcludesCreatedConversation =
+              currentQueryFilter?.kind === "agentTarget" &&
+              currentQueryFilter.agentTargetId !== (createdAgentTargetId ?? "");
             const createdConversationFilter: AgentGUIConversationFilter =
               createdAgentTargetId
                 ? { kind: "agentTarget", agentTargetId: createdAgentTargetId }
                 : { kind: "all" };
-            const createdConversationQuery =
-              conversationListQuery.conversationFilter
-                ? {
-                    ...conversationListQuery,
-                    conversationFilter: createdConversationFilter
-                  }
-                : conversationListQuery;
+            const createdConversationQuery = filterExcludesCreatedConversation
+              ? {
+                  ...conversationListQuery,
+                  conversationFilter: createdConversationFilter
+                }
+              : conversationListQuery;
             upsertLocalCreatedAgentGUIConversation({
               query: createdConversationQuery,
               conversation
@@ -7336,13 +7339,8 @@ export function useAgentGUINodeController({
               createdConversationQuery,
               "local-create"
             );
-            if (conversationListQuery.conversationFilter) {
-              setConversationFilter((currentFilter) =>
-                currentFilter.kind === "agentTarget" &&
-                currentFilter.agentTargetId !== (createdAgentTargetId ?? "")
-                  ? createdConversationFilter
-                  : currentFilter
-              );
+            if (filterExcludesCreatedConversation) {
+              setConversationFilter(createdConversationFilter);
             }
           }
           setAgentSessionViewMessagesLoading(
