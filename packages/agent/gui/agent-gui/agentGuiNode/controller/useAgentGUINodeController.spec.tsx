@@ -16331,6 +16331,19 @@ function installAgentActivityRuntimeForHostMocks({
       );
       return result;
     },
+    async goalControl(input) {
+      return {
+        session: {
+          workspaceId: input.workspaceId,
+          agentSessionId: input.agentSessionId,
+          provider: "codex",
+          cwd: "/workspace",
+          title: "Codex",
+          status: "ready"
+        },
+        goal: null
+      };
+    },
     async cancelSession(input) {
       const result = await cancel({
         workspaceId: input.workspaceId,
@@ -16647,6 +16660,14 @@ function installNoopAgentActivityRuntimeForTests(): void {
       activateSession: async (input) => ({
         session: agentSession(input.agentSessionId),
         activation: { mode: input.mode, status: "attached" as const }
+      }),
+      goalControl: async (input) => ({
+        goal: null,
+        session: upsertRuntimeSession(
+          (workspaceId, updater) => updater(getSnapshot(workspaceId)),
+          input.workspaceId,
+          { agentSessionId: input.agentSessionId }
+        )
       }),
       cancelSession: async (input) => ({
         canceled: true,

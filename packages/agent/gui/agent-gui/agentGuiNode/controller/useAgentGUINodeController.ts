@@ -27,6 +27,7 @@ import {
 import type {
   AgentActivityCancelSessionResult,
   AgentActivityComposerOptions,
+  AgentActivityGoalControlAction,
   AgentActivityDisplayStatus,
   AgentActivitySession,
   AgentActivitySnapshot
@@ -8195,6 +8196,45 @@ export function useAgentGUINodeController({
     ]
   );
 
+  // Goal control commands (/goal clear|paused|active) act on the running
+  // thread immediately; the local prompt queue would defer them until the
+  // turn ends, defeating their purpose (e.g. stopping a runaway goal).
+  // Goal banner controls act directly on the session's goal (like the stop
+  // button acts on the turn): a dedicated control API, no prompt, no queue,
+  // no transcript entry — matching the codex desktop goal bar.
+  const goalControl = useCallback(
+    (action: AgentActivityGoalControlAction, objective?: string) => {
+      if (previewMode) {
+        return;
+      }
+      const agentSessionId = activeConversationIdRef.current;
+      if (!agentSessionId) {
+        return;
+      }
+      setDetailError(null);
+      void agentActivityRuntime
+        .goalControl({
+          workspaceId,
+          agentSessionId,
+          action,
+          ...(objective !== undefined ? { objective } : {})
+        })
+        .catch((error: unknown) => {
+          if (!isCurrentConversation(agentSessionId)) {
+            return;
+          }
+          setDetailError(getAgentGUIErrorMessage(error));
+        });
+    },
+    [
+      agentActivityRuntime,
+      isCurrentConversation,
+      previewMode,
+      setDetailError,
+      workspaceId
+    ]
+  );
+
   const submitPrompt = useCallback(
     (content: AgentPromptContentBlock[], displayPrompt?: string) => {
       if (previewMode) {
@@ -10732,6 +10772,7 @@ export function useAgentGUINodeController({
   const stableSelectConversation =
     useStableControllerEventCallback(selectConversation);
   const stableSubmitPrompt = useStableControllerEventCallback(submitPrompt);
+  const stableGoalControl = useStableControllerEventCallback(goalControl);
   const stableSubmitGuidancePrompt =
     useStableControllerEventCallback(submitGuidancePrompt);
   const stableShowPromptImagesUnsupported = useStableControllerEventCallback(
@@ -10809,6 +10850,7 @@ export function useAgentGUINodeController({
       createConversation: stableCreateConversation,
       selectConversation: stableSelectConversation,
       submitPrompt: stableSubmitPrompt,
+      goalControl: stableGoalControl,
       submitGuidancePrompt: stableSubmitGuidancePrompt,
       loadOlderConversationMessages: stableLoadOlderConversationMessages,
       showPromptImagesUnsupported: stableShowPromptImagesUnsupported,
@@ -10862,6 +10904,7 @@ export function useAgentGUINodeController({
       stableSubmitApprovalOption,
       stableSubmitInteractivePrompt,
       stableSubmitPrompt,
+      stableGoalControl,
       stableToggleConversationPinned,
       stableUpdateConversationFilter,
       stableUpdateComposerSettings,
