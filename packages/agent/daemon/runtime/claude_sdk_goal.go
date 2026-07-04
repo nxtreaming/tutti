@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	activityshared "github.com/tutti-os/tutti/packages/agentactivity/daemon/activity/events"
 )
+
+// claudeSDKGoalCommandTimeout bounds the sidecar ack round-trip for /goal
+// command execs issued by goal controls.
+const claudeSDKGoalCommandTimeout = 30 * time.Second
 
 // Claude Code's goal is a session-level entity inside the CLI (a condition
 // whose evaluator drives autonomous new turns until it is met), but the SDK
@@ -48,14 +53,14 @@ func (a *ClaudeCodeSDKAdapter) GoalControl(
 		if objective == "" {
 			return nil, nil, fmt.Errorf("goal objective is required")
 		}
-		a.applyLocalGoal(adapterSession, map[string]any{"objective": objective, "status": "active"})
-		if err := a.sendGoalCommandExec(ctx, session, adapterSession, appServerSlashGoal+" "+objective); err != nil {
+		if err := a.applyGoalMirrorAndSend(ctx, session, adapterSession,
+			map[string]any{"objective": objective, "status": "active"},
+			appServerSlashGoal+" "+objective); err != nil {
 			return nil, nil, err
 		}
 		events = a.goalMirrorEvents(session, "thread_goal_update")
 	case GoalControlClear:
-		a.applyLocalGoal(adapterSession, nil)
-		if err := a.sendGoalCommandExec(ctx, session, adapterSession, appServerSlashGoal+" clear"); err != nil {
+		if err := a.applyGoalMirrorAndSend(ctx, session, adapterSession, nil, appServerSlashGoal+" clear"); err != nil {
 			return nil, nil, err
 		}
 		events = a.goalMirrorEvents(session, "thread_goal_cleared")
@@ -65,6 +70,27 @@ func (a *ClaudeCodeSDKAdapter) GoalControl(
 		return nil, nil, fmt.Errorf("unsupported goal control action %q", action)
 	}
 	return events, a.localGoal(adapterSession), nil
+}
+
+// applyGoalMirrorAndSend updates the local goal mirror and forwards the
+// matching /goal command. The mirror is written before the send so the
+// reader goroutine cannot observe the goal turn settling ahead of the mirror
+// state, and rolled back when the send fails so the GUI never shows a goal
+// state the CLI did not receive.
+func (a *ClaudeCodeSDKAdapter) applyGoalMirrorAndSend(
+	ctx context.Context,
+	session Session,
+	adapterSession *claudeSDKAdapterSession,
+	goal map[string]any,
+	command string,
+) error {
+	previous := a.localGoal(adapterSession)
+	a.applyLocalGoal(adapterSession, goal)
+	if err := a.sendGoalCommandExec(ctx, session, adapterSession, command); err != nil {
+		a.applyLocalGoal(adapterSession, previous)
+		return err
+	}
+	return nil
 }
 
 // ExecGoalControl forwards a typed "/goal …" prompt through the sidecar's
@@ -125,13 +151,18 @@ func (a *ClaudeCodeSDKAdapter) sendGoalCommandExec(
 	turnID := newID()
 	args := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(command), appServerSlashGoal))
 	a.mu.Lock()
+	previousArm := adapterSession.goalArmTurnID
 	if strings.EqualFold(args, "clear") {
 		adapterSession.goalArmTurnID = ""
 	} else {
 		adapterSession.goalArmTurnID = turnID
 	}
 	a.mu.Unlock()
-	return a.roundTripClaudeSDK(ctx, session.AgentSessionID, adapterSession, claudeSDKSidecarRequest{
+	// The API context may carry no deadline; a missing sidecar ack must not
+	// hang this goroutine forever.
+	ctx, cancel := context.WithTimeout(ctx, claudeSDKGoalCommandTimeout)
+	defer cancel()
+	err := a.roundTripClaudeSDK(ctx, session.AgentSessionID, adapterSession, claudeSDKSidecarRequest{
 		ID:   newID(),
 		Type: "exec",
 		Payload: map[string]any{
@@ -141,6 +172,12 @@ func (a *ClaudeCodeSDKAdapter) sendGoalCommandExec(
 			"content":        promptContentForClaudeSDK(nil, command),
 		},
 	})
+	if err != nil {
+		a.mu.Lock()
+		adapterSession.goalArmTurnID = previousArm
+		a.mu.Unlock()
+	}
+	return err
 }
 
 // goalEventsOnTurnSettled reconciles the goal mirror when a turn settles.

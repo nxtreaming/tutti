@@ -2,6 +2,7 @@ package agentruntime
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -210,6 +211,43 @@ func TestClaudeSDKGoalControlSetAndClear(t *testing.T) {
 		t.Fatalf("local goal not cleared: %#v", goal)
 	}
 }
+
+// A failed /goal send must leave the mirror untouched — the GUI must never
+// show a goal state the CLI did not receive.
+func TestClaudeSDKGoalControlSendFailureRollsBackMirror(t *testing.T) {
+	t.Parallel()
+
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	conn := &failingClaudeSDKConnection{}
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+	adapter.applyLocalGoal(adapterSession, map[string]any{"objective": "ship it", "status": "active"})
+
+	if _, _, err := adapter.GoalControl(context.Background(), session, GoalControlClear, ""); err == nil {
+		t.Fatal("GoalControl clear must surface the send failure")
+	}
+	if goal := adapter.localGoal(adapterSession); goal["objective"] != "ship it" || goal["status"] != "active" {
+		t.Fatalf("mirror mutated by failed clear: %#v", goal)
+	}
+
+	if _, _, err := adapter.GoalControl(context.Background(), session, GoalControlSet, "new objective"); err == nil {
+		t.Fatal("GoalControl set must surface the send failure")
+	}
+	if goal := adapter.localGoal(adapterSession); goal["objective"] != "ship it" {
+		t.Fatalf("mirror mutated by failed set: %#v", goal)
+	}
+}
+
+type failingClaudeSDKConnection struct{}
+
+func (*failingClaudeSDKConnection) Send([]byte) error {
+	return errors.New("sidecar send failed")
+}
+
+func (*failingClaudeSDKConnection) Recv() (ProcessFrame, error) {
+	return ProcessFrame{}, errors.New("sidecar receive failed")
+}
+
+func (*failingClaudeSDKConnection) Close() error { return nil }
 
 // Claude Code has no paused goal state; the adapter must reject pause and
 // resume instead of emulating semantics the CLI cannot honor. The GUI hides
