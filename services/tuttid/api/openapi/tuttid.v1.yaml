@@ -4134,6 +4134,8 @@ components:
       properties:
         agentComposerDefaultsByProvider:
           $ref: "#/components/schemas/DesktopAgentComposerDefaultsByProvider"
+        agentComposerDefaultsByAgentTarget:
+          $ref: "#/components/schemas/DesktopAgentComposerDefaultsByAgentTarget"
         agentGuiConversationRailCollapsedByProvider:
           $ref: "#/components/schemas/DesktopAgentGuiConversationRailCollapsedByProvider"
         agentConversationDetailMode:
@@ -4194,6 +4196,8 @@ components:
           type: string
         reasoningEffort:
           type: string
+        speed:
+          type: string
     DesktopAgentConversationDetailMode:
       type: string
       enum:
@@ -4220,6 +4224,10 @@ components:
           $ref: "#/components/schemas/DesktopAgentComposerDefaults"
         openclaw:
           $ref: "#/components/schemas/DesktopAgentComposerDefaults"
+    DesktopAgentComposerDefaultsByAgentTarget:
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/DesktopAgentComposerDefaults"
     DesktopAgentGuiConversationRailCollapsedByProvider:
       type: object
       additionalProperties: false

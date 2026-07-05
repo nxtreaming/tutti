@@ -2523,7 +2523,11 @@ type DesktopAgentComposerDefaults struct {
 	Model            *string `json:"model,omitempty"`
 	PermissionModeId *string `json:"permissionModeId,omitempty"`
 	ReasoningEffort  *string `json:"reasoningEffort,omitempty"`
+	Speed            *string `json:"speed,omitempty"`
 }
+
+// DesktopAgentComposerDefaultsByAgentTarget defines model for DesktopAgentComposerDefaultsByAgentTarget.
+type DesktopAgentComposerDefaultsByAgentTarget map[string]DesktopAgentComposerDefaults
 
 // DesktopAgentComposerDefaultsByProvider defines model for DesktopAgentComposerDefaultsByProvider.
 type DesktopAgentComposerDefaultsByProvider struct {
@@ -2577,6 +2581,7 @@ type DesktopMinimizeAnimation string
 
 // DesktopPreferences defines model for DesktopPreferences.
 type DesktopPreferences struct {
+	AgentComposerDefaultsByAgentTarget          *DesktopAgentComposerDefaultsByAgentTarget         `json:"agentComposerDefaultsByAgentTarget,omitempty"`
 	AgentComposerDefaultsByProvider             DesktopAgentComposerDefaultsByProvider             `json:"agentComposerDefaultsByProvider"`
 	AgentConversationDetailMode                 DesktopAgentConversationDetailMode                 `json:"agentConversationDetailMode"`
 	AgentDockLayout                             DesktopAgentDockLayout                             `json:"agentDockLayout"`

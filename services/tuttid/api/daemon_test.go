@@ -1358,8 +1358,8 @@ func TestDaemonAPIGeneratedRoutesGetAgentProviderComposerOptionsUsesPreferencesD
 		PreferencesService: stubPreferencesService{
 			getFn: func(context.Context) (preferencesbiz.DesktopPreferences, error) {
 				return preferencesbiz.DesktopPreferences{
-					AgentComposerDefaultsByProvider: map[string]preferencesbiz.AgentComposerDefaults{
-						"codex": {
+					AgentComposerDefaultsByAgentTarget: map[string]preferencesbiz.AgentComposerDefaults{
+						"local:codex": {
 							Model:            "gpt-5",
 							PermissionModeID: "full-access",
 							ReasoningEffort:  "high",

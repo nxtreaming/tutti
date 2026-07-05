@@ -27,6 +27,7 @@ export interface AgentGuiWorkbenchComposerOverrides {
   permissionModeId?: string | null;
   planMode?: boolean;
   reasoningEffort?: string | null;
+  speed?: string | null;
 }
 
 export type AgentGuiWorkbenchComposerOverridesByProvider = Partial<

@@ -417,6 +417,7 @@ export type {
   DeleteWorkspaceResponse2,
   DeleteWorkspaceResponses,
   DesktopAgentComposerDefaults,
+  DesktopAgentComposerDefaultsByAgentTarget,
   DesktopAgentComposerDefaultsByProvider,
   DesktopAgentConversationDetailMode,
   DesktopAgentDockLayout,
