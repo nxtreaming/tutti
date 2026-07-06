@@ -181,7 +181,9 @@ import { composerSettingsSupportFromOptions } from "../model/composerSettingsSup
 import {
   buildNodeDefaultComposerSettings,
   cloneComposerSettings,
+  composerOptionsMissingLiveModelValues,
   composerSupportForProvider,
+  liveModelOptionValuesFromRuntimeContext,
   mergeRuntimeContextComposerSettings,
   nodeDataFromComposerSettings,
   normalizeConfigOptionValue,
@@ -2793,6 +2795,8 @@ function areComposerSettingsVMsEqual(
     (left.selectedProjectPath ?? null) ===
       (right.selectedProjectPath ?? null) &&
     Boolean(left.projectLocked) === Boolean(right.projectLocked) &&
+    Boolean(left.modelListCollapsedToLatest) ===
+      Boolean(right.modelListCollapsedToLatest) &&
     areComposerSettingOptionListsEqual(
       left.availableModels,
       right.availableModels
@@ -3605,6 +3609,25 @@ function timelineItemTime(item: WorkspaceAgentActivityTimelineItem): number {
   return item.occurredAtUnixMs ?? item.createdAtUnixMs ?? 0;
 }
 
+const emptyComingSoonProviders: readonly AgentGUIProvider[] = [];
+
+// Gated providers stay visible but behave like the built-in coming-soon
+// placeholders (hermes/openclaw/...): unclickable composer, coming-soon gate.
+function applyComingSoonProviderTargets(
+  targets: AgentGUIProviderTarget[],
+  comingSoonProviders: readonly AgentGUIProvider[]
+): AgentGUIProviderTarget[] {
+  if (comingSoonProviders.length === 0) {
+    return targets;
+  }
+  const comingSoon = new Set(comingSoonProviders);
+  return targets.map((target) =>
+    comingSoon.has(target.provider) && target.disabled !== true
+      ? { ...target, disabled: true }
+      : target
+  );
+}
+
 interface UseAgentGUINodeControllerInput {
   nodeId?: string;
   workspaceId: string;
@@ -3614,6 +3637,8 @@ interface UseAgentGUINodeControllerInput {
   data: AgentGUINodeData;
   providerTargets?: readonly AgentGUIProviderTarget[];
   providerTargetsLoading?: boolean;
+  /** Providers gated by the host (feature-gated) — rendered as coming-soon placeholders. */
+  comingSoonProviders?: readonly AgentGUIProvider[];
   providerReadinessGates?: Partial<
     Record<AgentGUIProvider, AgentGUIProviderReadinessGate | null>
   > | null;
@@ -3656,6 +3681,7 @@ export function useAgentGUINodeController({
   data,
   providerTargets,
   providerTargetsLoading = false,
+  comingSoonProviders,
   providerReadinessGates = null,
   defaultProviderTargetId = null,
   openSessionRequest = null,
@@ -3669,13 +3695,23 @@ export function useAgentGUINodeController({
   const agentQueuedPromptRuntime = useAgentQueuedPromptRuntime();
   const agentHostApi = useAgentHostApi();
   const agentActivitySnapshot = useAgentActivitySnapshot(workspaceId);
+  const normalizedComingSoonProviders = useMemo(
+    () =>
+      comingSoonProviders && comingSoonProviders.length > 0
+        ? ([...comingSoonProviders] as readonly AgentGUIProvider[])
+        : emptyComingSoonProviders,
+    [comingSoonProviders]
+  );
   const normalizedExplicitProviderTargets = useMemo(
     () =>
-      normalizeAgentGUIProviderTargets(providerTargets, {
-        includeDisabledPlaceholders: true,
-        useStaticCatalog: false
-      }),
-    [providerTargets]
+      applyComingSoonProviderTargets(
+        normalizeAgentGUIProviderTargets(providerTargets, {
+          includeDisabledPlaceholders: true,
+          useStaticCatalog: false
+        }),
+        normalizedComingSoonProviders
+      ),
+    [normalizedComingSoonProviders, providerTargets]
   );
   const normalizedProviderTargets = useMemo(() => {
     if (providerTargetsLoading) {
@@ -3685,13 +3721,17 @@ export function useAgentGUINodeController({
       providerTargets === undefined ||
       normalizedExplicitProviderTargets.length === 0
     ) {
-      return normalizeAgentGUIProviderTargets(null, {
-        includeDisabledPlaceholders: true
-      });
+      return applyComingSoonProviderTargets(
+        normalizeAgentGUIProviderTargets(null, {
+          includeDisabledPlaceholders: true
+        }),
+        normalizedComingSoonProviders
+      );
     }
     return normalizedExplicitProviderTargets;
   }, [
     normalizedExplicitProviderTargets,
+    normalizedComingSoonProviders,
     providerTargets,
     providerTargetsLoading
   ]);
@@ -6261,6 +6301,45 @@ export function useAgentGUINodeController({
     supports.model,
     supports.permission,
     supports.reasoning
+  ]);
+
+  // Providers such as Cursor only expose their model list through the live
+  // session's advertised config options — there is no static catalog, so the
+  // composer options fetched before the session existed carry only the
+  // currently selected model. When the live session advertises models the
+  // loaded options lack, force one refetch: the daemon merges the live list
+  // (GetComposerOptions live-model discovery) and the condition quiesces.
+  const liveModelOptionValuesKey = useMemo(
+    () =>
+      liveModelOptionValuesFromRuntimeContext(activeSessionRuntimeContext).join(
+        "\u0000"
+      ),
+    [activeSessionRuntimeContext]
+  );
+  const liveModelRefreshRequestedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (previewMode || liveModelOptionValuesKey === "") {
+      return;
+    }
+    const liveValues = liveModelOptionValuesKey.split("\u0000");
+    if (
+      !composerOptionsMissingLiveModelValues(
+        providerComposerOptions,
+        liveValues
+      )
+    ) {
+      return;
+    }
+    if (liveModelRefreshRequestedKeyRef.current === liveModelOptionValuesKey) {
+      return;
+    }
+    liveModelRefreshRequestedKeyRef.current = liveModelOptionValuesKey;
+    loadDraftComposerOptions({ force: true });
+  }, [
+    liveModelOptionValuesKey,
+    loadDraftComposerOptions,
+    previewMode,
+    providerComposerOptions
   ]);
 
   useEffect(() => {
@@ -9415,21 +9494,31 @@ export function useAgentGUINodeController({
       if (!normalizedPath || !remove) {
         return;
       }
-      const previousProjects = userProjectsRef.current;
       setListError(null);
-      setUserProjectsSnapshot(
-        previousProjects.filter((project) => project.path !== normalizedPath)
-      );
+      // Filter the visible list only after the backend confirms the delete
+      // (mirroring registerProjectPath's "backend confirm -> local store
+      // update" ordering). Filtering optimistically before the delete
+      // resolves would flip userProjectPathKey early and race the runtime
+      // rail sections refetch against the in-flight backend delete: if the
+      // section list query lands before the delete commits, it still
+      // reports the removed project's section, and nothing re-triggers a
+      // refetch afterwards, so the row stays visible until an unrelated
+      // remount forces a fresh fetch.
       const handleRemoveError = (error: unknown) => {
         const message = getAgentGUIErrorMessage(error);
-        setUserProjectsSnapshot(previousProjects);
         setListError(message);
         toast.error(message);
       };
       try {
-        void Promise.resolve(remove({ path: normalizedPath })).catch(
-          handleRemoveError
-        );
+        void Promise.resolve(remove({ path: normalizedPath }))
+          .then(() => {
+            setUserProjectsSnapshot(
+              userProjectsRef.current.filter(
+                (project) => project.path !== normalizedPath
+              )
+            );
+          })
+          .catch(handleRemoveError);
       } catch (error) {
         handleRemoveError(error);
       }
@@ -10508,12 +10597,27 @@ export function useAgentGUINodeController({
   const draftSettings = activeConversationId
     ? (sessionSettings ?? defaultConversationDraftSettings)
     : homeComposerSettings;
+  const persistedDraftModel = normalizeOptionalText(draftSettings.model);
+  // "default" is Claude Code's own placeholder for "no explicit model
+  // pinned" (claudeSDKModelConfigOption); an unset value normalizes to
+  // null for every provider. Only in those "nothing meaningful persisted
+  // yet" cases do we prefer the live app-server-reported current model
+  // (kept fresh across an in-flight settings-refresh race, see the "keep
+  // Claude model selection stable" fix). Once a session has a real,
+  // concrete persisted model — e.g. one carried over from an imported
+  // conversation (2U74Ri) — that value must win outright: it is the
+  // authoritative source of what will actually run on the next turn, and
+  // a live config option can legitimately lag or reflect a different
+  // session's default while this one hasn't resumed yet.
+  const usesPlaceholderDraftModel =
+    persistedDraftModel === null || persistedDraftModel === "default";
   const liveConfigModel =
-    activeConversationId !== null
+    activeConversationId !== null && usesPlaceholderDraftModel
       ? configOptionCurrentValue(activeSessionRuntimeContext, ["model"])
       : null;
-  const draftModel =
-    liveConfigModel ?? normalizeOptionalText(draftSettings.model);
+  const draftModel = usesPlaceholderDraftModel
+    ? (liveConfigModel ?? persistedDraftModel)
+    : persistedDraftModel;
   const draftReasoningEffort = normalizeOptionalText(
     draftSettings.reasoningEffort
   ) as AgentSessionReasoningEffort | null;
@@ -10883,6 +10987,9 @@ export function useAgentGUINodeController({
           ? (activeConversation?.cwd ?? null)
           : selectedProjectPath,
       projectLocked: activeConversationId !== null,
+      // Cursor's live list spans many vendors with several versions each;
+      // collapse it to the latest release per model family.
+      modelListCollapsedToLatest: composerTargetData.provider === "cursor",
       availableModels:
         composerSupport.model &&
         hasOptionsSource &&
@@ -11348,6 +11455,7 @@ export function useAgentGUINodeController({
         selectedProviderTarget: effectiveSelectedProviderTarget,
         providerTargets: normalizedProviderTargets,
         providerTargetsLoading,
+        comingSoonProviders: normalizedComingSoonProviders,
         conversationFilter,
         conversations: visibleConversations,
         userProjects,
@@ -11421,6 +11529,7 @@ export function useAgentGUINodeController({
       controllerActions,
       data,
       effectiveSelectedProviderTarget,
+      normalizedComingSoonProviders,
       normalizedProviderTargets,
       providerReadinessGate,
       providerTargetsLoading,
