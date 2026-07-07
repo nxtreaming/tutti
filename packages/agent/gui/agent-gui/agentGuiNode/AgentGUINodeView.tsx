@@ -5652,7 +5652,7 @@ const AgentGUIConversationRailPane = memo(
                               }
                             />
                           ))
-                        ) : (
+                        ) : slashStatusLimitsLoading ? null : (
                           // Usage was probed but produced no displayable
                           // quotas (empty response, or an error the probe
                           // swallowed into lastError). Show an explicit
