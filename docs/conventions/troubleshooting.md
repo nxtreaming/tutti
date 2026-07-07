@@ -262,7 +262,9 @@ Use this shape for new entries:
   `make dev-gui` exits during startup before the desktop window is usable. The
   early form reports `pnpm <version> installation did not succeed`; the later
   form reaches `start electron app...` and then `make` exits while desktop logs
-  say `secondary tutti instance detected`.
+  say `secondary tutti instance detected`. Another early form exits while
+  checking prerequisites because a stale `pnpm` shim reports that its bundled
+  `../node/bin/node` no longer exists.
 - Quick checks:
   Run `DEV_GUI_SKIP_START=1 make dev-gui` to isolate prerequisite setup from
   Electron startup. If full startup exits after `start electron app...`, inspect
@@ -271,15 +273,19 @@ Use this shape for new entries:
 - Root cause:
   Shells launched by tools can put another `pnpm` earlier on `PATH` than
   corepack's shim, so `corepack prepare` succeeds but the script still validates
-  the wrong `pnpm`. Electron's single-instance lock also follows Electron
+  the wrong `pnpm`. That earlier shim can also be a symlink into a relocated
+  runtime cache, so invoking `pnpm --version` fails before the script has a
+  chance to run Corepack. Electron's single-instance lock also follows Electron
   userData; if development and production share userData, a running production
   app makes the dev app quit as a secondary instance. Agent shells launched from
   the packaged app may inherit `TUTTI_ENV=production`, so `make dev-gui` must
   force the development environment instead of preserving that inherited value.
 - Fix:
-  Prefer the corepack shim directory before checking or running `pnpm`, and set
-  development Electron userData to an environment-specific path before
-  requesting the single-instance lock. Ensure the dev-gui script exports
+  Probe `pnpm --version` without letting a broken shim abort startup, discover
+  Corepack from the active or locally installed Node runtime, prefer that
+  Corepack shim directory before checking or running `pnpm`, and set development
+  Electron userData to an environment-specific path before requesting the
+  single-instance lock. Ensure the dev-gui script exports
   `TUTTI_ENV=development` before resolving pid files, installing the dev CLI, or
   launching Electron.
 - Validation:
