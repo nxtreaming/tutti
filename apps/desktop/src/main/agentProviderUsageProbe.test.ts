@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { listDesktopWorkspaceAgentProbes } from "./agentProviderUsageProbe.ts";
+import {
+  desktopAgentUsageProbeLogLevel,
+  listDesktopWorkspaceAgentProbes
+} from "./agentProviderUsageProbe.ts";
 import { setOutboundFetcherForTesting } from "./net/outboundFetch.ts";
 
 test("listDesktopWorkspaceAgentProbes maps Codex OAuth usage windows", async () => {
@@ -323,6 +326,22 @@ test("listDesktopWorkspaceAgentProbes requires a Claude custom API token", async
     restoreOptionalEnv("ANTHROPIC_API_KEY", previousAnthropicAPIKey);
     await rm(directory, { force: true, recursive: true });
   }
+});
+
+test("desktopAgentUsageProbeLogLevel warns on a real usage fetch failure", () => {
+  assert.equal(desktopAgentUsageProbeLogLevel(0, "session_expired"), "warn");
+  assert.equal(desktopAgentUsageProbeLogLevel(0, "execution_failed"), "warn");
+  // Even if a stale quota lingered, an error code still means the fetch failed.
+  assert.equal(desktopAgentUsageProbeLogLevel(2, "parse_failed"), "warn");
+});
+
+test("desktopAgentUsageProbeLogLevel flags an empty-but-not-errored result", () => {
+  assert.equal(desktopAgentUsageProbeLogLevel(0, null), "info");
+});
+
+test("desktopAgentUsageProbeLogLevel stays quiet for normal or unsupported results", () => {
+  assert.equal(desktopAgentUsageProbeLogLevel(2, null), "debug");
+  assert.equal(desktopAgentUsageProbeLogLevel(0, "unsupported"), "debug");
 });
 
 function restoreOptionalEnv(key: string, value: string | undefined): void {

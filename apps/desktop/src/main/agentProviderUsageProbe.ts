@@ -10,6 +10,7 @@ import type {
   AgentUsageQuota
 } from "@tutti-os/agent-gui";
 
+import { getDesktopLogger } from "./logging.ts";
 import { outboundFetch } from "./net/outboundFetch.ts";
 
 const CODEX_DEFAULT_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
@@ -126,6 +127,20 @@ async function probeDesktopAgentProvider(
   input: AgentProviderProbeListInput,
   capturedAtUnixMs: number
 ): Promise<AgentProbeProvider> {
+  const result = await resolveDesktopAgentProbe(
+    provider,
+    input,
+    capturedAtUnixMs
+  );
+  logDesktopAgentUsageProbeOutcome(provider, input, result);
+  return result;
+}
+
+async function resolveDesktopAgentProbe(
+  provider: string,
+  input: AgentProviderProbeListInput,
+  capturedAtUnixMs: number
+): Promise<AgentProbeProvider> {
   if (provider === "codex") {
     return probeCodexProvider(input, capturedAtUnixMs);
   }
@@ -144,6 +159,75 @@ async function probeDesktopAgentProvider(
       : undefined,
     provider
   };
+}
+
+// The usage probe runs in the Electron main process and hits the vendor account
+// API directly, catching every failure into `lastError` so `.list()` always
+// resolves. That kept the renderer quiet, but it also meant a failed or empty
+// Claude/Codex usage fetch left no trace anywhere — a "usage disappeared" report
+// had zero corresponding log lines. Emit one structured line per usage probe so
+// the outcome (and the reason it produced no quotas) is diagnosable. No secrets
+// are included: the provider result carries error codes/messages and strategy
+// names only, never tokens.
+function logDesktopAgentUsageProbeOutcome(
+  provider: string,
+  input: AgentProviderProbeListInput,
+  result: AgentProbeProvider
+): void {
+  if (!input.includeUsage) {
+    return;
+  }
+  const quotaCount = result.usage?.quotas?.length ?? 0;
+  const usageErrorCode = result.lastError?.code ?? null;
+  const level = desktopAgentUsageProbeLogLevel(quotaCount, usageErrorCode);
+  const fields: Record<string, unknown> = {
+    event: "agent.usage_probe.result",
+    provider,
+    workspaceId: input.workspaceId,
+    availability: result.availability.status,
+    quotaCount,
+    usageErrorCode,
+    usageErrorMessage: result.lastError?.message ?? null,
+    attempts: (result.attempts ?? []).map((attempt) => ({
+      strategy: attempt.strategy,
+      success: attempt.success,
+      errorCode: attempt.errorCode ?? null,
+      errorMessage: attempt.errorMessage ?? null
+    }))
+  };
+  const logger = getDesktopLogger();
+  if (level === "warn") {
+    logger.warn("agent usage probe failed", fields);
+    return;
+  }
+  if (level === "info") {
+    logger.info("agent usage probe returned no quotas", fields);
+    return;
+  }
+  logger.debug("agent usage probe resolved", fields);
+}
+
+/**
+ * Severity for a usage-probe outcome line:
+ * - "warn": a real fetch failure (expired/invalid credentials, rate limiting,
+ *   a non-2xx HTTP status, invalid JSON). Actionable.
+ * - "info": resolved without error but produced no displayable quotas (a usage
+ *   response with no rate-limit windows, or a custom-API account with no
+ *   subscription limits). Explains an empty limits UI.
+ * - "debug": usage present, or a provider that simply has no usage concept
+ *   ("unsupported").
+ */
+export function desktopAgentUsageProbeLogLevel(
+  quotaCount: number,
+  usageErrorCode: string | null
+): "warn" | "info" | "debug" {
+  if (usageErrorCode === "unsupported") {
+    return "debug";
+  }
+  if (usageErrorCode) {
+    return "warn";
+  }
+  return quotaCount === 0 ? "info" : "debug";
 }
 
 async function probeClaudeCodeProvider(
