@@ -4323,10 +4323,10 @@ describe("AgentGUINode", () => {
 
     fireEvent.keyDown(getComposerEditor(), { key: "Enter" });
 
-    expect(
-      screen.getByTestId("agent-gui-review-picker-panel")
-    ).toBeTruthy();
-    expect(mockUpdateDraftContent).not.toHaveBeenCalledWith(createDraft("/review "));
+    expect(screen.getByTestId("agent-gui-review-picker-panel")).toBeTruthy();
+    expect(mockUpdateDraftContent).not.toHaveBeenCalledWith(
+      createDraft("/review ")
+    );
     expect(mockSubmitPrompt).not.toHaveBeenCalled();
   });
 
@@ -4709,6 +4709,42 @@ describe("AgentGUINode", () => {
     expect(
       screen.getByText("agentHost.agentGui.slashPaletteSkillsGroup")
     ).toBeTruthy();
+  });
+
+  it("shows OpenCode skills in the slash palette", () => {
+    mockViewModel = createViewModel({
+      activeConversationId: "session-1",
+      data: {
+        provider: "opencode",
+        lastActiveAgentSessionId: null,
+        conversationRailWidthPx: null
+      },
+      draftPrompt: "/doc",
+      availableCommands: [{ name: "review", description: "Review changes" }],
+      availableSkills: [
+        {
+          name: "docs-update",
+          trigger: "/docs-update",
+          sourceKind: "project",
+          description: "Update documentation"
+        }
+      ]
+    });
+    renderAgentGUINode();
+
+    expect(
+      screen.getByRole("listbox", {
+        name: "agentHost.agentGui.slashCommandPalette"
+      })
+    ).toBeTruthy();
+    expect(screen.getByText("docs-update")).toBeTruthy();
+
+    fireEvent.keyDown(getComposerEditor(), { key: "Enter" });
+
+    expect(mockUpdateDraftContent).toHaveBeenCalledWith(
+      createDraft("/docs-update ")
+    );
+    expect(mockSubmitPrompt).not.toHaveBeenCalled();
   });
 
   it("groups slash palette plugin and connector entries into separate sections", () => {
