@@ -597,7 +597,11 @@ export const en = {
       planImplementationSkip: "Stay in Plan Mode",
       noRunningResponse: "No running response to stop.",
       composerTextMenu: "Composer text actions",
-      pastedTextPromptAttachment: "Pasted text attachment: {{name}}",
+      pastedTextFilesHeader: "Referenced pasted text files:",
+      pastedTextFileLine:
+        '- pasted text file "{{preview}}": {{path}}. Read this file before continuing.',
+      pastedTextAttachmentTitle: "Pasted text",
+      pastedTextRestoreToComposer: "Show in text field",
       copyMessage: "Copy message",
       copyImage: "Copy image",
       messageCopied: "Copied",
@@ -652,6 +656,32 @@ export const en = {
         }
       },
       empty: "What can {{provider}} help you with?",
+      homeSuggestionsClose: "Close suggestions",
+      homeSuggestions: {
+        about: {
+          title: "Meet Tutti",
+          prompt: "Tell me what Tutti can help me do"
+        },
+        breakdown: {
+          title: "Task breakdown",
+          taskCenterLabel: "Task management",
+          prompt:
+            "Use {{taskCenterMention}} to help me break down the task, topic { enter here }"
+        },
+        review: {
+          title: "Quality review",
+          prompt:
+            "Have { @agent } review the output quality of { @agent session }"
+        },
+        interaction: {
+          title: "Agent interaction",
+          prompt:
+            "Have { @agent } and { @agent } work together to { do something }, topic { enter here }"
+        },
+        import: {
+          title: "Import session"
+        }
+      },
       conversations: "Sessions",
       newConversation: "New session",
       accountMenuTitle: "Tutti Agent",
@@ -879,12 +909,14 @@ export const en = {
       showLessConversations: "Show less",
       deleteSession: "Delete session",
       pinSession: "Pin session",
+      copySessionLink: "Copy session link",
       renameSession: "Rename session",
       renameSessionTitle: "Rename conversation",
       renameSessionDescription: "Keep it short and easy to recognize.",
       renameSessionPlaceholder: "Conversation title",
       renameSessionSave: "Save",
       unpinSession: "Unpin session",
+      markSessionUnread: "Mark as unread",
       deleteSessionTitle: "Delete session?",
       deleteSessionBody:
         "This session cannot be recovered after deletion. It will no longer appear in the session list, session timeline, room timeline, or room status.",
