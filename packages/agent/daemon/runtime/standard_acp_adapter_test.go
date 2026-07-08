@@ -1582,6 +1582,388 @@ func TestStandardACPNonClaudeToolCallSanitizesImageBytes(t *testing.T) {
 	}
 }
 
+func TestStandardACPOpenCodeEditToolCarriesFileChanges(t *testing.T) {
+	t.Parallel()
+
+	session := standardTestSession(ProviderOpenCode)
+	completed, ok := standardACPToolCallEventWithID(session, "event-opencode-edit", "turn-1", "tool_call_update", map[string]any{
+		"sessionUpdate": "tool_call_update",
+		"toolCallId":    "opencode-edit-1",
+		"title":         "edit_file",
+		"kind":          "edit",
+		"status":        "completed",
+		"content": []any{
+			map[string]any{
+				"type":    "diff",
+				"path":    "/workspace/src/app.ts",
+				"oldText": "const ready = false\n",
+				"newText": "const ready = true\n",
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("standardACPToolCallEventWithID(opencode edit) returned !ok")
+	}
+	if completed.Type != activityshared.EventCallCompleted {
+		t.Fatalf("completed event type = %s, want call.completed", completed.Type)
+	}
+	if got := completed.Payload.Metadata["toolName"]; got != "Edit" {
+		t.Fatalf("metadata toolName = %#v, want Edit", completed.Payload.Metadata)
+	}
+	if got := completed.Payload.Output["filePath"]; got != "/workspace/src/app.ts" {
+		t.Fatalf("output filePath = %#v, want path from diff content", completed.Payload.Output)
+	}
+	fileChanges := payloadMap(completed.Payload.Metadata, "fileChanges")
+	files := payloadArray(fileChanges["files"])
+	if len(files) != 1 {
+		t.Fatalf("fileChanges = %#v, want one file", fileChanges)
+	}
+	if files[0]["path"] != "/workspace/src/app.ts" ||
+		files[0]["oldString"] != "const ready = false\n" ||
+		files[0]["newString"] != "const ready = true\n" ||
+		files[0]["change"] != "modified" {
+		t.Fatalf("fileChanges files = %#v, want modified edit diff", files)
+	}
+}
+
+func TestStandardACPOpenCodeWriteToolReportsTurnFileChanges(t *testing.T) {
+	t.Parallel()
+
+	session := standardTestSession(ProviderOpenCode)
+	normalizer := newACPTurnNormalizer()
+	events, ok := normalizer.StandardToolCallEvents(session, "turn-1", "tool_call_update", map[string]any{
+		"sessionUpdate": "tool_call_update",
+		"toolCallId":    "opencode-write-1",
+		"title":         "write_file",
+		"kind":          "edit",
+		"status":        "completed",
+		"rawInput": map[string]any{
+			"file_path": "/workspace/notes/today.md",
+			"content":   "# Today\n",
+		},
+	})
+	if !ok {
+		t.Fatal("StandardToolCallEvents(opencode write) returned !ok")
+	}
+	var sawCallCompleted bool
+	var sawTurnUpdated bool
+	for _, event := range events {
+		switch event.Type {
+		case activityshared.EventCallCompleted:
+			sawCallCompleted = true
+		case activityshared.EventTurnUpdated:
+			sawTurnUpdated = true
+			fileChanges := payloadMap(event.Payload.Metadata, "fileChanges")
+			files := payloadArray(fileChanges["files"])
+			if len(files) != 1 ||
+				files[0]["path"] != "/workspace/notes/today.md" ||
+				files[0]["newString"] != "# Today\n" ||
+				files[0]["change"] != "added" {
+				t.Fatalf("turn fileChanges = %#v, want added write file", fileChanges)
+			}
+		}
+	}
+	if !sawCallCompleted || !sawTurnUpdated {
+		t.Fatalf("events = %#v, want call.completed and turn.updated", events)
+	}
+
+	report := reportActivityInput(session, events)
+	var messageWithFileChanges *agentsessionstore.WorkspaceAgentMessageUpdate
+	for index := range report.MessageUpdates {
+		update := &report.MessageUpdates[index]
+		if update.Kind == "tool_call" && update.Status == "completed" {
+			fileChanges := payloadMap(update.Payload, "fileChanges")
+			if len(payloadArray(fileChanges["files"])) > 0 {
+				messageWithFileChanges = update
+				break
+			}
+		}
+	}
+	if messageWithFileChanges == nil {
+		t.Fatalf("message updates = %#v, want completed tool_call fileChanges", report.MessageUpdates)
+	}
+	if got := messageWithFileChanges.Payload["toolName"]; got != "Write" && got != "Edit" {
+		t.Fatalf("message update toolName = %#v, want write/edit", got)
+	}
+	var patchWithFileChanges *agentsessionstore.WorkspaceAgentStatePatch
+	for index := range report.StatePatches {
+		patch := &report.StatePatches[index]
+		if patch.Turn != nil && len(patch.Turn.FileChanges) > 0 {
+			patchWithFileChanges = patch
+			break
+		}
+	}
+	if patchWithFileChanges == nil {
+		t.Fatalf("state patches = %#v, want turn fileChanges", report.StatePatches)
+	}
+	files := payloadArray(patchWithFileChanges.Turn.FileChanges["files"])
+	if len(files) != 1 || files[0]["path"] != "/workspace/notes/today.md" {
+		t.Fatalf("state patch fileChanges = %#v, want opencode write path", patchWithFileChanges.Turn.FileChanges)
+	}
+}
+
+func TestStandardACPOpenCodeApplyPatchReportsTurnFileChanges(t *testing.T) {
+	t.Parallel()
+
+	session := standardTestSession(ProviderOpenCode)
+	normalizer := newACPTurnNormalizer()
+	patchText := `*** Begin Patch
+*** Add File: package.json
++{
++  "scripts": {
++    "dev": "vite"
++  }
++}
+*** Add File: src/App.jsx
++export default function App() {
++  return <main>Ready</main>
++}
+*** End Patch`
+	events, ok := normalizer.StandardToolCallEvents(session, "turn-1", "tool_call_update", map[string]any{
+		"sessionUpdate": "tool_call_update",
+		"toolCallId":    "opencode-patch-1",
+		"title":         "apply_patch",
+		"kind":          "edit",
+		"status":        "completed",
+		"rawInput": map[string]any{
+			"patchText": patchText,
+		},
+		"rawOutput": "Success. Updated the following files:\nA /workspace/package.json\nA /workspace/src/App.jsx",
+	})
+	if !ok {
+		t.Fatal("StandardToolCallEvents(opencode apply_patch) returned !ok")
+	}
+	var sawCallCompleted bool
+	var sawTurnUpdated bool
+	for _, event := range events {
+		switch event.Type {
+		case activityshared.EventCallCompleted:
+			sawCallCompleted = true
+			if got := event.Payload.Metadata["toolName"]; got != "Edit" {
+				t.Fatalf("metadata toolName = %#v, want Edit", event.Payload.Metadata)
+			}
+			fileChanges := payloadMap(event.Payload.Metadata, "fileChanges")
+			files := payloadArray(fileChanges["files"])
+			if len(files) != 2 ||
+				files[0]["path"] != "package.json" ||
+				files[0]["change"] != "added" ||
+				!strings.Contains(asString(files[0]["newString"]), `"dev": "vite"`) ||
+				files[1]["path"] != "src/App.jsx" ||
+				!strings.Contains(asString(files[1]["newString"]), "return <main>Ready</main>") {
+				t.Fatalf("call fileChanges = %#v, want added files from patchText", fileChanges)
+			}
+		case activityshared.EventTurnUpdated:
+			sawTurnUpdated = true
+			fileChanges := payloadMap(event.Payload.Metadata, "fileChanges")
+			files := payloadArray(fileChanges["files"])
+			if len(files) != 2 || files[0]["path"] != "package.json" || files[1]["path"] != "src/App.jsx" {
+				t.Fatalf("turn fileChanges = %#v, want patchText files", fileChanges)
+			}
+		}
+	}
+	if !sawCallCompleted || !sawTurnUpdated {
+		t.Fatalf("events = %#v, want call.completed and turn.updated", events)
+	}
+
+	report := reportActivityInput(session, events)
+	var messageWithFileChanges *agentsessionstore.WorkspaceAgentMessageUpdate
+	for index := range report.MessageUpdates {
+		update := &report.MessageUpdates[index]
+		if update.Kind == "tool_call" && update.Status == "completed" {
+			fileChanges := payloadMap(update.Payload, "fileChanges")
+			if len(payloadArray(fileChanges["files"])) > 0 {
+				messageWithFileChanges = update
+				break
+			}
+		}
+	}
+	if messageWithFileChanges == nil {
+		t.Fatalf("message updates = %#v, want completed tool_call fileChanges", report.MessageUpdates)
+	}
+	if got := messageWithFileChanges.Payload["toolName"]; got != "Edit" {
+		t.Fatalf("message update toolName = %#v, want Edit", got)
+	}
+	var patchWithFileChanges *agentsessionstore.WorkspaceAgentStatePatch
+	for index := range report.StatePatches {
+		patch := &report.StatePatches[index]
+		if patch.Turn != nil && len(patch.Turn.FileChanges) > 0 {
+			patchWithFileChanges = patch
+			break
+		}
+	}
+	if patchWithFileChanges == nil {
+		t.Fatalf("state patches = %#v, want turn fileChanges", report.StatePatches)
+	}
+	files := payloadArray(patchWithFileChanges.Turn.FileChanges["files"])
+	if len(files) != 2 || files[0]["path"] != "package.json" || files[1]["path"] != "src/App.jsx" {
+		t.Fatalf("state patch fileChanges = %#v, want apply_patch files", patchWithFileChanges.Turn.FileChanges)
+	}
+}
+
+func TestStandardACPOpenCodeCompletedEditMetadataFilesReportsTurnFileChanges(t *testing.T) {
+	t.Parallel()
+
+	session := standardTestSession(ProviderOpenCode)
+	normalizer := newACPTurnNormalizer()
+	events, ok := normalizer.StandardToolCallEvents(session, "turn-1", "tool_call_update", map[string]any{
+		"sessionUpdate": "tool_call_update",
+		"toolCallId":    "opencode-patch-2",
+		"title":         "Success. Updated the following files:\nA Users/vector/Documents/tutti/session-1/package.json\nA Users/vector/Documents/tutti/session-1/src/App.jsx",
+		"kind":          "edit",
+		"status":        "completed",
+		"rawInput": map[string]any{
+			"patchText": "*** Begin Patch\n*** Add File: package.json\n+{}\n*** End Patch",
+		},
+		"rawOutput": map[string]any{
+			"metadata": map[string]any{
+				"files": []any{
+					map[string]any{
+						"filePath":     "/Users/vector/Documents/tutti/session-1/package.json",
+						"relativePath": "Users/vector/Documents/tutti/session-1/package.json",
+						"type":         "add",
+						"patch":        "Index: /Users/vector/Documents/tutti/session-1/package.json\n@@ -0,0 +1 @@\n+{}",
+					},
+					map[string]any{
+						"filePath":     "/Users/vector/Documents/tutti/session-1/src/App.jsx",
+						"relativePath": "Users/vector/Documents/tutti/session-1/src/App.jsx",
+						"type":         "add",
+						"patch":        "Index: /Users/vector/Documents/tutti/session-1/src/App.jsx\n@@ -0,0 +1 @@\n+export default function App() {}",
+					},
+				},
+			},
+			"output": "Success. Updated the following files:\nA Users/vector/Documents/tutti/session-1/package.json\nA Users/vector/Documents/tutti/session-1/src/App.jsx",
+		},
+	})
+	if !ok {
+		t.Fatal("StandardToolCallEvents(opencode completed edit metadata files) returned !ok")
+	}
+	var sawCallCompleted bool
+	var sawTurnUpdated bool
+	for _, event := range events {
+		switch event.Type {
+		case activityshared.EventCallCompleted:
+			sawCallCompleted = true
+			if got := event.Payload.Metadata["toolName"]; got != "Edit" {
+				t.Fatalf("metadata toolName = %#v, want Edit", event.Payload.Metadata)
+			}
+			fileChanges := payloadMap(event.Payload.Metadata, "fileChanges")
+			files := payloadArray(fileChanges["files"])
+			if len(files) != 2 ||
+				files[0]["path"] != "/Users/vector/Documents/tutti/session-1/package.json" ||
+				files[0]["change"] != "added" ||
+				!strings.Contains(asString(files[0]["unifiedDiff"]), "@@ -0,0 +1 @@") ||
+				files[1]["path"] != "/Users/vector/Documents/tutti/session-1/src/App.jsx" {
+				t.Fatalf("call fileChanges = %#v, want metadata files diffs", fileChanges)
+			}
+		case activityshared.EventTurnUpdated:
+			sawTurnUpdated = true
+			fileChanges := payloadMap(event.Payload.Metadata, "fileChanges")
+			files := payloadArray(fileChanges["files"])
+			if len(files) != 2 || files[0]["path"] != "/Users/vector/Documents/tutti/session-1/package.json" {
+				t.Fatalf("turn fileChanges = %#v, want metadata files diffs", fileChanges)
+			}
+		}
+	}
+	if !sawCallCompleted || !sawTurnUpdated {
+		t.Fatalf("events = %#v, want call.completed and turn.updated", events)
+	}
+}
+
+func TestStandardACPOpenCodeCompletedEditMergesStartedPatchInput(t *testing.T) {
+	t.Parallel()
+
+	session := standardTestSession(ProviderOpenCode)
+	normalizer := newACPTurnNormalizer()
+	patchText := `*** Begin Patch
+*** Add File: package.json
++{"scripts":{"dev":"vite"}}
+*** Add File: src/App.jsx
++export default function App() {
++  return <main>Ready</main>
++}
+*** End Patch`
+	startedEvents, ok := normalizer.StandardToolCallEvents(session, "turn-1", "tool_call_update", map[string]any{
+		"sessionUpdate": "tool_call_update",
+		"toolCallId":    "call-real-opencode",
+		"title":         "apply_patch",
+		"kind":          "edit",
+		"status":        "in_progress",
+		"rawInput": map[string]any{
+			"kind":      "edit",
+			"patchText": patchText,
+			"title":     "apply_patch",
+		},
+	})
+	if !ok {
+		t.Fatal("StandardToolCallEvents(opencode started apply_patch) returned !ok")
+	}
+	if len(startedEvents) == 0 {
+		t.Fatal("started events empty")
+	}
+
+	completedEvents, ok := normalizer.StandardToolCallEvents(session, "turn-1", "tool_call_update", map[string]any{
+		"sessionUpdate": "tool_call_update",
+		"toolCallId":    "call-real-opencode",
+		"title":         "Success. Updated the following files: A /workspace/package.json A /workspace/src/App.jsx",
+		"status":        "completed",
+		"rawOutput": map[string]any{
+			"files": []any{
+				map[string]any{
+					"filePath": "/workspace/package.json",
+					"type":     "add",
+					"patch":    "Index: /workspace/package.json\n@@ -0,0 +1 @@\n+{\"scripts\":{\"dev\":\"vite\"}}",
+				},
+				map[string]any{
+					"filePath": "/workspace/src/App.jsx",
+					"type":     "add",
+					"patch":    "Index: /workspace/src/App.jsx\n@@ -0,0 +1,3 @@\n+export default function App() {\n+  return <main>Ready</main>\n+}",
+				},
+			},
+			"output": "Success. Updated the following files: A /workspace/package.json A /workspace/src/App.jsx",
+		},
+	})
+	if !ok {
+		t.Fatal("StandardToolCallEvents(opencode completed apply_patch) returned !ok")
+	}
+	var sawCallCompleted bool
+	var sawTurnUpdated bool
+	for _, event := range completedEvents {
+		switch event.Type {
+		case activityshared.EventCallCompleted:
+			sawCallCompleted = true
+			if got := event.Payload.Metadata["toolName"]; got != "Edit" {
+				t.Fatalf("metadata toolName = %#v, want Edit", event.Payload.Metadata)
+			}
+			if got := event.Payload.Name; got != "Edit" {
+				t.Fatalf("payload name = %#v, want Edit", got)
+			}
+			input := payloadMap(event.Payload.Metadata, "input")
+			if strings.TrimSpace(asString(input["patchText"])) == "" {
+				t.Fatalf("completed input = %#v, want started patchText merged", input)
+			}
+			fileChanges := payloadMap(event.Payload.Metadata, "fileChanges")
+			files := payloadArray(fileChanges["files"])
+			if len(files) != 2 ||
+				files[0]["path"] != "/workspace/package.json" ||
+				files[0]["change"] != "added" ||
+				!strings.Contains(asString(files[0]["unifiedDiff"]), "@@ -0,0 +1 @@") ||
+				files[1]["path"] != "/workspace/src/App.jsx" {
+				t.Fatalf("call fileChanges = %#v, want output.files diffs", fileChanges)
+			}
+		case activityshared.EventTurnUpdated:
+			sawTurnUpdated = true
+			fileChanges := payloadMap(event.Payload.Metadata, "fileChanges")
+			files := payloadArray(fileChanges["files"])
+			if len(files) != 2 || files[0]["path"] != "/workspace/package.json" {
+				t.Fatalf("turn fileChanges = %#v, want output.files diffs", fileChanges)
+			}
+		}
+	}
+	if !sawCallCompleted || !sawTurnUpdated {
+		t.Fatalf("events = %#v, want call.completed and turn.updated", completedEvents)
+	}
+}
+
 func TestClaudeCodeStandardACPToolCallEventCanonicalizesSkillPayload(t *testing.T) {
 	t.Parallel()
 

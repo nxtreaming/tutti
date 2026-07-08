@@ -386,6 +386,13 @@ hunks, convert them into file-level `changes[].diff` payloads, and only use
 input-derived file metadata for optimistic display before the tool response
 arrives.
 
+Provider adapters that receive successful write/edit/apply_patch tool calls
+without a native turn-level diff event must still normalize the executed tool
+output into `fileChanges.files` and emit a `turn.updated` patch carrying those
+`fileChanges`. The AgentGUI turn summary reads the turn state as the shared
+source for the response-tail changed-file list; tool-only payloads are not a
+substitute for that state.
+
 Approval tool calls may wrap the pending Edit/Write input so the transcript can
 preview what the user approved. Treat that nested input as preview-only data:
 Approval rows must not contribute edit diff counts, changed-file summaries, or

@@ -2919,8 +2919,8 @@ func (a *standardACPAdapter) applyACPUpdate(agentSessionID string, raw json.RawM
 	if snapshot == nil {
 		return nil
 	}
-	session.acpLiveState.availableCommands = mergeStandardACPAdapterOwnedCommands(
-		session.acpLiveState.availableCommands,
+	session.availableCommands = mergeStandardACPAdapterOwnedCommands(
+		session.availableCommands,
 		a.config.provider,
 	)
 	mergedSnapshot, _ := commandSnapshotFromACPLiveState(agentSessionID, session.acpLiveState)
@@ -3232,27 +3232,63 @@ func standardACPToolCallEventWithID(session Session, eventID string, turnID stri
 	}
 	if strings.TrimSpace(session.Provider) != ProviderClaudeCode {
 		name := firstNonEmpty(asString(update["title"]), asString(update["name"]), callID, "tool")
+		kind := asString(update["kind"])
 		status := acpResolvedToolCallStatus(update, "in_progress")
 		sanitizedUpdate := acpSanitizeImagePayloadMap(update)
+		rawInput := acpToolCallRawInput(update)
+		rawOutput := acpToolCallRawOutput(update)
+		locations := clonePayloadValue(update["locations"])
+		content := acpSanitizeImagePayload(update["content"])
+		toolName := acpToolName(callID, name, kind, rawInput)
+		displayName := firstNonEmpty(toolName, name)
 		payload := map[string]any{
 			"callId":   callID,
-			"callType": firstNonEmpty(asString(update["kind"]), asString(update["callType"]), "tool"),
-			"name":     name,
+			"callType": firstNonEmpty(kind, asString(update["callType"]), "tool"),
+			"name":     displayName,
 			"status":   status,
 		}
+		if toolName != "" {
+			payload["toolName"] = toolName
+		}
+		if kind != "" {
+			payload["kind"] = kind
+			payload["acp"] = map[string]any{
+				"sessionUpdate": asString(update["sessionUpdate"]),
+				"kind":          kind,
+			}
+		} else if sessionUpdate := asString(update["sessionUpdate"]); sessionUpdate != "" {
+			payload["acp"] = map[string]any{
+				"sessionUpdate": sessionUpdate,
+			}
+		}
+		if locations != nil {
+			payload["locations"] = locations
+		}
+		if content != nil {
+			payload["content"] = content
+		}
+		inputBody := acpNormalizeToolInput(rawInput, kind, locations)
+		outputBody := acpNormalizeToolOutput(rawOutput, content)
 		switch status {
 		case messageStreamStateCompleted:
-			payload["output"] = sanitizedUpdate
-			return newTurnActivityEventWithID(session, eventID, EventCallCompleted, turnID, status, "", name, payload), true
+			if len(inputBody) > 0 {
+				payload["input"] = inputBody
+			}
+			payload["output"] = mergeACPStandardRawToolBody(outputBody, sanitizedUpdate)
+			fileChanges := fileChangesFromACPToolPayload(payload)
+			if fileChanges != nil {
+				payload["fileChanges"] = fileChanges
+			}
+			return newTurnActivityEventWithID(session, eventID, EventCallCompleted, turnID, status, "", displayName, payload), true
 		case messageStreamStateFailed:
-			payload["error"] = sanitizedUpdate
-			return newTurnActivityEventWithID(session, eventID, EventCallFailed, turnID, status, "", name, payload), true
+			payload["error"] = mergeACPStandardRawToolBody(outputBody, sanitizedUpdate)
+			return newTurnActivityEventWithID(session, eventID, EventCallFailed, turnID, status, "", displayName, payload), true
 		default:
-			payload["input"] = sanitizedUpdate
+			payload["input"] = mergeACPStandardRawToolBody(inputBody, sanitizedUpdate)
 			if updateType == "tool_call_update" {
 				payload["status"] = messageStreamStateStreaming
 			}
-			return newTurnActivityEventWithID(session, eventID, EventCallStarted, turnID, messageStreamStateStreaming, "", name, payload), true
+			return newTurnActivityEventWithID(session, eventID, EventCallStarted, turnID, messageStreamStateStreaming, "", displayName, payload), true
 		}
 	}
 
