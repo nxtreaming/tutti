@@ -1019,6 +1019,25 @@ export type AgentProviderComposerOptionsResponse = {
   };
   skills: Array<AgentProviderSkillOption>;
   capabilityCatalog: Array<AgentProviderCapabilityOption>;
+  slashCommandPolicy?: AgentSlashCommandPolicy;
+};
+
+export type AgentSlashCommandEffect =
+  | "submitImmediate"
+  | "showReviewPicker"
+  | "activateGoalMode"
+  | "togglePlanMode"
+  | "showStatus"
+  | "toggleSpeed";
+
+export type AgentSlashCommandEffectDescriptor = {
+  command: string;
+  effect: AgentSlashCommandEffect;
+};
+
+export type AgentSlashCommandPolicy = {
+  fallbackCommands: Array<string>;
+  commandEffects: Array<AgentSlashCommandEffectDescriptor>;
 };
 
 export type AgentProviderSkillOption = {
@@ -1426,6 +1445,9 @@ export type WorkspaceAgentCapabilities = {
   browserUse?: boolean;
   computerUse?: boolean;
   goalPause?: boolean;
+  planImplementation?: boolean;
+  permissionModeChangeDuringTurn?: boolean;
+  permissionModeChangeDeferred?: boolean;
   review?: boolean;
   resumeRunningTurn?: boolean;
 };

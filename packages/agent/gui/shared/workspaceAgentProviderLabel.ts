@@ -1,8 +1,16 @@
+import {
+  agentGUIProviderIdentityDisplayName,
+  resolveMigratedAgentGUIProviderIdentity
+} from "../providerIdentityCatalog.ts";
+import { translate } from "../i18n/index.ts";
+
 export function workspaceAgentProviderLabel(provider: string): string {
   const normalized = provider.trim().toLowerCase();
+  const migratedIdentity = resolveMigratedAgentGUIProviderIdentity(normalized);
+  if (migratedIdentity) {
+    return agentGUIProviderIdentityDisplayName(migratedIdentity, translate);
+  }
   switch (normalized) {
-    case "codex":
-      return "Codex";
     case "claude-code":
       return "Claude Code";
     case "openclaw":

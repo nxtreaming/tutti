@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   AGENT_CAPABILITY_KEYS,
+  hasAgentCapability,
   resolveAgentActivityCapability
 } from "./capabilities.ts";
 import type { AgentActivityComposerOptions } from "./types.ts";
@@ -36,6 +37,14 @@ test("returns null when no capability data exists", () => {
   assert.equal(resolveAgentActivityCapability("compact", {}), null);
 });
 
+test("checks one runtime capability without provider inference", () => {
+  assert.equal(
+    hasAgentCapability({ capabilities: ["planMode"] }, "planMode"),
+    true
+  );
+  assert.equal(hasAgentCapability({}, "planMode"), false);
+});
+
 test("imageInput resolves from the capabilities list only", () => {
   assert.equal(
     resolveAgentActivityCapability("imageInput", {
@@ -60,6 +69,9 @@ test("vocabulary matches the Go side", () => {
     "goalPause",
     "imageInput",
     "interrupt",
+    "permissionModeChangeDeferred",
+    "permissionModeChangeDuringTurn",
+    "planImplementation",
     "planMode",
     "rateLimits",
     "skills",

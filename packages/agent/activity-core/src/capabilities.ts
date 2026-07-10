@@ -11,7 +11,10 @@ export const AGENT_CAPABILITY_KEYS = [
   "interrupt",
   "browserUse",
   "computerUse",
-  "goalPause"
+  "goalPause",
+  "planImplementation",
+  "permissionModeChangeDuringTurn",
+  "permissionModeChangeDeferred"
 ] as const;
 
 export type AgentCapabilityKey = (typeof AGENT_CAPABILITY_KEYS)[number];
@@ -29,6 +32,13 @@ export function resolveAgentActivityCapability(
     capabilityFromRuntimeContext(key, input.sessionRuntimeContext) ??
     capabilityFromRuntimeContext(key, input.composerOptions?.runtimeContext)
   );
+}
+
+export function hasAgentCapability(
+  runtimeContext: Record<string, unknown> | null | undefined,
+  key: AgentCapabilityKey
+): boolean {
+  return capabilityFromRuntimeContext(key, runtimeContext) === true;
 }
 
 function capabilityFromRuntimeContext(

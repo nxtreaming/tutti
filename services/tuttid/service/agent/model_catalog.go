@@ -2,11 +2,13 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
 	agentsidecarservice "github.com/tutti-os/tutti/services/tuttid/service/agentsidecar"
 	tuttitypes "github.com/tutti-os/tutti/services/tuttid/types"
@@ -72,45 +74,83 @@ type agentModelCatalogSpec struct {
 	missingDefaultDescription string
 }
 
-var agentModelCatalogSpecs = map[string]agentModelCatalogSpec{
-	agentprovider.Codex: {
-		source: "codex-cli",
-		ttl:    codexModelCacheTTL,
-		errTTL: codexModelErrorCacheTTL,
-		lister: func(c *CachedAgentModelCatalog) AgentModelLister {
-			if c.Codex != nil {
-				return c.Codex
-			}
-			return CodexCLIModelLister{}
+func defaultAgentModelCatalogSpecs() map[string]agentModelCatalogSpec {
+	specs := map[string]agentModelCatalogSpec{
+		agentprovider.TuttiAgent: {
+			source: "tutti-agent-cli",
+			ttl:    codexModelCacheTTL,
+			errTTL: codexModelErrorCacheTTL,
+			lister: func(c *CachedAgentModelCatalog) AgentModelLister {
+				if c.TuttiAgent != nil {
+					return c.TuttiAgent
+				}
+				return defaultTuttiAgentModelLister()
+			},
+			configuredDefaultModel: func() string { return "" },
 		},
-		configuredDefaultModel:    readCodexConfiguredDefaultModel,
-		missingDefaultDescription: "Codex configured custom model",
-	},
-	agentprovider.TuttiAgent: {
-		source: "tutti-agent-cli",
-		ttl:    codexModelCacheTTL,
-		errTTL: codexModelErrorCacheTTL,
-		lister: func(c *CachedAgentModelCatalog) AgentModelLister {
-			if c.TuttiAgent != nil {
-				return c.TuttiAgent
-			}
-			return defaultTuttiAgentModelLister()
+		agentprovider.OpenCode: {
+			source: "opencode-cli",
+			ttl:    opencodeModelCacheTTL,
+			errTTL: opencodeModelErrorTTL,
+			lister: func(c *CachedAgentModelCatalog) AgentModelLister {
+				if c.OpenCode != nil {
+					return c.OpenCode
+				}
+				return OpenCodeCLIModelLister{}
+			},
+			configuredDefaultModel:    readOpenCodeConfiguredDefaultModel,
+			missingDefaultDescription: "OpenCode configured custom model",
 		},
-		configuredDefaultModel: func() string { return "" },
-	},
-	agentprovider.OpenCode: {
-		source: "opencode-cli",
-		ttl:    opencodeModelCacheTTL,
-		errTTL: opencodeModelErrorTTL,
-		lister: func(c *CachedAgentModelCatalog) AgentModelLister {
-			if c.OpenCode != nil {
-				return c.OpenCode
-			}
-			return OpenCodeCLIModelLister{}
-		},
-		configuredDefaultModel:    readOpenCodeConfiguredDefaultModel,
-		missingDefaultDescription: "OpenCode configured custom model",
-	},
+	}
+	for _, descriptor := range providerregistry.Migrated() {
+		spec, ok, err := agentModelCatalogSpecFromDescriptor(descriptor)
+		if err != nil {
+			panic(fmt.Sprintf("invalid provider model catalog descriptor: %v", err))
+		}
+		if ok {
+			specs[descriptor.Identity.ID] = spec
+		}
+	}
+	return specs
+}
+
+var agentModelCatalogSpecs = defaultAgentModelCatalogSpecs()
+
+func agentModelCatalogSpecFromDescriptor(descriptor providerregistry.ProviderDescriptor) (agentModelCatalogSpec, bool, error) {
+	switch descriptor.ComposerProfile.ModelCatalog {
+	case "":
+		return agentModelCatalogSpec{}, false, nil
+	case providerregistry.ModelCatalogKindCodexCLI:
+		command := append([]string(nil), descriptor.Runtime.Command...)
+		if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+			return agentModelCatalogSpec{}, false, fmt.Errorf(
+				"provider %q model catalog runtime command is required",
+				descriptor.Identity.ID,
+			)
+		}
+		return agentModelCatalogSpec{
+			source: string(descriptor.ComposerProfile.ModelCatalog),
+			ttl:    codexModelCacheTTL,
+			errTTL: codexModelErrorCacheTTL,
+			lister: func(c *CachedAgentModelCatalog) AgentModelLister {
+				if c.Codex != nil {
+					return c.Codex
+				}
+				return CodexCLIModelLister{
+					Command: command[0],
+					Args:    append([]string(nil), command[1:]...),
+				}
+			},
+			configuredDefaultModel:    readCodexConfiguredDefaultModel,
+			missingDefaultDescription: descriptor.Identity.DisplayName + " configured custom model",
+		}, true, nil
+	default:
+		return agentModelCatalogSpec{}, false, fmt.Errorf(
+			"provider %q model catalog kind %q is unsupported",
+			descriptor.Identity.ID,
+			descriptor.ComposerProfile.ModelCatalog,
+		)
+	}
 }
 
 type CachedAgentModelCatalog struct {

@@ -15,7 +15,6 @@ import (
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/httpx"
 	"github.com/tutti-os/tutti/packages/agent/daemon/runtimecmd"
-	"github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
 	managedruntime "github.com/tutti-os/tutti/services/tuttid/service/managedruntime"
 )
 
@@ -40,7 +39,7 @@ type installerExecutionSummary struct {
 func (s Service) resolveProviderRuntime(ctx context.Context, spec ProviderSpec) providerRuntimeResolution {
 	resolver := s.commandResolver()
 	env := resolver.Env(spec.AdapterEnv)
-	if strings.TrimSpace(os.Getenv("TUTTI_MOCK_AGENT_UNBOUND")) == "1" && spec.Provider == "codex" {
+	if strings.TrimSpace(os.Getenv("TUTTI_MOCK_AGENT_UNBOUND")) == "1" && isCodexStatusSpec(spec) {
 		return providerRuntimeResolution{Env: env}
 	}
 	if strings.TrimSpace(spec.ExternalRegistryID) != "" {
@@ -344,13 +343,13 @@ func installNodeForTarget(target string) string {
 }
 
 func (s Service) providerCLIRequiresInstall(spec ProviderSpec, runtime providerRuntimeResolution) bool {
-	if spec.Provider != agentprovider.Codex {
+	if !isCodexStatusSpec(spec) {
 		return false
 	}
 	if !s.codexPlatformBinaryOK(runtime.CLIPath) {
 		return true
 	}
-	return !codexVersionMeetsMinimum(s.cliVersion(context.Background(), runtime.CLIPath, runtime.Env))
+	return !cliVersionMeetsMinimum(s.cliVersion(context.Background(), runtime.CLIPath, runtime.Env), spec.MinVersion)
 }
 
 func adapterPackageRequirementSatisfied(requirement AdapterPackageRequirement, version string) bool {
@@ -430,7 +429,7 @@ func (s Service) executeInstaller(
 		if runtime != nil {
 			existingCLIPath = strings.TrimSpace(runtime.CLIPath)
 		}
-		result, err := s.runCodexCLILatestInstaller(installCtx, spec, existingCLIPath)
+		result, err := s.runCodexCLILatestInstaller(installCtx, provider, spec, existingCLIPath)
 		return runResult(result, err)
 	case InstallerKindManagedNPMPackage:
 		existingCLIPath := ""

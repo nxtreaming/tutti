@@ -4,20 +4,13 @@ import type {
   AgentGUIProviderTargetBadge,
   AgentGUIProviderTargetRef
 } from "./types.ts";
+import {
+  migratedAgentGUIProviderIdentityCatalog,
+  resolveAgentGUIProviderCatalogIdentity,
+  resolveMigratedAgentGUIProviderIdentity
+} from "./providerIdentityCatalog.ts";
 
-const agentGUIProviderTargetStaticLabels: Record<AgentGUIProvider, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-  cursor: "Cursor",
-  hermes: "Hermes",
-  nexight: "Tutti Agent",
-  openclaw: "OpenClaw",
-  opencode: "OpenCode",
-  "tutti-agent": "Tutti Agent"
-};
-
-export const agentGUIDefaultTargetProviders = [
-  "codex",
+const legacyAgentGUIDefaultTargetProviders = [
   "claude-code",
   "cursor",
   "tutti-agent",
@@ -26,7 +19,22 @@ export const agentGUIDefaultTargetProviders = [
   "openclaw"
 ] as const satisfies readonly AgentGUIProvider[];
 
-const agentGUIDisabledPlaceholderProviders = [
+export const agentGUIDefaultTargetProviders: readonly AgentGUIProvider[] = [
+  ...uniqueAgentGUIProviders(
+    [...migratedAgentGUIProviderIdentityCatalog]
+      .sort((left, right) => left.target.sortOrder - right.target.sortOrder)
+      .map((identity) => identity.providerId as AgentGUIProvider),
+    legacyAgentGUIDefaultTargetProviders
+  )
+];
+
+function uniqueAgentGUIProviders(
+  ...providerLists: readonly (readonly AgentGUIProvider[])[]
+): AgentGUIProvider[] {
+  return [...new Set(providerLists.flat())];
+}
+
+const legacyAgentGUIDisabledPlaceholderProviders = [
   "hermes",
   "openclaw"
 ] as const satisfies readonly AgentGUIProvider[];
@@ -34,6 +42,8 @@ const agentGUIDisabledPlaceholderProviders = [
 export function createLocalAgentGUIProviderTarget(
   provider: AgentGUIProvider
 ): AgentGUIProviderTarget {
+  const identity = resolveAgentGUIProviderCatalogIdentity(provider);
+  const migratedIdentity = resolveMigratedAgentGUIProviderIdentity(provider);
   const targetId = localAgentGUIProviderTargetId(provider);
   const agentTargetId = localAgentGUIAgentTargetId(provider);
   return {
@@ -44,7 +54,8 @@ export function createLocalAgentGUIProviderTarget(
       kind: "local",
       provider
     },
-    label: agentGUIProviderTargetStaticLabels[provider] ?? provider
+    label: identity?.targetDisplayName ?? identity?.displayName ?? provider,
+    ...(migratedIdentity?.target.enabled === false ? { disabled: true } : {})
   };
 }
 
@@ -111,7 +122,7 @@ function createStaticAgentGUIProviderTargets(
 ): AgentGUIProviderTarget[] {
   const disabledProviders = new Set<AgentGUIProvider>(
     options?.includeDisabledPlaceholders === true
-      ? agentGUIDisabledPlaceholderProviders
+      ? legacyAgentGUIDisabledPlaceholderProviders
       : []
   );
   return providers.map((provider) =>
@@ -124,32 +135,16 @@ function createStaticAgentGUIProviderTargets(
 export function localAgentGUIProviderTargetId(
   provider: AgentGUIProvider
 ): string {
-  return `local:${provider}`;
+  return (
+    resolveAgentGUIProviderCatalogIdentity(provider)?.target.id ??
+    `local:${provider}`
+  );
 }
 
 export function localAgentGUIAgentTargetId(
   provider: AgentGUIProvider
 ): string | null {
-  switch (provider) {
-    case "codex":
-      return "local:codex";
-    case "claude-code":
-      return "local:claude-code";
-    case "tutti-agent":
-      return "local:tutti-agent";
-    case "cursor":
-      return "local:cursor";
-    case "hermes":
-      return "local:hermes";
-    case "nexight":
-      return "local:nexight";
-    case "openclaw":
-      return "local:openclaw";
-    case "opencode":
-      return "local:opencode";
-    default:
-      return null;
-  }
+  return resolveAgentGUIProviderCatalogIdentity(provider)?.target.id ?? null;
 }
 
 export function normalizeAgentGUIProviderTargets(
@@ -180,7 +175,7 @@ export function normalizeAgentGUIProviderTargets(
     normalizedTargets.push(normalized);
   }
   if (includeDisabledPlaceholders && normalizedTargets.length > 0) {
-    for (const provider of agentGUIDisabledPlaceholderProviders) {
+    for (const provider of legacyAgentGUIDisabledPlaceholderProviders) {
       if (seenProviders.has(provider)) {
         continue;
       }

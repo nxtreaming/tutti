@@ -1196,6 +1196,7 @@ export function AgentComposer({
   const slashQuery = isGoalModeActive
     ? null
     : getPromptStartSlashCommandQuery(paletteDraftPrompt);
+  const slashCommandPolicy = composerSettings.slashCommandPolicy;
   const promptBeforeSelection =
     editorHandleRef.current?.getPromptTextBeforeSelection() ?? "";
   const skillQueryDraft = promptBeforeSelection || paletteDraftPrompt;
@@ -1204,6 +1205,7 @@ export function AgentComposer({
     () =>
       resolveSlashCommandsForProvider({
         provider,
+        policy: slashCommandPolicy,
         commands: availableCommands,
         hasCompactableContext,
         compactSupported,
@@ -1218,7 +1220,8 @@ export function AgentComposer({
       composerSettings.supportsBrowser,
       composerSettings.supportsComputerUse,
       hasCompactableContext,
-      provider
+      provider,
+      slashCommandPolicy
     ]
   );
   const filteredCommands = useMemo(
@@ -1509,7 +1512,7 @@ export function AgentComposer({
   const settingsControlsDisabled =
     isSendingTurn || isSubmittingPrompt || showStopButton;
   const permissionModeControlsDisabled = resolvePermissionModeControlsDisabled({
-    provider,
+    changeDuringTurnSupported: composerSettings.permissionModeChangeDuringTurn,
     isSendingTurn,
     isSubmittingPrompt,
     showStopButton
@@ -1662,24 +1665,26 @@ export function AgentComposer({
     (command: AgentSessionCommand): void => {
       const selectionEffect = resolveSlashCommandSelectionEffect({
         provider,
+        policy: slashCommandPolicy,
         command,
         currentDraft: draftPromptRef.current
       });
       executeSlashCommandEffect(selectionEffect);
     },
-    [executeSlashCommandEffect, provider]
+    [executeSlashCommandEffect, provider, slashCommandPolicy]
   );
 
   const selectCapability = useCallback(
     (capability: AgentSlashCommandCapability): void => {
       const selectionEffect = resolveSlashCommandSelectionEffect({
         provider,
+        policy: slashCommandPolicy,
         command: capability,
         currentDraft: draftPromptRef.current
       });
       executeSlashCommandEffect(selectionEffect);
     },
-    [executeSlashCommandEffect, provider]
+    [executeSlashCommandEffect, provider, slashCommandPolicy]
   );
 
   const selectCapabilitySettings = useCallback(
@@ -1778,6 +1783,7 @@ export function AgentComposer({
         }
         const slashCommandEffect = resolveSlashCommandSubmitEffect({
           provider,
+          policy: slashCommandPolicy,
           commands: resolvedSlashCommands,
           draft: nextPrompt
         });
@@ -1787,11 +1793,9 @@ export function AgentComposer({
         }
       }
       setIsPaletteOpen(false);
-      // 引用(workspace-reference)mention 不再展开成文件路径:发给 agent 的内容与
-      // 对话流回显一致,单条 mention 链接,由 skill+CLL 按需解析。无需 displayPrompt 旁路。
+      // workspace-reference 保持为单条 mention，由 skill+CLI 按需解析。
       const submitContent = agentComposerDraftToPromptContent({
         draft: nextDraftContent,
-        provider,
         skills: availableSkills
       });
       const submitDisplayPrompt =
@@ -1812,14 +1816,8 @@ export function AgentComposer({
           onSubmit(submitContent);
         }
       }
-      // Starting a brand-new conversation (no active conversation yet) is
-      // async — session creation + activation round trip — before the view
-      // switches away from composer-home to show it. Skip the eager local
-      // clear in that case so the just-submitted text stays visible instead
-      // of leaving the composer blank with nothing happening;
-      // startConversation's resolution (see useAgentGUINodeController)
-      // authoritatively clears this same draft, or leaves it untouched on
-      // failure, once the view actually transitions.
+      // Session creation is async. Keep the draft visible until the controller
+      // clears it after activation, or preserves it on failure.
       if (hasActiveConversation) {
         draftPromptRef.current = "";
         draftImagesRef.current = [];
@@ -2067,10 +2065,7 @@ export function AgentComposer({
     ]
   );
 
-  // Shift+Tab toggles plan mode (CLI muscle memory), unified across providers.
-  // Plan rides as an independent draft toggle; the daemon enforces provider
-  // semantics (claude-code: plan overrides the permission mode; codex: plan is
-  // an independent collaboration mode).
+  // Shift+Tab toggles descriptor-advertised plan mode.
   const handlePlanModeToggleKeyDown = useCallback(
     (event: KeyboardEvent): boolean => {
       if (

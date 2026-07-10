@@ -346,7 +346,7 @@ func (s Service) Probe(ctx context.Context, input ProbeInput) (ProbeResult, erro
 		result.Message = agentProviderProbeAdapterUnavailableMessage(result.ReasonCode)
 		return result, nil
 	}
-	if spec.Provider == agentprovider.Codex && status.LastError != nil {
+	if isCodexStatusSpec(spec) && status.LastError != nil {
 		result.Status = ProbeFailed
 		result.ReasonCode = codexReasonCodeFromErrorCode(status.LastError.Code)
 		result.Message = status.LastError.Message
@@ -388,7 +388,7 @@ func (s Service) probeAdapterRuntimeCommand(
 		result.BinaryPath = command[0]
 	}
 	result = s.probeCommandWithReadyAfter(ctx, result, command, env, s.probeReadyAfterForSpec(spec))
-	if spec.Provider == agentprovider.Codex && result.Status == ProbeFailed {
+	if isCodexStatusSpec(spec) && result.Status == ProbeFailed {
 		if code, ok := classifyCodexRuntimeError(result.Message); ok {
 			result.LastError = &ProviderLastError{Code: string(code), Message: result.Message}
 			result.ReasonCode = codexReasonCodeFromErrorCode(string(code))
@@ -587,7 +587,7 @@ func (s Service) statusForSpec(ctx context.Context, spec ProviderSpec, now time.
 		cliVersion = s.cliVersion(ctx, runtimeResolution.CLIPath, runtimeResolution.Env)
 	}
 	codexPlatformOK := true
-	if spec.Provider == agentprovider.Codex && installed {
+	if isCodexStatusSpec(spec) && installed {
 		codexPlatformOK = s.codexPlatformBinaryOK(runtimeResolution.CLIPath)
 	}
 	availability := Availability{
@@ -612,11 +612,11 @@ func (s Service) statusForSpec(ctx context.Context, spec ProviderSpec, now time.
 		availability.Status = AvailabilityNotInstalled
 		availability.ReasonCode = "acp_adapter_version_mismatch"
 		actions = append(actions, daemonAction(ActionInstall))
-	} else if spec.Provider == agentprovider.Codex && !codexPlatformOK {
+	} else if isCodexStatusSpec(spec) && !codexPlatformOK {
 		availability.Status = AvailabilityNotInstalled
 		availability.ReasonCode = codexReasonCodeFromErrorCode(string(CodexErrPlatformPkgIncomplete))
 		actions = append(actions, daemonAction(ActionInstall))
-	} else if spec.Provider == agentprovider.Codex && !codexVersionMeetsMinimum(cliVersion) {
+	} else if isCodexStatusSpec(spec) && !cliVersionMeetsMinimum(cliVersion, spec.MinVersion) {
 		availability.Status = AvailabilityNotInstalled
 		availability.ReasonCode = codexReasonCodeFromErrorCode(string(CodexErrVersionTooOld))
 		actions = append(actions, daemonAction(ActionInstall))
@@ -685,8 +685,8 @@ func (s Service) statusForSpec(ctx context.Context, spec ProviderSpec, now time.
 			"stdoutLines", lines,
 		)
 	}
-	if spec.Provider == agentprovider.Codex {
-		status.CLI.MinVersion = MinSupportedCodexVersion
+	if isCodexStatusSpec(spec) {
+		status.CLI.MinVersion = spec.MinVersion
 		status.Checks = codexProviderChecks(status, codexPlatformOK, s.codexNodeRuntimeCheck(spec))
 		status.LastError = codexProviderLastError(status)
 		slog.Info(
@@ -705,7 +705,7 @@ func (s Service) shouldProbeAdapterCommandForStatus(spec ProviderSpec, runtimeRe
 	if strings.TrimSpace(spec.ExternalRegistryID) != "" {
 		return true
 	}
-	return spec.Provider == agentprovider.Codex && s.executableFile(runtimeResolution.AdapterPath)
+	return isCodexStatusSpec(spec) && s.executableFile(runtimeResolution.AdapterPath)
 }
 
 func (s Service) probeReadyAfterForSpec(spec ProviderSpec) time.Duration {
@@ -716,8 +716,8 @@ func (s Service) probeReadyAfterForSpec(spec ProviderSpec) time.Duration {
 }
 
 func agentNPMRegistryProbePackage(spec ProviderSpec) string {
-	if spec.Provider == agentprovider.Codex {
-		return "@openai/codex"
+	if strings.TrimSpace(spec.NPMRegistryPackage) != "" {
+		return strings.TrimSpace(spec.NPMRegistryPackage)
 	}
 	if spec.AdapterInstall.RegistryNPM != nil {
 		packageName, _ := splitNPMPackageSpec(spec.AdapterInstall.RegistryNPM.Package)

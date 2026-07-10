@@ -11,6 +11,7 @@ import (
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 )
 
 const WorkspaceAgentSessionOriginRuntime = "WORKSPACE_AGENT_SESSION_ORIGIN_RUNTIME"
@@ -874,7 +875,7 @@ func applyExplicitTurnLifecycleToPatch(patch *agentsessionstore.WorkspaceAgentSt
 	if turnID == "" {
 		return
 	}
-	lifecyclePhase := codexLifecyclePhaseFromActivityEvent(event)
+	lifecyclePhase := explicitTurnLifecyclePhaseFromActivityEvent(event)
 	if lifecyclePhase == "" {
 		return
 	}
@@ -883,7 +884,7 @@ func applyExplicitTurnLifecycleToPatch(patch *agentsessionstore.WorkspaceAgentSt
 	outcome := strings.TrimSpace(event.Payload.TurnOutcome)
 	if lifecyclePhase == "settled" {
 		turnActive = nil
-		outcome = codexLifecycleOutcomeFromActivityEvent(event)
+		outcome = explicitTurnLifecycleOutcomeFromActivityEvent(event)
 		patch.CurrentPhase = string(activityshared.TurnPhaseIdle)
 	}
 	if patch.Turn == nil {
@@ -892,7 +893,7 @@ func applyExplicitTurnLifecycleToPatch(patch *agentsessionstore.WorkspaceAgentSt
 	patch.Turn.Phase = lifecyclePhase
 	patch.Turn.ActiveTurnID = turnActive
 	patch.Turn.Outcome = outcome
-	patch.Turn.SubmitAvailability = codexSubmitAvailabilityForLifecyclePhase(lifecyclePhase)
+	patch.Turn.SubmitAvailability = submitAvailabilityForExplicitLifecyclePhase(lifecyclePhase)
 	if command := completedCommandFromEventMetadata(event.Payload.Metadata); command != nil {
 		patch.Turn.CompletedCommand = command
 	}
@@ -909,8 +910,14 @@ func applyExplicitTurnLifecycleToPatch(patch *agentsessionstore.WorkspaceAgentSt
 }
 
 func providerUsesExplicitTurnLifecyclePatch(provider string) bool {
+	if resolved, ok := providerregistry.ResolveEventProvider(provider); ok {
+		return resolved.TurnLifecycleProjection == providerregistry.TurnLifecycleProjectionExplicit
+	}
+	// Preserve the existing projection behavior of providers that have not
+	// migrated to providerregistry yet. This fallback disappears provider by
+	// provider as each descriptor declares its own policy.
 	switch strings.TrimSpace(provider) {
-	case ProviderClaudeCode, ProviderCodex, ProviderTuttiAgent:
+	case ProviderClaudeCode, ProviderTuttiAgent:
 		return true
 	default:
 		return false
@@ -935,7 +942,7 @@ func completedCommandFromEventMetadata(metadata map[string]any) *agentsessionsto
 	}
 }
 
-func codexLifecyclePhaseFromActivityEvent(event activityshared.Event) string {
+func explicitTurnLifecyclePhaseFromActivityEvent(event activityshared.Event) string {
 	switch event.Type {
 	case activityshared.EventTurnStarted:
 		return "running"
@@ -954,7 +961,7 @@ func codexLifecyclePhaseFromActivityEvent(event activityshared.Event) string {
 	return ""
 }
 
-func codexLifecycleOutcomeFromActivityEvent(event activityshared.Event) string {
+func explicitTurnLifecycleOutcomeFromActivityEvent(event activityshared.Event) string {
 	switch event.Type {
 	case activityshared.EventTurnFailed:
 		return "failed"
@@ -968,7 +975,7 @@ func codexLifecycleOutcomeFromActivityEvent(event activityshared.Event) string {
 	}
 }
 
-func codexSubmitAvailabilityForLifecyclePhase(phase string) *agentsessionstore.WorkspaceAgentSubmitAvailability {
+func submitAvailabilityForExplicitLifecyclePhase(phase string) *agentsessionstore.WorkspaceAgentSubmitAvailability {
 	switch phase {
 	case "settled":
 		return &agentsessionstore.WorkspaceAgentSubmitAvailability{State: "available"}

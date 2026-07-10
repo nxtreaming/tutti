@@ -4416,12 +4416,17 @@ describe("AgentGUINode", () => {
   });
 
   it("toggles plan mode on advertised Claude Code /plan instead of submitting", () => {
+    const baseViewModel = createViewModel();
     mockViewModel = createViewModel({
       activeConversationId: "session-1",
       data: {
         provider: "claude-code",
         lastActiveAgentSessionId: null,
         conversationRailWidthPx: null
+      },
+      composerSettings: {
+        ...baseViewModel.composerSettings,
+        slashCommandPolicy: null
       },
       draftPrompt: "/plan refactor auth",
       availableCommands: [{ name: "plan", description: "provider plan" }]
@@ -4659,6 +4664,7 @@ describe("AgentGUINode", () => {
         {
           name: "architecture-review",
           trigger: "$architecture-review",
+          invocation: "promptItem",
           sourceKind: "project",
           description: "Review architecture changes"
         }
@@ -4690,6 +4696,7 @@ describe("AgentGUINode", () => {
         {
           name: "architecture-review",
           trigger: "$architecture-review",
+          invocation: "promptItem",
           sourceKind: "project",
           description: "Review architecture changes"
         }
@@ -4857,6 +4864,7 @@ describe("AgentGUINode", () => {
         {
           name: "frontend-design",
           trigger: "/product-design:frontend-design",
+          invocation: "textTrigger",
           sourceKind: "plugin",
           pluginName: "product-design",
           description: "Design product UI"
@@ -4894,6 +4902,7 @@ describe("AgentGUINode", () => {
         {
           name: "frontend-design",
           trigger: "/product-design:frontend-design",
+          invocation: "textTrigger",
           sourceKind: "plugin",
           pluginName: "product-design",
           description: "Design product UI"
@@ -7561,6 +7570,18 @@ function createViewModel(
       speedUnavailable: false,
       availableSpeeds: [],
       supportsPlanMode: true,
+      slashCommandPolicy: {
+        fallbackCommands: ["compact", "status", "fast", "goal", "review"],
+        commandEffects: [
+          { command: "init", effect: "submitImmediate" },
+          { command: "compact", effect: "submitImmediate" },
+          { command: "review", effect: "showReviewPicker" },
+          { command: "goal", effect: "activateGoalMode" },
+          { command: "plan", effect: "togglePlanMode" },
+          { command: "status", effect: "showStatus" },
+          { command: "fast", effect: "toggleSpeed" }
+        ]
+      },
       isSettingsLoading: false,
       modelUnavailable: false,
       reasoningUnavailable: false,

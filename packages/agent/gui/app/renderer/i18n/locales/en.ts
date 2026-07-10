@@ -833,9 +833,9 @@ export const en = {
       visibleErrorActionCheckNetwork: "Check network",
       visibleErrorActionDetect: "Open setup",
       systemNoticeTransportRetry:
-        "Codex connection interrupted. Reconnecting...",
-      systemNoticeTransportFallback: "Codex switched to HTTPS transport",
-      systemNoticeWarning: "Codex warning",
+        "Agent connection interrupted. Reconnecting...",
+      systemNoticeTransportFallback: "Agent switched to HTTPS transport",
+      systemNoticeWarning: "Agent warning",
       systemNoticeDefault: "Agent notice",
       contextCompactionInProgress: "Compacting context",
       contextCompactionCompleted: "Context compacted.",

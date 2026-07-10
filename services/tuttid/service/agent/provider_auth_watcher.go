@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
 )
 
@@ -45,24 +46,16 @@ func DefaultProviderAuthWatchEntries() []ProviderAuthWatchEntry {
 	if err != nil {
 		home = ""
 	}
-	codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME"))
-	if codexHome == "" && home != "" {
-		codexHome = filepath.Join(home, ".codex")
-	}
 	claudeConfigDir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
 	if claudeConfigDir == "" && home != "" {
 		claudeConfigDir = filepath.Join(home, ".claude")
 	}
 	opencodePaths := defaultOpenCodeAuthWatchPaths(home)
-	entries := make([]ProviderAuthWatchEntry, 0, 3)
-	if codexHome != "" {
-		entries = append(entries, ProviderAuthWatchEntry{
-			Provider: agentprovider.Codex,
-			Paths: []string{
-				filepath.Join(codexHome, "auth.json"),
-				filepath.Join(codexHome, codexConfigFileName),
-			},
-		})
+	entries := make([]ProviderAuthWatchEntry, 0, len(providerregistry.Migrated())+2)
+	for _, descriptor := range providerregistry.Migrated() {
+		if entry, ok := providerAuthWatchEntryFromDescriptor(descriptor, home); ok {
+			entries = append(entries, entry)
+		}
 	}
 	if claudeConfigDir != "" {
 		claudePaths := []string{
@@ -88,6 +81,60 @@ func DefaultProviderAuthWatchEntries() []ProviderAuthWatchEntry {
 		})
 	}
 	return entries
+}
+
+func providerAuthWatchEntryFromDescriptor(
+	descriptor providerregistry.ProviderDescriptor,
+	home string,
+) (ProviderAuthWatchEntry, bool) {
+	watch := descriptor.Status.AuthWatch
+	if len(watch.Paths) == 0 {
+		return ProviderAuthWatchEntry{}, false
+	}
+	root := ""
+	if envVar := strings.TrimSpace(watch.RootEnvVar); envVar != "" {
+		root = strings.TrimSpace(os.Getenv(envVar))
+	}
+	if root == "" {
+		root = strings.TrimSpace(watch.DefaultRoot)
+	}
+	root = expandProviderAuthWatchHome(root, home)
+	if root == "" {
+		return ProviderAuthWatchEntry{}, false
+	}
+	paths := make([]string, 0, len(watch.Paths))
+	for _, path := range watch.Paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		paths = append(paths, path)
+	}
+	paths = uniqueNonEmptyPaths(paths)
+	if len(paths) == 0 {
+		return ProviderAuthWatchEntry{}, false
+	}
+	return ProviderAuthWatchEntry{
+		Provider: descriptor.Identity.ID,
+		Paths:    paths,
+	}, true
+}
+
+func expandProviderAuthWatchHome(path string, home string) string {
+	path = strings.TrimSpace(path)
+	if path == "~" {
+		return strings.TrimSpace(home)
+	}
+	if strings.HasPrefix(path, "~/") {
+		if strings.TrimSpace(home) == "" {
+			return ""
+		}
+		return filepath.Join(home, strings.TrimPrefix(path, "~/"))
+	}
+	return path
 }
 
 func defaultOpenCodeAuthWatchPaths(home string) []string {

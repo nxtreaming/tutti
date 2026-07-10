@@ -19,7 +19,6 @@ describe("agentComposerDraft", () => {
     expect(
       agentComposerDraftToPromptContent({
         draft,
-        provider: "codex",
         skills: []
       })
     ).toEqual([]);
@@ -29,10 +28,33 @@ describe("agentComposerDraft", () => {
     expect(
       agentComposerDraftToPromptContent({
         draft: { prompt: "  run tests  ", images: [] },
-        provider: "codex",
         skills: []
       })
     ).toEqual([{ type: "text", text: "run tests" }]);
+  });
+
+  it("builds prompt-item blocks from the skill invocation contract", () => {
+    expect(
+      agentComposerDraftToPromptContent({
+        draft: { prompt: "/review-code inspect this", images: [] },
+        skills: [
+          {
+            name: "review-code",
+            trigger: "$review-code",
+            invocation: "promptItem",
+            sourceKind: "personal",
+            path: "/skills/review-code/SKILL.md"
+          }
+        ]
+      })
+    ).toEqual([
+      { type: "text", text: "$review-code inspect this" },
+      {
+        type: "skill",
+        name: "review-code",
+        path: "/skills/review-code/SKILL.md"
+      }
+    ]);
   });
 
   it("submits a landed pasted-text draft as a structured file block", () => {
@@ -60,7 +82,6 @@ describe("agentComposerDraft", () => {
     expect(
       agentComposerDraftToPromptContent({
         draft,
-        provider: "codex",
         skills: []
       })
     ).toEqual([
@@ -111,14 +132,12 @@ describe("agentComposerDraft", () => {
     expect(
       agentComposerDraftToPromptContent({
         draft: uploading,
-        provider: "codex",
         skills: []
       })
     ).toEqual([]);
     expect(
       agentComposerDraftToPromptContent({
         draft: errored,
-        provider: "codex",
         skills: []
       })
     ).toEqual([]);
@@ -192,11 +211,11 @@ describe("agentComposerDraft", () => {
     expect(
       agentComposerDraftToPromptContent({
         draft: { prompt: "$review $github check this", images: [] },
-        provider: "codex",
         skills: [
           {
             name: "review",
             trigger: "$review",
+            invocation: "promptItem",
             sourceKind: "plugin",
             path: "/tmp/review/SKILL.md",
             kind: "skill"
@@ -204,6 +223,7 @@ describe("agentComposerDraft", () => {
           {
             name: "GitHub",
             trigger: "$github",
+            invocation: "promptItem",
             sourceKind: "connector",
             path: "app://github",
             kind: "connector"
@@ -232,7 +252,6 @@ describe("agentComposerDraft", () => {
             }
           ]
         },
-        provider: "codex",
         skills: []
       })
     ).toEqual([
@@ -260,7 +279,6 @@ describe("agentComposerDraft", () => {
             }
           ]
         },
-        provider: "codex",
         skills: []
       })
     ).toEqual([
@@ -297,7 +315,6 @@ describe("agentComposerDraft", () => {
             }
           ]
         },
-        provider: "codex",
         skills: []
       })
     ).toEqual([]);
@@ -378,7 +395,6 @@ describe("agentComposerDraft", () => {
             }
           ]
         },
-        provider: "codex",
         skills: []
       })
     ).toEqual([

@@ -831,7 +831,7 @@ function AgentVisibleErrorMessage({
             className="mt-0.5 shrink-0"
             onClick={() =>
               openAgentEnvPanel({
-                provider: error?.provider ?? "codex",
+                provider: error?.provider ?? null,
                 focus
               })
             }

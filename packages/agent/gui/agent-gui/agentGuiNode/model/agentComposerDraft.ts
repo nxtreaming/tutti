@@ -247,19 +247,16 @@ function agentPromptPastedTextBlockToDraftLargeText(
 
 export function agentComposerDraftToPromptContent(input: {
   draft: AgentComposerDraft;
-  provider: string;
   skills: readonly AgentGUIProviderSkillOption[];
 }): AgentPromptContentBlock[] {
   const prompt = promptForProviderSkills({
     prompt: input.draft.prompt,
-    provider: input.provider,
     skills: input.skills
   });
   return normalizeAgentPromptContentBlocks([
     ...textPromptContent(prompt),
     ...promptItemBlocksForProviderSkills({
       prompt,
-      provider: input.provider,
       skills: input.skills
     }),
     ...input.draft.images
@@ -342,14 +339,13 @@ function agentPromptPastedTextBlocks(
 
 function promptItemBlocksForProviderSkills(input: {
   prompt: string;
-  provider: string;
   skills: readonly AgentGUIProviderSkillOption[];
 }): AgentPromptContentBlock[] {
-  if (input.provider.trim() !== "codex") {
-    return [];
-  }
   const result: AgentPromptContentBlock[] = [];
   for (const skill of input.skills) {
+    if (skill.invocation !== "promptItem") {
+      continue;
+    }
     const path = skill.path?.trim();
     if (!path) {
       continue;

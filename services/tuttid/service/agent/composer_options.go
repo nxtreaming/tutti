@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
 	agentsidecarservice "github.com/tutti-os/tutti/services/tuttid/service/agentsidecar"
@@ -100,15 +101,16 @@ type ComposerCapabilityOption struct {
 }
 
 type ComposerOptions struct {
-	Provider          string
-	ModelConfig       ComposerConfigOption
-	PermissionConfig  PermissionConfig
-	ReasoningConfig   ComposerConfigOption
-	SpeedConfig       ComposerConfigOption
-	EffectiveSettings ComposerSettings
-	RuntimeContext    map[string]any
-	Skills            []ComposerSkillOption
-	CapabilityCatalog []ComposerCapabilityOption
+	Provider           string
+	ModelConfig        ComposerConfigOption
+	PermissionConfig   PermissionConfig
+	ReasoningConfig    ComposerConfigOption
+	SpeedConfig        ComposerConfigOption
+	EffectiveSettings  ComposerSettings
+	RuntimeContext     map[string]any
+	Skills             []ComposerSkillOption
+	CapabilityCatalog  []ComposerCapabilityOption
+	SlashCommandPolicy *providerregistry.SlashCommandPolicyDescriptor
 }
 
 func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsInput) (ComposerOptions, error) {
@@ -158,6 +160,7 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 		"reasoningEffort":  nullableString(effectiveSettings.ReasoningEffort),
 		"speed":            nullableString(effectiveSettings.Speed),
 	}
+	slashCommandPolicy := composerSlashCommandPolicy(provider)
 	if agentTargetID != "" {
 		runtimeContext["agentTargetId"] = agentTargetID
 	}
@@ -180,15 +183,16 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 		}
 	}
 	options := ComposerOptions{
-		Provider:          provider,
-		ModelConfig:       composerModelConfig(provider, effectiveSettings.Model, modelOptions),
-		PermissionConfig:  permissionConfig,
-		ReasoningConfig:   composerReasoningConfig(provider, effectiveSettings.ReasoningEffort, locale),
-		SpeedConfig:       composerSpeedConfig(provider, effectiveSettings.Speed, locale),
-		EffectiveSettings: effectiveSettings,
-		RuntimeContext:    runtimeContext,
-		Skills:            skills,
-		CapabilityCatalog: capabilityCatalog,
+		Provider:           provider,
+		ModelConfig:        composerModelConfig(provider, effectiveSettings.Model, modelOptions),
+		PermissionConfig:   permissionConfig,
+		ReasoningConfig:    composerReasoningConfig(provider, effectiveSettings.ReasoningEffort, locale),
+		SpeedConfig:        composerSpeedConfig(provider, effectiveSettings.Speed, locale),
+		EffectiveSettings:  effectiveSettings,
+		RuntimeContext:     runtimeContext,
+		Skills:             skills,
+		CapabilityCatalog:  capabilityCatalog,
+		SlashCommandPolicy: slashCommandPolicy,
 	}
 	if composerProfileFor(provider).LiveModelDiscovery {
 		var err error
@@ -296,13 +300,28 @@ func composerDefaultModel(
 			}
 		}
 	}
-	switch provider {
-	case agentprovider.Codex:
+	if composerProfileFor(provider).ModelCatalog == providerregistry.ModelCatalogKindCodexCLI {
 		return strings.TrimSpace(readCodexConfiguredDefaultModel())
+	}
+	switch provider {
 	case agentprovider.ClaudeCode:
 		return strings.TrimSpace(readClaudeCodeConfiguredDefaultModel())
 	default:
 		return ""
+	}
+}
+
+func composerSlashCommandPolicy(provider string) *providerregistry.SlashCommandPolicyDescriptor {
+	policy := composerProfileFor(provider).SlashCommandPolicy
+	if len(policy.FallbackCommands) == 0 && len(policy.CommandEffects) == 0 {
+		return nil
+	}
+	return &providerregistry.SlashCommandPolicyDescriptor{
+		FallbackCommands: append([]string(nil), policy.FallbackCommands...),
+		CommandEffects: append(
+			[]providerregistry.SlashCommandEffectDescriptor(nil),
+			policy.CommandEffects...,
+		),
 	}
 }
 
@@ -316,9 +335,13 @@ func composerConfigOptions(provider string, settings ComposerSettings, modelOpti
 	}
 	options := make([]map[string]any, 0, 3)
 	if profile.ModelSelection && len(modelOptions) > 0 {
+		configOptionID := strings.TrimSpace(profile.ModelConfigOptionID)
+		if configOptionID == "" {
+			configOptionID = "model"
+		}
 		options = append(options, map[string]any{
 			"currentValue": nullableString(settings.Model),
-			"id":           "model",
+			"id":           configOptionID,
 			"options":      composerConfigOptionValuesToRuntimeModelOptions(modelOptions),
 		})
 	}
@@ -631,8 +654,11 @@ func composerSelectedModelOptions(model string) []ComposerConfigOptionValue {
 }
 
 func reasoningConfigOptionID(provider string) string {
+	if id := strings.TrimSpace(composerProfileFor(provider).ReasoningConfigOptionID); id != "" {
+		return id
+	}
 	switch agentprovider.Normalize(provider) {
-	case agentprovider.Codex, agentprovider.TuttiAgent:
+	case agentprovider.TuttiAgent:
 		return "reasoning_effort"
 	default:
 		return "effort"
@@ -660,8 +686,11 @@ func speedProviderSupportsSpeed(provider string) bool {
 // the tier onto the app-server `service_tier` config; Claude Code sets a `fast`
 // ACP config option when the agent advertises it.
 func speedConfigOptionID(provider string) string {
+	if id := strings.TrimSpace(composerProfileFor(provider).SpeedConfigOptionID); id != "" {
+		return id
+	}
 	switch agentprovider.Normalize(provider) {
-	case agentprovider.Codex, agentprovider.TuttiAgent:
+	case agentprovider.TuttiAgent:
 		return "service_tier"
 	default:
 		return "fast"
@@ -745,8 +774,11 @@ func reasoningEffortOptions(provider string, selected string) []map[string]strin
 }
 
 func reasoningEffortValuesForProvider(provider string) []string {
-	if provider == agentprovider.Codex ||
-		provider == agentprovider.ClaudeCode ||
+	profile := composerProfileFor(provider)
+	if len(profile.ReasoningEffortValues) > 0 {
+		return append([]string(nil), profile.ReasoningEffortValues...)
+	}
+	if provider == agentprovider.ClaudeCode ||
 		provider == agentprovider.OpenCode {
 		return []string{"low", "medium", "high", "xhigh"}
 	}
@@ -759,12 +791,13 @@ func normalizeReasoningEffortForProvider(provider string, value string) string {
 		return ""
 	}
 	normalized := strings.TrimSpace(value)
-	if (provider == agentprovider.Codex || provider == agentprovider.ClaudeCode) &&
-		(normalized == "minimal" || normalized == "none") {
-		return "high"
-	}
-	if provider == agentprovider.OpenCode && (normalized == "minimal" || normalized == "none") {
-		return "high"
+	if normalized == "minimal" || normalized == "none" {
+		for _, candidate := range reasoningEffortValuesForProvider(provider) {
+			if candidate == normalized {
+				return normalized
+			}
+		}
+		return composerDefaultReasoningEffort(provider)
 	}
 	return normalized
 }

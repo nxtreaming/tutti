@@ -130,6 +130,72 @@ func TestStoreFreshMigrateCreatesTablesWithoutHostForeignKeys(t *testing.T) {
 	}
 }
 
+func TestStoreMigrateRefreshesOnlySystemSeedTargets(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t, testOptions(&staticProjectPaths{}))
+	ctx := context.Background()
+	if _, err := store.db.ExecContext(ctx, `
+UPDATE agent_targets
+SET provider = 'stale-provider', launch_ref_json = '{}', name = 'Stale Codex',
+    icon_key = 'stale', enabled = 0, sort_order = 999, created_at_ms = 7, updated_at_ms = 8
+WHERE id = ?;
+`, testTargetIDCodex); err != nil {
+		t.Fatalf("seed stale system target: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `
+UPDATE agent_targets
+SET provider = 'custom-provider', launch_ref_json = '{"custom":true}', name = 'Custom',
+    icon_key = 'custom', enabled = 0, source = 'user', sort_order = 777,
+    created_at_ms = 9, updated_at_ms = 10
+WHERE id = ?;
+`, testTargetIDClaude); err != nil {
+		t.Fatalf("seed custom target: %v", err)
+	}
+
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	var codex Target
+	if err := store.db.QueryRowContext(ctx, `
+SELECT id, provider, launch_ref_json, name, icon_key, enabled, source, sort_order, created_at_ms, updated_at_ms
+FROM agent_targets WHERE id = ?
+`, testTargetIDCodex).Scan(&codex.ID, &codex.Provider, &codex.LaunchRefJSON, &codex.Name, &codex.IconKey, &codex.Enabled, &codex.Source, &codex.SortOrder, &codex.CreatedAtUnixMS, &codex.UpdatedAtUnixMS); err != nil {
+		t.Fatalf("query refreshed codex target: %v", err)
+	}
+	if codex.Provider != "codex" || codex.LaunchRefJSON != `{"type":"local_cli","provider":"codex"}` ||
+		codex.Name != "Codex" || codex.IconKey != "codex" || !codex.Enabled || codex.SortOrder != 10 {
+		t.Fatalf("refreshed system target = %#v", codex)
+	}
+	if codex.CreatedAtUnixMS != 7 || codex.Source != systemTargetSource || codex.UpdatedAtUnixMS == 8 {
+		t.Fatalf("system target preserved fields/timestamp = %#v", codex)
+	}
+	refreshedAt := codex.UpdatedAtUnixMS
+	if err := store.seedSystemAgentTargets(ctx, refreshedAt+1000); err != nil {
+		t.Fatalf("seed unchanged system targets: %v", err)
+	}
+	if err := store.db.QueryRowContext(ctx, `SELECT updated_at_ms FROM agent_targets WHERE id = ?`, testTargetIDCodex).Scan(&codex.UpdatedAtUnixMS); err != nil {
+		t.Fatalf("query unchanged codex target: %v", err)
+	}
+	if codex.UpdatedAtUnixMS != refreshedAt {
+		t.Fatalf("unchanged system target updated_at_ms = %d, want %d", codex.UpdatedAtUnixMS, refreshedAt)
+	}
+
+	var custom Target
+	if err := store.db.QueryRowContext(ctx, `
+SELECT id, provider, launch_ref_json, name, icon_key, enabled, source, sort_order, created_at_ms, updated_at_ms
+FROM agent_targets WHERE id = ?
+`, testTargetIDClaude).Scan(&custom.ID, &custom.Provider, &custom.LaunchRefJSON, &custom.Name, &custom.IconKey, &custom.Enabled, &custom.Source, &custom.SortOrder, &custom.CreatedAtUnixMS, &custom.UpdatedAtUnixMS); err != nil {
+		t.Fatalf("query custom target: %v", err)
+	}
+	if custom.Provider != "custom-provider" || custom.LaunchRefJSON != `{"custom":true}` || custom.Name != "Custom" ||
+		custom.IconKey != "custom" || custom.Enabled || custom.Source != "user" || custom.SortOrder != 777 ||
+		custom.CreatedAtUnixMS != 9 || custom.UpdatedAtUnixMS != 10 {
+		t.Fatalf("custom target was overwritten = %#v", custom)
+	}
+}
+
 func TestStoreReportAndListSessionLifecycle(t *testing.T) {
 	t.Parallel()
 

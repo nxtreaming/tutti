@@ -1,6 +1,9 @@
 // Agent GUI controller — composer settings, drafts, and permission labels.
 
-import type { AgentActivityComposerOptions } from "@tutti-os/agent-activity-core";
+import type {
+  AgentActivityComposerOptions,
+  AgentActivitySlashCommandPolicy
+} from "@tutti-os/agent-activity-core";
 import type {
   AgentSessionComposerSettings,
   AgentSessionPermissionConfig,
@@ -23,18 +26,6 @@ import {
 
 export function normalizeConfigOptionValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-export function reasoningConfigOptionIdForProvider(
-  provider: AgentGUINodeData["provider"]
-): string {
-  return provider === "codex" ? "reasoning_effort" : "effort";
-}
-
-export function speedConfigOptionIdForProvider(
-  provider: AgentGUINodeData["provider"]
-): string {
-  return provider === "codex" ? "service_tier" : "fast";
 }
 
 export function composerSettingOptionsFromActivity(
@@ -143,8 +134,23 @@ export function providerSkillsFromComposerOptions(
   if (!options) {
     return [];
   }
+  const invocationByTrigger = new Map(
+    (options.capabilityCatalog ?? []).flatMap((capability) =>
+      capability.trigger &&
+      capability.status === "available" &&
+      (capability.invocation === "promptItem" ||
+        capability.invocation === "textTrigger")
+        ? [[capability.trigger, capability.invocation] as const]
+        : []
+    )
+  );
   return dedupeProviderSkills([
-    ...options.skills.map((skill) => ({ ...skill })),
+    ...options.skills.map((skill) => ({
+      ...skill,
+      ...(invocationByTrigger.get(skill.trigger)
+        ? { invocation: invocationByTrigger.get(skill.trigger) }
+        : {})
+    })),
     ...(options.capabilityCatalog ?? [])
       .filter(
         (capability) =>
@@ -159,6 +165,7 @@ export function providerSkillsFromComposerOptions(
         return {
           name: isConnector ? capability.label : capability.name,
           trigger: capability.trigger!,
+          invocation: "promptItem",
           sourceKind: isConnector ? "connector" : "plugin",
           kind: isConnector ? "connector" : "skill",
           ...(capability.description
@@ -180,6 +187,7 @@ export function areProviderSkillOptionsEqual(
   return (
     left.name === right.name &&
     left.trigger === right.trigger &&
+    left.invocation === right.invocation &&
     left.sourceKind === right.sourceKind &&
     left.description === right.description &&
     left.pluginName === right.pluginName &&
@@ -197,6 +205,30 @@ export function areProviderSkillOptionListsEqual(
     left.every((skill, index) =>
       areProviderSkillOptionsEqual(skill, right[index]!)
     )
+  );
+}
+
+export function slashCommandPoliciesEqual(
+  left: AgentActivitySlashCommandPolicy | null | undefined,
+  right: AgentActivitySlashCommandPolicy | null | undefined
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return (
+    left.fallbackCommands.length === right.fallbackCommands.length &&
+    left.fallbackCommands.every(
+      (command, index) => command === right.fallbackCommands[index]
+    ) &&
+    left.commandEffects.length === right.commandEffects.length &&
+    left.commandEffects.every((effect, index) => {
+      const other = right.commandEffects[index];
+      return (
+        other !== undefined &&
+        effect.command === other.command &&
+        effect.effect === other.effect
+      );
+    })
   );
 }
 
@@ -275,23 +307,22 @@ export function resolveEffectiveComposerSettings(input: {
 }
 
 export function runtimeConfigKeyForSetting(
-  provider: AgentGUINodeData["provider"],
+  runtimeContext: Record<string, unknown>,
   setting: "model" | "reasoningEffort" | "speed" | "permissionModeId"
-): string {
-  if (setting === "reasoningEffort") {
-    return reasoningConfigOptionIdForProvider(provider);
+): string | null {
+  const configOptions = runtimeContext.configOptions;
+  if (Array.isArray(configOptions)) {
+    for (const option of configOptions) {
+      const id = normalizeConfigOptionValue(recordValue(option)?.id);
+      if (shouldUpdateRuntimeConfigOption(id, setting)) {
+        return id as string;
+      }
+    }
   }
-  if (setting === "speed") {
-    return speedConfigOptionIdForProvider(provider);
-  }
-  if (setting === "permissionModeId") {
-    return "mode";
-  }
-  return "model";
+  return null;
 }
 
 export function shouldUpdateRuntimeConfigOption(
-  provider: AgentGUINodeData["provider"],
   id: string | null,
   setting: "model" | "reasoningEffort" | "speed" | "permissionModeId"
 ): boolean {
@@ -302,15 +333,9 @@ export function shouldUpdateRuntimeConfigOption(
     return id === "mode";
   }
   if (setting === "speed") {
-    return (
-      id === speedConfigOptionIdForProvider(provider) ||
-      id === "service_tier" ||
-      id === "speed" ||
-      id === "fast"
-    );
+    return id === "service_tier" || id === "speed" || id === "fast";
   }
   return (
-    id === reasoningConfigOptionIdForProvider(provider) ||
     id === "model_reasoning_effort" ||
     id === "reasoning_effort" ||
     id === "effort"
@@ -318,7 +343,6 @@ export function shouldUpdateRuntimeConfigOption(
 }
 
 export function mergeRuntimeContextComposerSettings(
-  provider: AgentGUINodeData["provider"],
   runtimeContext: Record<string, unknown> | undefined,
   settings: AgentSessionComposerSettings
 ): Record<string, unknown> | undefined {
@@ -334,26 +358,42 @@ export function mergeRuntimeContextComposerSettings(
 
   if (settings.model !== undefined) {
     const value = normalizeOptionalText(settings.model);
-    runtimeConfigPatch[runtimeConfigKeyForSetting(provider, "model")] = value;
+    appendRuntimeConfigPatch(
+      runtimeConfigPatch,
+      runtimeContext,
+      "model",
+      value
+    );
     optionPatches.push({ setting: "model", value });
   }
   if (settings.reasoningEffort !== undefined) {
     const value = normalizeOptionalText(settings.reasoningEffort);
-    runtimeConfigPatch[
-      runtimeConfigKeyForSetting(provider, "reasoningEffort")
-    ] = value;
+    appendRuntimeConfigPatch(
+      runtimeConfigPatch,
+      runtimeContext,
+      "reasoningEffort",
+      value
+    );
     optionPatches.push({ setting: "reasoningEffort", value });
   }
   if (settings.speed !== undefined) {
     const value = normalizeOptionalText(settings.speed);
-    runtimeConfigPatch[runtimeConfigKeyForSetting(provider, "speed")] = value;
+    appendRuntimeConfigPatch(
+      runtimeConfigPatch,
+      runtimeContext,
+      "speed",
+      value
+    );
     optionPatches.push({ setting: "speed", value });
   }
   if (settings.permissionModeId !== undefined) {
     const value = normalizeOptionalText(settings.permissionModeId);
-    runtimeConfigPatch[
-      runtimeConfigKeyForSetting(provider, "permissionModeId")
-    ] = value;
+    appendRuntimeConfigPatch(
+      runtimeConfigPatch,
+      runtimeContext,
+      "permissionModeId",
+      value
+    );
     optionPatches.push({ setting: "permissionModeId", value });
   }
 
@@ -376,13 +416,25 @@ export function mergeRuntimeContextComposerSettings(
         }
         const id = normalizeConfigOptionValue(optionRecord.id);
         const patch = optionPatches.find((item) =>
-          shouldUpdateRuntimeConfigOption(provider, id, item.setting)
+          shouldUpdateRuntimeConfigOption(id, item.setting)
         );
         return patch ? { ...optionRecord, currentValue: patch.value } : option;
       }
     );
   }
   return nextRuntimeContext;
+}
+
+function appendRuntimeConfigPatch(
+  patch: Record<string, unknown>,
+  runtimeContext: Record<string, unknown>,
+  setting: "model" | "reasoningEffort" | "speed" | "permissionModeId",
+  value: string | null
+): void {
+  const configKey = runtimeConfigKeyForSetting(runtimeContext, setting);
+  if (configKey) {
+    patch[configKey] = value;
+  }
 }
 
 export function normalizePermissionModeId(
@@ -460,37 +512,6 @@ export function nodeComposerOverridesForProvider(
     data.composerOverrides ??
     null
   );
-}
-
-export function composerSupportForProvider(
-  provider: AgentGUINodeData["provider"]
-): {
-  model: boolean;
-  permission: boolean;
-  reasoning: boolean;
-  speed: boolean;
-  plan: boolean;
-} {
-  if (
-    provider === "claude-code" ||
-    provider === "codex" ||
-    provider === "opencode"
-  ) {
-    return {
-      model: true,
-      permission: provider === "claude-code" || provider === "codex",
-      reasoning: provider !== "opencode",
-      speed: provider === "claude-code" || provider === "codex",
-      plan: false
-    };
-  }
-  return {
-    model: false,
-    permission: provider === "nexight",
-    reasoning: false,
-    speed: false,
-    plan: false
-  };
 }
 
 export function permissionModeOptions(

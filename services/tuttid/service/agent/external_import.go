@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	agentactivitybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentactivity"
 	agentproviderbiz "github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
@@ -293,9 +294,11 @@ func externalImportedSessionSettings(session externalImportedSession) map[string
 }
 
 func externalImportAgentTargetID(provider string) string {
-	switch agentproviderbiz.Normalize(provider) {
-	case agentproviderbiz.Codex:
-		return agenttargetbiz.IDLocalCodex
+	normalized := agentproviderbiz.Normalize(provider)
+	if descriptor, ok := providerregistry.Find(normalized); ok {
+		return descriptor.Target.ID
+	}
+	switch normalized {
 	case agentproviderbiz.ClaudeCode:
 		return agenttargetbiz.IDLocalClaudeCode
 	default:

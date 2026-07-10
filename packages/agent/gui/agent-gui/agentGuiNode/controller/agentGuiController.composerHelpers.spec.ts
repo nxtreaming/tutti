@@ -4,14 +4,42 @@ import type { AgentSessionPermissionConfig } from "../../../shared/agentSessionT
 import type { AgentGUINodeData } from "../../../types";
 import {
   buildNodeDefaultComposerSettings,
+  slashCommandPoliciesEqual,
   composerOptionsMissingLiveModelValues,
   liveModelOptionValuesFromRuntimeContext,
+  mergeRuntimeContextComposerSettings,
   nodeDataFromComposerSettings,
   permissionModeOptions,
+  providerSkillsFromComposerOptions,
   readNodeDefaultDraftPrompt,
   readNodeDefaultDraftSettings
 } from "./agentGuiController.composerHelpers";
 import type { AgentActivityComposerOptions } from "@tutti-os/agent-activity-core";
+
+describe("slash command policy equality", () => {
+  const policy = {
+    fallbackCommands: ["compact", "goal"],
+    commandEffects: [
+      { command: "compact", effect: "submitImmediate" as const },
+      { command: "goal", effect: "activateGoalMode" as const }
+    ]
+  };
+
+  it("compares cloned policy values structurally", () => {
+    expect(slashCommandPoliciesEqual(policy, structuredClone(policy))).toBe(
+      true
+    );
+    expect(
+      slashCommandPoliciesEqual(policy, {
+        ...structuredClone(policy),
+        commandEffects: [
+          { command: "compact", effect: "submitImmediate" },
+          { command: "goal", effect: "showStatus" }
+        ]
+      })
+    ).toBe(false);
+  });
+});
 
 describe("live model options from runtime context", () => {
   const cursorRuntimeContext = {
@@ -74,6 +102,83 @@ describe("live model options from runtime context", () => {
     ).toBe(false);
     expect(composerOptionsMissingLiveModelValues(null, liveValues)).toBe(false);
     expect(composerOptionsMissingLiveModelValues(staleOptions, [])).toBe(false);
+  });
+});
+
+describe("descriptor-backed runtime config options", () => {
+  it("updates Codex config keys from daemon-provided descriptors without provider branches", () => {
+    const runtimeContext = {
+      config: {},
+      configOptions: [
+        { id: "model", currentValue: "gpt-5" },
+        { id: "reasoning_effort", currentValue: "medium" },
+        { id: "service_tier", currentValue: "standard" },
+        { id: "mode", currentValue: "auto" }
+      ]
+    };
+
+    expect(
+      mergeRuntimeContextComposerSettings(runtimeContext, {
+        model: "gpt-5.3-codex",
+        reasoningEffort: "high",
+        speed: "fast",
+        permissionModeId: "full-access"
+      })
+    ).toEqual({
+      config: {
+        model: "gpt-5.3-codex",
+        reasoning_effort: "high",
+        service_tier: "fast",
+        mode: "full-access"
+      },
+      configOptions: [
+        { id: "model", currentValue: "gpt-5.3-codex" },
+        { id: "reasoning_effort", currentValue: "high" },
+        { id: "service_tier", currentValue: "fast" },
+        { id: "mode", currentValue: "full-access" }
+      ]
+    });
+  });
+
+  it("does not invent provider config keys when descriptors are unavailable", () => {
+    const runtimeContext = { config: { providerOwned: true } };
+
+    expect(
+      mergeRuntimeContextComposerSettings(runtimeContext, {
+        model: "model",
+        reasoningEffort: "high",
+        speed: "fast",
+        permissionModeId: "auto"
+      })
+    ).toEqual(runtimeContext);
+  });
+});
+
+describe("descriptor-backed skill invocation", () => {
+  it("does not apply invocation metadata from unavailable capabilities", () => {
+    const options = {
+      skills: [
+        {
+          name: "example",
+          trigger: "/example",
+          sourceKind: "plugin"
+        }
+      ],
+      capabilityCatalog: [
+        {
+          name: "example",
+          label: "Example",
+          kind: "skill",
+          status: "unavailable",
+          trigger: "/example",
+          invocation: "promptItem"
+        }
+      ]
+    } as unknown as AgentActivityComposerOptions;
+
+    expect(
+      providerSkillsFromComposerOptions(options)[0]?.invocation
+    ).toBeUndefined();
   });
 });
 

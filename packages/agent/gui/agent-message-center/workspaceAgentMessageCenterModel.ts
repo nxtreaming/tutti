@@ -1,4 +1,5 @@
 import {
+  hasAgentCapability,
   selectNeedsAttentionItems,
   selectSessionDisplayStatuses,
   type AgentActivityMessage,
@@ -125,7 +126,7 @@ export function buildWorkspaceAgentMessageCenterModel(
       );
       const pendingPrompt =
         messageAnalysis.pendingPrompt ??
-        codexPlanImplementationPrompt(session, status, messages) ??
+        planImplementationPrompt(session, status, messages) ??
         fallbackPromptFromNeedsAttention(
           needsAttention,
           options.promptFallbackLabels
@@ -570,19 +571,16 @@ function isExitPlanMessage(
   );
 }
 
-function codexPlanImplementationPrompt(
+function planImplementationPrompt(
   session: AgentActivitySession,
   status: WorkspaceAgentActivityStatus,
   messages: readonly AgentActivityMessage[]
 ): AgentConversationPromptVM | null {
-  if (session.provider.trim().toLowerCase() !== "codex") {
+  if (!hasAgentCapability(session.runtimeContext, "planImplementation")) {
     return null;
   }
-  // Only offer once the session has settled to completed/idle — not while it
-  // is still working/waiting, and not after failed/canceled (no point asking
-  // to implement a plan from a turn that didn't finish cleanly). Mirrors the
-  // codex TUI gate but evaluated against the latest turn rather than a
-  // transient per-turn flag.
+  // Offer only after a cleanly completed turn; active or failed plans are not
+  // actionable.
   if (status !== "completed" && status !== "idle") {
     return null;
   }
@@ -590,8 +588,7 @@ function codexPlanImplementationPrompt(
   if (!planTurnId) {
     return null;
   }
-  // Title from the plan message itself (matching latestPlanTurnId's plan-item
-  // detection), not whichever message in the turn happens to come first.
+  // Use the plan item itself, not the first message in its turn.
   const planMessage = messages.find(
     (item) =>
       item.turnId?.trim() === planTurnId &&

@@ -64,8 +64,11 @@ type ReleaseBinaryAsset struct {
 }
 
 type CodexCLILatestInstallerSpec struct {
-	BaseURL    string
-	InstallDir string
+	PackageName     string
+	BinaryName      string
+	IncludeOptional bool
+	BaseURL         string
+	InstallDir      string
 }
 
 type ManagedNPMPackageInstallerSpec struct {
@@ -93,7 +96,14 @@ func (s InstallerSpec) displayCommand() string {
 		}
 		return strings.TrimSpace(s.DisplayCommand)
 	case InstallerKindCodexCLILatest:
-		return firstNonBlank(s.DisplayCommand, "npm install -g @openai/codex --include=optional")
+		if s.CodexCLI != nil {
+			args := []string{"npm install -g", strings.TrimSpace(s.CodexCLI.PackageName)}
+			if s.CodexCLI.IncludeOptional {
+				args = append(args, "--include=optional")
+			}
+			return firstNonBlank(s.DisplayCommand, strings.Join(args, " "))
+		}
+		return strings.TrimSpace(s.DisplayCommand)
 	case InstallerKindManagedNPMPackage:
 		if s.ManagedNPM != nil {
 			packageSpec := managedNPMPackageSpec(*s.ManagedNPM)
@@ -163,6 +173,12 @@ func validateInstallerSpec(spec InstallerSpec) error {
 	case InstallerKindCodexCLILatest:
 		if spec.CodexCLI == nil {
 			return fmt.Errorf("codex CLI latest installer config is required")
+		}
+		if strings.TrimSpace(spec.CodexCLI.PackageName) == "" {
+			return fmt.Errorf("codex CLI latest installer package name is required")
+		}
+		if strings.TrimSpace(spec.CodexCLI.BinaryName) == "" {
+			return fmt.Errorf("codex CLI latest installer binary name is required")
 		}
 	case InstallerKindManagedNPMPackage:
 		if spec.ManagedNPM == nil {

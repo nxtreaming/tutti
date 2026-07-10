@@ -2297,6 +2297,7 @@ func claudeSDKRuntimeContext(session Session, adapterSession *claudeSDKAdapterSe
 			CapabilityRateLimits,
 			CapabilityPlanMode,
 			CapabilityInterrupt,
+			CapabilityPermissionModeChangeDuringTurn,
 			"review",
 			// Goal set/clear/display only — no CapabilityGoalPause: Claude
 			// Code's goal has no paused state to control.

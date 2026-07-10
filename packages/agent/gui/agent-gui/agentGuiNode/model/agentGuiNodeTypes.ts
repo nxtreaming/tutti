@@ -21,6 +21,7 @@ import type {
   AgentSessionSpeed,
   AgentSessionState
 } from "../../../shared/agentSessionTypes";
+import type { AgentSlashCommandPolicy } from "./agentSlashCommandProviderPolicy";
 import type { AgentConversationVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type { WorkspaceAgentSessionDetailViewModel } from "../../../shared/workspaceAgentSessionDetailViewModel";
 import type { AgentPromptContentBlock } from "../../../shared/contracts/dto";
@@ -67,6 +68,8 @@ export interface AgentGUIComposerSettingOption {
 export interface AgentGUIProviderSkillOption {
   name: string;
   trigger: string;
+  /** Daemon-issued invocation contract; never infer this from provider id. */
+  invocation?: "promptItem" | "textTrigger";
   sourceKind:
     | "project"
     | "personal"
@@ -212,12 +215,12 @@ export interface AgentGUIComposerSettingsVM {
   supportsSpeed: boolean;
   supportsPermissionMode?: boolean;
   supportsPlanMode: boolean;
-  // claude-code: plan mode overrides the permission mode in the daemon, so the
-  // two are mutually exclusive and picking a permission mode clears plan. codex:
-  // plan is an independent collaboration mode left untouched by permission picks.
+  // Descriptor-derived plan/permission exclusivity.
   planExclusiveWithPermissionMode?: boolean;
   supportsBrowser?: boolean;
   supportsComputerUse?: boolean;
+  permissionModeChangeDuringTurn?: boolean;
+  slashCommandPolicy?: AgentSlashCommandPolicy | null;
   isSettingsLoading: boolean;
   isModelOptionsLoading?: boolean;
   modelUnavailable: boolean;
@@ -287,14 +290,11 @@ export interface AgentGUINodeViewModel {
   isRespondingApproval: boolean;
   promptImagesSupported: boolean;
   compactSupported: boolean | null;
-  /**
-   * Provider goal supports a real paused state (codex thread goals). Claude
-   * Code's goal has none — the banner then omits pause/resume controls.
-   */
+  /** Provider goal exposes a real paused state and pause/resume controls. */
   goalPauseSupported: boolean;
   usage: AgentActivityUsage | null;
   backgroundAgentCount: number;
-  /** Codex plan turn finished: offer the TUI-equivalent implement prompt. */
+  /** Error returned while loading conversation or project lists. */
   listError: string | null;
   isDeletingConversation: boolean;
   isDeletingProjectConversations: boolean;

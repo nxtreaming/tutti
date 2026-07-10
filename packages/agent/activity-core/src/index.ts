@@ -1,6 +1,7 @@
 export type { AgentActivityAdapter } from "./adapter.ts";
 export {
   AGENT_CAPABILITY_KEYS,
+  hasAgentCapability,
   resolveAgentActivityCapability,
   type AgentActivityCapabilityInput,
   type AgentCapabilityKey
@@ -91,6 +92,8 @@ export type {
   AgentActivityComposerPermissionModeOption,
   AgentActivityComposerSettingOption,
   AgentActivityComposerSettings,
+  AgentActivitySlashCommandEffect,
+  AgentActivitySlashCommandPolicy,
   AgentActivityComposerSkillOption,
   AgentActivityCreateSessionInput,
   AgentActivityDeleteSessionInput,

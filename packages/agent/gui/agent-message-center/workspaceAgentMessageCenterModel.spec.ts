@@ -959,7 +959,8 @@ describe("buildWorkspaceAgentMessageCenterModel", () => {
           session({
             agentSessionId: "session-1",
             provider: "codex",
-            status: "completed"
+            status: "completed",
+            runtimeContext: { capabilities: ["planImplementation"] }
           })
         ]
       })
@@ -991,7 +992,8 @@ describe("buildWorkspaceAgentMessageCenterModel", () => {
           session({
             agentSessionId: "session-1",
             provider: "codex",
-            status: "working"
+            status: "working",
+            runtimeContext: { capabilities: ["planImplementation"] }
           })
         ]
       })
@@ -1027,7 +1029,8 @@ describe("buildWorkspaceAgentMessageCenterModel", () => {
           session({
             agentSessionId: "session-1",
             provider: "codex",
-            status: "completed"
+            status: "completed",
+            runtimeContext: { capabilities: ["planImplementation"] }
           })
         ]
       })

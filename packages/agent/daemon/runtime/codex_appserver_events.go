@@ -1866,10 +1866,16 @@ func codexAppServerApprovalsReviewer(modeID string) string {
 
 // --- response decoding helpers ---
 
-func appServerInfo(raw json.RawMessage) map[string]any {
+func (a *CodexAppServerAdapter) appServerInfo(raw json.RawMessage) map[string]any {
+	runtimeName := ""
+	displayName := ""
+	if a != nil {
+		runtimeName = strings.TrimSpace(a.config.runtimeName)
+		displayName = strings.TrimSpace(a.config.displayName)
+	}
 	info := map[string]any{
-		"name":  "codex-app-server",
-		"title": "Codex",
+		"name":  runtimeName,
+		"title": displayName,
 	}
 	if len(raw) == 0 {
 		return info
@@ -2003,6 +2009,9 @@ func codexAppServerCapabilities(planMode bool) []string {
 		"review",
 		"goal",
 		CapabilityGoalPause,
+		CapabilityPlanImplementation,
+		CapabilityPermissionModeChangeDuringTurn,
+		CapabilityPermissionModeChangeDeferred,
 		"rollback",
 		"fork",
 		"perTurnModelOverride",

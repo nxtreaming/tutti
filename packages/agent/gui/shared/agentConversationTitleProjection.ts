@@ -1,6 +1,7 @@
 import { AGENT_PROVIDER_LABEL } from "../contexts/settings/domain/agentSettings.providerMeta.ts";
 import type { UiLanguage } from "../contexts/settings/domain/agentSettings.ts";
 import { translateInUiLanguage } from "../i18n/runtime.ts";
+import { resolveAgentGUIProviderCatalogIdentity } from "../providerIdentityCatalog.ts";
 import type { AgentGUIProvider } from "../types.ts";
 import type { WorkspaceAgentActivityTimelineItem } from "./workspaceAgentActivityTypes.ts";
 import { formatAgentSessionMentionText } from "./utils/agentSessionMentionText.ts";
@@ -33,34 +34,11 @@ export interface AgentGUIConversationTitleMessage {
 export function normalizeAgentGUIProviderIdentity(
   provider: string | null | undefined
 ): AgentGUIResolvedProvider {
-  switch (provider?.trim().toLowerCase() ?? "") {
-    case "claude-code":
-    case "claude":
-    case "claude code":
-      return "claude-code";
-    case "codex":
-      return "codex";
-    case "tutti-agent":
-    case "tutti agent":
-      return "tutti-agent";
-    case "cursor":
-    case "cursor-agent":
-    case "cursor agent":
-      return "cursor";
-    case "nexight":
-    case "tutti":
-      return "nexight";
-    case "hermes":
-      return "hermes";
-    case "openclaw":
-      return "openclaw";
-    case "opencode":
-    case "open-code":
-    case "opencode-ai":
-      return "opencode";
-    default:
-      return "unknown";
-  }
+  const providerId =
+    resolveAgentGUIProviderCatalogIdentity(provider)?.providerId;
+  return providerId && Object.hasOwn(AGENT_PROVIDER_LABEL, providerId)
+    ? (providerId as AgentGUIProvider)
+    : "unknown";
 }
 
 export function resolveAgentGUIProviderIdentity(input: {

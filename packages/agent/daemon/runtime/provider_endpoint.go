@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 )
 
 func providerRuntimeConfig(session Session, provider string) map[string]any {
@@ -19,6 +21,11 @@ func providerRuntimeConfig(session Session, provider string) map[string]any {
 
 func providerBaseURL(session Session, provider string) string {
 	env := append(os.Environ(), session.Env...)
+	if descriptor, ok := providerregistry.Find(provider); ok {
+		return providerBaseURLFromDescriptor(env, descriptor.Runtime.Endpoint)
+	}
+	// Unmigrated providers keep their legacy endpoint discovery until their
+	// runtime descriptor owns it.
 	switch strings.TrimSpace(provider) {
 	case ProviderClaudeCode:
 		if baseURL := firstNonEmptyEnv(env,
@@ -28,14 +35,17 @@ func providerBaseURL(session Session, provider string) string {
 			return baseURL
 		}
 		return claudeSettingsBaseURL(session.CWD)
-	case ProviderCodex:
-		if baseURL := firstNonEmptyEnv(env,
-			"OPENAI_BASE_URL",
-			"OPENAI_API_BASE_URL",
-			"OPENAI_API_BASE",
-		); baseURL != "" {
-			return baseURL
-		}
+	default:
+		return ""
+	}
+}
+
+func providerBaseURLFromDescriptor(env []string, endpoint providerregistry.RuntimeEndpointDescriptor) string {
+	if baseURL := firstNonEmptyEnv(env, endpoint.BaseURLEnvVars...); baseURL != "" {
+		return baseURL
+	}
+	switch endpoint.ConfigKind {
+	case providerregistry.EndpointConfigKindCodexCLI:
 		return codexConfigBaseURL(env)
 	default:
 		return ""

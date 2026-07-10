@@ -130,7 +130,10 @@ describe("composerSettingsSupportFromOptions", () => {
       permission: false,
       plan: false,
       browser: false,
-      computer: false
+      computer: false,
+      planImplementation: false,
+      permissionModeChangeDuringTurn: false,
+      permissionModeChangeDeferred: false
     });
   });
 

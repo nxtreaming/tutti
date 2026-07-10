@@ -5,8 +5,23 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 )
+
+func TestDefaultTargetIDBackfillUsesMigratedProviderDescriptors(t *testing.T) {
+	descriptor, ok := providerregistry.Find(providerregistry.CodexProviderID)
+	if !ok {
+		t.Fatal("codex descriptor missing")
+	}
+	got := defaultTargetIDBackfillByProvider()
+	if got[descriptor.Identity.ID] != descriptor.Target.ID {
+		t.Fatalf("codex target backfill = %q, want %q", got[descriptor.Identity.ID], descriptor.Target.ID)
+	}
+	if got["claude-code"] != agenttargetbiz.IDLocalClaudeCode || got["cursor"] != agenttargetbiz.IDLocalCursor {
+		t.Fatalf("legacy target backfills = %#v", got)
+	}
+}
 
 func TestSQLiteStoreSeedsSystemAgentTargets(t *testing.T) {
 	t.Parallel()

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 )
 
 type State struct {
@@ -1516,7 +1517,7 @@ func statePatchLastError(event activityshared.Event) string {
 }
 
 func applyExplicitTurnLifecycleToPatch(patch *WorkspaceAgentStatePatch, event activityshared.Event) {
-	if patch == nil || strings.TrimSpace(patch.Provider) != string(activityshared.ProviderCodex) {
+	if patch == nil || !providerUsesExplicitTurnLifecycleProjection(patch.Provider) {
 		return
 	}
 	turnID := strings.TrimSpace(event.Payload.TurnID)
@@ -1553,6 +1554,17 @@ func applyExplicitTurnLifecycleToPatch(patch *WorkspaceAgentStatePatch, event ac
 	if outcome != "" {
 		patch.TurnLifecycle.Outcome = &outcome
 	}
+}
+
+func providerUsesExplicitTurnLifecycleProjection(provider string) bool {
+	resolved, ok := providerregistry.ResolveEventProvider(provider)
+	if !ok {
+		// No unmigrated provider used this projection in the activity store.
+		// Their legacy projection path remains unchanged until their descriptor
+		// migration declares an explicit policy.
+		return false
+	}
+	return resolved.TurnLifecycleProjection == providerregistry.TurnLifecycleProjectionExplicit
 }
 
 func completedCommandFromEventMetadata(metadata map[string]any) *WorkspaceAgentCompletedCommand {

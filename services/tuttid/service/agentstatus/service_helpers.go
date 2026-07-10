@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	"github.com/tutti-os/tutti/packages/agent/daemon/runtimecmd"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
 	managedruntime "github.com/tutti-os/tutti/services/tuttid/service/managedruntime"
@@ -392,7 +393,7 @@ func codexProviderChecks(status ProviderStatus, platformBinaryOK bool, nodeRunti
 		},
 		{
 			Name:   "version_floor",
-			Passed: codexVersionMeetsMinimum(status.CLI.Version),
+			Passed: cliVersionMeetsMinimum(status.CLI.Version, status.CLI.MinVersion),
 			Detail: firstNonBlank(status.CLI.Version, "version unknown"),
 		},
 		nodeRuntime,
@@ -433,7 +434,7 @@ func codexProviderLastError(status ProviderStatus) *ProviderLastError {
 	case "codex_platform_pkg_incomplete":
 		return &ProviderLastError{Code: string(CodexErrPlatformPkgIncomplete), Message: "Codex platform package is incomplete"}
 	case "codex_version_too_old":
-		return &ProviderLastError{Code: string(CodexErrVersionTooOld), Message: "Codex CLI version is below " + MinSupportedCodexVersion}
+		return &ProviderLastError{Code: string(CodexErrVersionTooOld), Message: "Codex CLI version is below " + status.CLI.MinVersion}
 	case "auth_required", "auth_unknown":
 		return &ProviderLastError{Code: string(CodexErrAuthRequired), Message: "authentication required"}
 	default:
@@ -545,11 +546,14 @@ func parseAuthStatusCommandOutput(provider string, output []byte) (AuthInfo, boo
 	if auth, ok := parseAuthCommandConfigurationError(output); ok {
 		return auth, true
 	}
+	if status, ok := migratedProviderStatus(provider); ok {
+		if status.Kind == providerregistry.StatusKindCodexCLI {
+			return parseCodexAuthStatusOutput(output)
+		}
+	}
 	switch agentprovider.Normalize(provider) {
 	case agentprovider.ClaudeCode:
 		return parseClaudeAuthStatusOutput(output)
-	case agentprovider.Codex:
-		return parseCodexAuthStatusOutput(output)
 	case agentprovider.TuttiAgent:
 		// Tutti Agent is a Codex CLI fork; `tutti-agent login status` prints the
 		// same "Logged in ..." / "Not logged in" copy.

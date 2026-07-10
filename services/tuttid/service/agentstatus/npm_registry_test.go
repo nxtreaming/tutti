@@ -264,9 +264,9 @@ func TestRunCodexCLILatestInstallerPinsDedicatedCache(t *testing.T) {
 		return InstallCommandResult{ExitCode: 0}, nil
 	}
 
-	if _, err := service.runCodexCLILatestInstaller(context.Background(), InstallerSpec{
+	if _, err := service.runCodexCLILatestInstaller(context.Background(), "codex", InstallerSpec{
 		Kind:     InstallerKindCodexCLILatest,
-		CodexCLI: &CodexCLILatestInstallerSpec{},
+		CodexCLI: codexCLIInstallerSpec().CodexCLI,
 	}, ""); err != nil {
 		t.Fatalf("runCodexCLILatestInstaller() error = %v", err)
 	}

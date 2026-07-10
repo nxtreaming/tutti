@@ -11,6 +11,9 @@ export interface AgentComposerSettingsSupport {
   plan: boolean;
   browser: boolean;
   computer: boolean;
+  planImplementation: boolean;
+  permissionModeChangeDuringTurn: boolean;
+  permissionModeChangeDeferred: boolean;
 }
 
 /**
@@ -41,6 +44,21 @@ export function composerSettingsSupportFromOptions(
       }) === true,
     computer:
       resolveAgentActivityCapability("computerUse", {
+        composerOptions,
+        sessionRuntimeContext
+      }) === true,
+    planImplementation:
+      resolveAgentActivityCapability("planImplementation", {
+        composerOptions,
+        sessionRuntimeContext
+      }) === true,
+    permissionModeChangeDuringTurn:
+      resolveAgentActivityCapability("permissionModeChangeDuringTurn", {
+        composerOptions,
+        sessionRuntimeContext
+      }) === true,
+    permissionModeChangeDeferred:
+      resolveAgentActivityCapability("permissionModeChangeDeferred", {
         composerOptions,
         sessionRuntimeContext
       }) === true

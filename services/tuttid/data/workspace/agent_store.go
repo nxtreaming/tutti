@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	agentstore "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 	agentactivitybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentactivity"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
@@ -30,12 +31,19 @@ func (s *SQLiteStore) newAgentStore() *agentstore.Store {
 			legacyIDLocalCodex:      agenttargetbiz.IDLocalCodex,
 			legacyIDLocalClaudeCode: agenttargetbiz.IDLocalClaudeCode,
 		},
-		TargetIDBackfillByProvider: map[string]string{
-			"codex":       agenttargetbiz.IDLocalCodex,
-			"claude-code": agenttargetbiz.IDLocalClaudeCode,
-			"cursor":      agenttargetbiz.IDLocalCursor,
-		},
+		TargetIDBackfillByProvider: defaultTargetIDBackfillByProvider(),
 	})
+}
+
+func defaultTargetIDBackfillByProvider() map[string]string {
+	result := map[string]string{
+		"claude-code": agenttargetbiz.IDLocalClaudeCode,
+		"cursor":      agenttargetbiz.IDLocalCursor,
+	}
+	for _, descriptor := range providerregistry.Migrated() {
+		result[descriptor.Identity.ID] = descriptor.Target.ID
+	}
+	return result
 }
 
 func (s *SQLiteStore) agentStore() *agentstore.Store {

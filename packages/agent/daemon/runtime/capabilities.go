@@ -6,15 +6,18 @@ import "strings"
 // the GUI through runtimeContext.capabilities. Keep in sync with the
 // TypeScript side (packages/agent/activity-core/src/capabilities.ts).
 const (
-	CapabilityImageInput  = "imageInput"
-	CapabilitySkills      = "skills"
-	CapabilityCompact     = "compact"
-	CapabilityTokenUsage  = "tokenUsage"
-	CapabilityRateLimits  = "rateLimits"
-	CapabilityPlanMode    = "planMode"
-	CapabilityInterrupt   = "interrupt"
-	CapabilityBrowserUse  = "browserUse"
-	CapabilityComputerUse = "computerUse"
+	CapabilityImageInput                     = "imageInput"
+	CapabilitySkills                         = "skills"
+	CapabilityCompact                        = "compact"
+	CapabilityTokenUsage                     = "tokenUsage"
+	CapabilityRateLimits                     = "rateLimits"
+	CapabilityPlanMode                       = "planMode"
+	CapabilityInterrupt                      = "interrupt"
+	CapabilityBrowserUse                     = "browserUse"
+	CapabilityComputerUse                    = "computerUse"
+	CapabilityPlanImplementation             = "planImplementation"
+	CapabilityPermissionModeChangeDuringTurn = "permissionModeChangeDuringTurn"
+	CapabilityPermissionModeChangeDeferred   = "permissionModeChangeDeferred"
 	// CapabilityGoalPause marks providers whose goal is a controllable
 	// entity with a real paused state (codex thread goals). Providers
 	// without it (Claude Code: /goal command in, goal_status attachments
@@ -34,6 +37,7 @@ func standardACPCapabilities(provider string, promptImage bool, state acpLiveSta
 			CapabilityRateLimits,
 			CapabilityPlanMode,
 			CapabilityInterrupt,
+			CapabilityPermissionModeChangeDuringTurn,
 			"review",
 		}
 		if promptImage {

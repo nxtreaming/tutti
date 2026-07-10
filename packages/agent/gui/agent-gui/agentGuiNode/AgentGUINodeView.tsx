@@ -105,6 +105,7 @@ import type {
 import { AgentHomeSuggestions } from "./AgentHomeSuggestions";
 import { AGENT_GUI_WORKBENCH_OPEN_EXTERNAL_IMPORT_EVENT } from "../../workbench/contribution";
 import { resolveAgentGuiWorkbenchProviderLabel } from "../../workbench/providerCatalog";
+import { resolveAgentGUIProviderCatalogIdentity } from "../../providerIdentityCatalog.ts";
 import { useProjectedAgentConversation } from "../../shared/agentConversation/projection/useProjectedAgentConversation";
 import { normalizeOptionalWorkspaceAgentStatus } from "../../shared/workspaceAgentStatusNormalizer";
 import {
@@ -2361,8 +2362,7 @@ const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       rawState: null
     };
   }, [displayedInlineNotice]);
-  // Plan decisions (claude-code exit-plan + codex plan-implementation) replace
-  // the composer in the bottom dock: the decision card takes the input box slot
+  // Plan decisions replace the composer in the bottom dock: the card takes its slot
   // and the composer hides until it is acted on (optimistically cleared via
   // bottomDockDismissedPromptRequestId) or otherwise resolves.
   const activePromptIsPlanDecision =
@@ -4333,8 +4333,7 @@ interface AgentGUIBottomDockPaneProps {
     | AgentGUIDetailPaneProps["viewModel"]["pendingApproval"]
     | AgentGUIDetailPaneProps["viewModel"]["pendingInteractivePrompt"];
   // When set, this interactive prompt takes the composer's slot in the bottom
-  // dock (the composer is hidden) for both claude-code exit-plan and codex
-  // plan-implementation decisions. Closing the prompt returns the composer.
+  // dock (the composer is hidden). Closing the prompt returns the composer.
   bottomDockReplacementPrompt:
     | AgentGUIDetailPaneProps["viewModel"]["pendingApproval"]
     | AgentGUIDetailPaneProps["viewModel"]["pendingInteractivePrompt"];
@@ -5231,13 +5230,9 @@ function agentGUIProviderRailLabel(
   if (targetLabel.trim() && targetLabel !== provider) {
     return targetLabel;
   }
-  if (provider === "codex") {
-    return labels.conversationFilterCodex;
-  }
-  if (provider === "claude-code") {
-    return labels.conversationFilterClaudeCode;
-  }
-  return targetLabel;
+  return (
+    resolveAgentGUIProviderCatalogIdentity(provider)?.displayName ?? targetLabel
+  );
 }
 
 function agentGUIProviderRailAriaLabel(

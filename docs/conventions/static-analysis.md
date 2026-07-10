@@ -27,6 +27,7 @@ Repository entrypoints:
 - `pnpm lint:go`
 - `pnpm typecheck`
 - `pnpm check:codexproto-generated`
+- `pnpm check:agent-gui-provider-catalog-generated`
 
 `pnpm check:full` remains the full local and CI validation command and includes linting and typechecking.
 
@@ -60,6 +61,16 @@ The codexproto generator runs during `pnpm check:full` alongside full-repository
 boundary scanners. Generator scratch files must stay outside the repository
 tree, even when they are removed before the generator exits, so parallel checks
 cannot observe transient files and fail nondeterministically.
+
+The Agent GUI provider identity catalog under
+`packages/agent/gui/generated/providerIdentityCatalog.ts` is generated from the
+daemon provider registry. `pnpm check:agent-gui-provider-catalog-generated`
+fails when the checked-in TypeScript catalog drifts from the descriptor source
+of truth, when a generated locale key is absent from any AgentGUI locale, or
+when a generated icon key has no complete asset set. It runs as part of
+`pnpm check:full`. Change provider identity, locale keys, icons, and target metadata in the registry, then run
+`pnpm generate:agent-gui-provider-catalog`; do not hand-edit the generated
+catalog.
 
 Historical or ported-source snapshots that are intentionally kept outside a
 package's active `tsconfig.json` during migration should also stay out of the

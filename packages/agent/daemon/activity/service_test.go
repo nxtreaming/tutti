@@ -2682,3 +2682,12 @@ func TestSubmitAvailabilityForTurnLifecyclePhaseCoversLivePhases(t *testing.T) {
 		}
 	}
 }
+
+func TestExplicitTurnLifecycleProjectionUsesMigratedProviderPolicy(t *testing.T) {
+	if !providerUsesExplicitTurnLifecycleProjection(" CODEX ") {
+		t.Fatal("migrated Codex descriptor did not enable explicit turn lifecycle projection")
+	}
+	if providerUsesExplicitTurnLifecycleProjection("unmigrated-provider") {
+		t.Fatal("unmigrated provider unexpectedly enabled explicit turn lifecycle projection")
+	}
+}

@@ -31,3 +31,52 @@ test("agent composer options keep SDK fast speed configurable after reload", () 
     "fast"
   );
 });
+
+test("agent composer options project the typed slash command policy", () => {
+  const options = agentActivityComposerOptionsFromTuttidResult("codex", {
+    slashCommandPolicy: {
+      fallbackCommands: ["compact", "status"],
+      commandEffects: [
+        { command: "compact", effect: "submitImmediate" },
+        { command: "status", effect: "showStatus" },
+        { command: "goal", effect: "activateGoalMode" },
+        { command: "poison", effect: "unknown" }
+      ]
+    },
+    runtimeContext: {
+      slashCommandPolicy: {
+        fallbackCommands: ["legacy"],
+        commandEffects: []
+      }
+    }
+  });
+
+  assert.deepEqual(options.slashCommandPolicy, {
+    fallbackCommands: ["compact", "status"],
+    commandEffects: [
+      { command: "compact", effect: "submitImmediate" },
+      { command: "status", effect: "showStatus" },
+      { command: "goal", effect: "activateGoalMode" }
+    ]
+  });
+});
+
+test("agent composer options preserve effective pre-session settings", () => {
+  const options = agentActivityComposerOptionsFromTuttidResult("codex", {
+    effectiveSettings: {
+      model: "gpt-5.3-codex",
+      reasoningEffort: "high",
+      speed: "fast",
+      planMode: false,
+      permissionModeId: "full-access"
+    }
+  });
+
+  assert.deepEqual(options.effectiveSettings, {
+    model: "gpt-5.3-codex",
+    reasoningEffort: "high",
+    speed: "fast",
+    planMode: false,
+    permissionModeId: "full-access"
+  });
+});
