@@ -1400,12 +1400,11 @@ describe("AgentGUINodeView layout persistence", () => {
 
     expect(composerMock.calls.at(-1)?.composerFocusRequestSequence).toBeNull();
 
-    fireEvent.change(
+    fireEvent.keyDown(
       screen.getByRole("combobox", { name: "Switch provider" }),
-      {
-        target: { value: claudeTarget.targetId }
-      }
+      { key: "ArrowDown" }
     );
+    fireEvent.click(await screen.findByRole("option", { name: "Claude Code" }));
 
     expect(actions.selectHomeComposerAgentTarget).toHaveBeenCalledWith({
       provider: "claude-code",
@@ -1708,7 +1707,7 @@ describe("AgentGUINodeView layout persistence", () => {
     const trigger = screen.getByRole("combobox", { name: "Switch provider" });
 
     expect(trigger).toHaveClass("agent-gui-node__empty-hero-provider-select");
-    expect(trigger).toHaveValue(providerTargets[0]!.targetId);
+    expect(trigger).toHaveTextContent("Codex");
   });
 
   it("renders provider switching options in the localized title", () => {
@@ -1735,10 +1734,10 @@ describe("AgentGUINodeView layout persistence", () => {
     const trigger = screen.getByRole("combobox", { name: "切换 Provider" });
 
     expect(trigger).toHaveClass("agent-gui-node__empty-hero-provider-select");
-    expect(trigger).toHaveValue(providerTargets[0]!.targetId);
+    expect(trigger).toHaveTextContent("Codex");
   });
 
-  it("uses Cursor as the selected empty hero provider option", () => {
+  it("uses Cursor colorful artwork in the empty hero provider select", async () => {
     const providerTargets = [
       createLocalAgentGUIProviderTarget("codex"),
       {
@@ -1771,10 +1770,13 @@ describe("AgentGUINodeView layout persistence", () => {
       name: "Switch provider"
     });
 
-    expect(trigger).toHaveValue(providerTargets[1]!.targetId);
-    expect(screen.getByRole("option", { name: "Cursor" })).toHaveValue(
-      providerTargets[1]!.targetId
-    );
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+
+    expect(
+      (await screen.findByRole("option", { name: "Cursor" })).querySelector(
+        "img"
+      )
+    ).toHaveAttribute("src", MANAGED_AGENT_PROVIDER_RAIL_ICON_URLS.cursor);
   });
 
   it("uses Cursor colorful artwork in the empty hero icon", () => {

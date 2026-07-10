@@ -73,6 +73,10 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
   StatusDot,
   toastVariants,
   cn
@@ -4573,11 +4577,11 @@ function EmptyHeroTitle({
     <>
       {label.slice(0, providerStart)}
       {canSwitchProvider ? (
-        <select
+        <Select
           value={selectedProviderTargetId}
-          onChange={(event) => {
+          onValueChange={(nextTargetId) => {
             const target = enabledProviderTargets.find(
-              (candidate) => candidate.targetId === event.currentTarget.value
+              (candidate) => candidate.targetId === nextTargetId
             );
             if (!target) {
               return;
@@ -4587,19 +4591,43 @@ function EmptyHeroTitle({
               providerTargetId: target.targetId
             });
           }}
-          aria-label={providerSelectLabel}
-          title={providerSelectLabel}
-          className={styles.emptyHeroProviderSelect}
         >
-          {enabledProviderTargets.map((target) => (
-            <option
-              key={`${target.provider}:${target.targetId}`}
-              value={target.targetId}
-            >
-              {target.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            size="sm"
+            aria-label={providerSelectLabel}
+            title={providerSelectLabel}
+            className={styles.emptyHeroProviderSelect}
+          >
+            <span className={styles.emptyHeroProvider}>{providerName}</span>
+          </SelectTrigger>
+          <SelectContent
+            align="center"
+            className={cn(styles.composerMenuContent, "min-w-[190px]")}
+          >
+            {enabledProviderTargets.map((target) => (
+              <SelectItem
+                key={`${target.provider}:${target.targetId}`}
+                value={target.targetId}
+                className={cn(styles.composerMenuItem, "gap-2")}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <img
+                    alt=""
+                    aria-hidden="true"
+                    className="size-4 shrink-0 rounded-[4px]"
+                    src={
+                      agentGUIProviderRailIconPresentation(
+                        target.provider,
+                        target.iconUrl
+                      ).iconUrl
+                    }
+                  />
+                  <span className="min-w-0 truncate">{target.label}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : (
         <span className={styles.emptyHeroProvider}>{providerName}</span>
       )}
