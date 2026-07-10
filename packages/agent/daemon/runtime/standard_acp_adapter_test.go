@@ -1160,11 +1160,10 @@ func TestClaudeCodeAdapterPermissionRequestAcceptsInteractiveSelection(t *testin
 }
 
 func TestClaudeCodeAdapterExecTreatsContextCanceledAsInterrupted(t *testing.T) {
-	t.Parallel()
-
 	transport := newStandardACPTransport("Claude Agent", "claude-session-1")
 	gate := make(chan struct{})
 	transport.conn.pauseBeforeToolCallCompletion = gate
+	transport.conn.abortPromptAfterToolCallStart = true
 	adapter := NewClaudeCodeAdapter(transport)
 	session := standardTestSession(ProviderClaudeCode)
 	if _, err := adapter.Start(context.Background(), session); err != nil {
@@ -1175,21 +1174,42 @@ func TestClaudeCodeAdapterExecTreatsContextCanceledAsInterrupted(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var releaseGate sync.Once
-	time.AfterFunc(200*time.Millisecond, func() {
-		releaseGate.Do(func() { close(gate) })
-	})
+	release := func() { releaseGate.Do(func() { close(gate) }) }
+	defer release()
 
 	var mu sync.Mutex
 	var emittedActivity []activityshared.Event
-	_, err := adapter.Exec(ctx, session, textPrompt("review workspace"), "", "turn-1", func(events []activityshared.Event) {
-		mu.Lock()
-		emittedActivity = append(emittedActivity, events...)
-		mu.Unlock()
-		if len(activityEventsWithType(events, activityshared.EventCallStarted)) > 0 {
-			cancel()
-			releaseGate.Do(func() { close(gate) })
-		}
-	}, nil)
+	callStarted := make(chan struct{}, 1)
+	execDone := make(chan error, 1)
+	go func() {
+		_, err := adapter.Exec(ctx, session, textPrompt("review workspace"), "", "turn-1", func(events []activityshared.Event) {
+			mu.Lock()
+			emittedActivity = append(emittedActivity, events...)
+			mu.Unlock()
+			if len(activityEventsWithType(events, activityshared.EventCallStarted)) > 0 {
+				select {
+				case callStarted <- struct{}{}:
+				default:
+				}
+			}
+		}, nil)
+		execDone <- err
+	}()
+
+	select {
+	case <-callStarted:
+		cancel()
+		release()
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for tool call start")
+	}
+
+	var err error
+	select {
+	case err = <-execDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for canceled Exec")
+	}
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -5161,6 +5181,7 @@ type standardACPConnection struct {
 	promptKind                    string
 	pauseBeforePromptResult       chan struct{}
 	pauseBeforeToolCallCompletion chan struct{}
+	abortPromptAfterToolCallStart bool
 	pendingPermissionCallID       json.RawMessage
 	selectedPermissionOption      string
 	selectedInteractiveResult     map[string]any
@@ -5527,6 +5548,9 @@ func (c *standardACPConnection) streamPromptResult(promptID json.RawMessage) {
 	}
 	if c.pauseBeforeToolCallCompletion != nil {
 		<-c.pauseBeforeToolCallCompletion
+	}
+	if c.abortPromptAfterToolCallStart {
+		return
 	}
 	c.sendJSON(map[string]any{
 		"jsonrpc": "2.0",

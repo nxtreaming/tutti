@@ -8,7 +8,7 @@ This document defines the repository-managed test discovery and gate policy.
 - `pnpm test:tools`: repository tool tests only
 - `pnpm test:go`: generate builtin app assets, then run the blocking Go workspace test set
 - `pnpm test:go:prepared`: run the blocking Go workspace test set when builtin app assets are already prepared
-- `pnpm test:go:agent-daemon`: run the currently non-blocking agent daemon lane
+- `pnpm test:go:agent-daemon`: run the blocking agent daemon module as a focused lane
 
 `pnpm check:full` prepares builtin app assets once, then uses the prepared Go
 lint and test entrypoints. This prevents concurrent validation lanes from
@@ -30,25 +30,26 @@ tests that exercise package release helpers remain tool-owned instead of being
 duplicated through a package-level test script.
 
 Go tests are discovered from the modules declared in `go.work`. The blocking
-lane includes every module except `packages/agent/daemon`; additions to
-`go.work` therefore join the root test gate without a second registry.
+lane includes every module, so additions to `go.work` join the root test gate
+without a second registry.
 
 Changed-aware validation must recognize every current `go.work` module so a Go
 file change selects the matching package lint and test lanes.
 
-## Agent Daemon Soft Gate
+## Agent Daemon Blocking Gate
 
-`packages/agent/daemon` remains an explicit soft gate while its runtime suite
-contains scheduler-sensitive asynchronous cases. Pull-request CI runs
-`pnpm test:go:agent-daemon` with non-blocking failure semantics and emits a
-workflow warning when it fails.
+`packages/agent/daemon` is part of the blocking Go workspace test set. A failure
+from this module fails `pnpm test:go`, `pnpm check:full`, the pre-push hook, and
+the pull-request Go Tests job. Use `pnpm test:go:agent-daemon` when iterating on
+the module without running the other Go workspace lanes.
 
-Promote this lane into the blocking Go set only after the timing-sensitive
-tests are event-driven or otherwise stable under repeated and concurrent runs.
-Do not hide failures with retries as a substitute for stabilization.
+The module was promoted after its known timing-sensitive cases were converted
+to event-driven synchronization and the full module passed repeated shuffled
+runs. Do not add retries to preserve a green gate; reproduce and stabilize a
+failing lifecycle transition instead.
 
-Direct changes to the agent daemon should still run the lane locally. Use a
-repeated focused run when changing asynchronous lifecycle behavior.
+Direct changes to the agent daemon should run the focused lane locally. Use a
+repeated shuffled run when changing asynchronous lifecycle behavior.
 
 For asynchronous runtime tests, prefer request/event channels and the session
 event sink over fixed-interval polling of mutex-protected slices. Wait for the

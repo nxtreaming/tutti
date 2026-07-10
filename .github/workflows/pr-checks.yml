@@ -222,15 +222,6 @@ jobs:
       - name: Run Go workspace tests
         run: pnpm test:go:prepared
 
-      - name: Run agent daemon tests (non-blocking)
-        id: agent-daemon-tests
-        continue-on-error: true
-        run: pnpm test:go:agent-daemon
-
-      - name: Report unstable agent daemon tests
-        if: steps.agent-daemon-tests.outcome == 'failure'
-        run: echo "::warning::Agent daemon tests remain non-blocking while known timing-sensitive cases are stabilized."
-
   go-lint:
     name: Go Lint
     runs-on: ubuntu-latest

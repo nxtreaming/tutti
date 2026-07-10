@@ -75,6 +75,7 @@ type scriptedAppServerConnection struct {
 	turnStatus                   string // completed (default) | failed | interrupted
 	turnError                    map[string]any
 	holdTurn                     bool              // do not finish the turn until released
+	turnResponseAfterCompletion  bool              // deliver turn/start result after terminal notifications
 	steeredTurnStart             bool              // turn/start returns a queued stub turn (input steered into the running turn): no turn/started, no auto-completion
 	ignoreInterrupt              bool              // ack turn/interrupt but never complete the turn (wedged codex)
 	hangInterrupt                bool              // never even acknowledge the turn/interrupt RPC (fully wedged codex)
@@ -327,6 +328,7 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 		case appServerMethodTurnStart:
 			c.mu.Lock()
 			hold := c.holdTurn
+			turnResponseAfterCompletion := c.turnResponseAfterCompletion
 			steered := c.steeredTurnStart
 			approval := c.commandApproval
 			userInput := c.userInputRequest
@@ -358,14 +360,20 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 				})
 				continue
 			}
-			// Mirror the real app-server: the RPC responds immediately with
-			// the inProgress turn; output streams as notifications.
-			c.sendJSON(map[string]any{
-				"id": message.ID,
-				"result": map[string]any{
-					"turn": map[string]any{"id": "turn-1", "status": "inProgress", "items": []any{}},
-				},
-			})
+			respond := func() {
+				c.sendJSON(map[string]any{
+					"id": message.ID,
+					"result": map[string]any{
+						"turn": map[string]any{"id": "turn-1", "status": "inProgress", "items": []any{}},
+					},
+				})
+			}
+			// The real app-server normally responds immediately, but response
+			// dispatch and notifications can still be applied in either order.
+			delayTurnResponse := turnResponseAfterCompletion && !hold && !approval && !userInput
+			if !delayTurnResponse {
+				respond()
+			}
 			c.notify(appServerNotifyTurnStarted, map[string]any{
 				"threadId": "codex-thread-1",
 				"turn":     map[string]any{"id": "turn-1", "status": "inProgress", "items": []any{}},
@@ -501,6 +509,9 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 				continue
 			}
 			c.completePendingTurn()
+			if delayTurnResponse {
+				respond()
+			}
 		case appServerMethodThreadRead:
 			c.mu.Lock()
 			nickname := c.childNicknames[asString(message.Params["threadId"])]
@@ -1642,15 +1653,19 @@ func TestCodexAppServerAdapterFetchesChildThreadNickname(t *testing.T) {
 	transport.conn.mu.Lock()
 	transport.conn.childNicknames = map[string]string{"child-thread-1": "Euclid"}
 	transport.conn.mu.Unlock()
-	var mu sync.Mutex
-	var markers []activityshared.Event
-	adapter.SetSessionEventSink(func(_ string, events []activityshared.Event) {
-		mu.Lock()
-		defer mu.Unlock()
-		markers = append(markers, events...)
-	})
-	adapter.setSessionActiveTurnID(session.AgentSessionID, "turn-1")
-
+	appTurn := &codexAppServerActiveTurn{
+		turnID:     "turn-1",
+		session:    session,
+		normalizer: newACPTurnNormalizer(),
+		terminal:   make(chan codexAppServerTurnTerminal, 1),
+		terminated: make(chan struct{}),
+	}
+	if !adapter.beginActiveTurn(session.AgentSessionID, appTurn) {
+		t.Fatal("beginActiveTurn failed")
+	}
+	defer adapter.endActiveTurn(session.AgentSessionID, appTurn)
+	adapter.setSessionActiveTurnID(session.AgentSessionID, appTurn, "turn-1")
+	markers := captureSessionEvents(adapter)
 	// Registering a child (parent collab item/started) must trigger an async
 	// thread/read: codex assigns spawned agents an agentNickname on the Thread
 	// object but never pushes it (no thread/name/updated for children).
@@ -1670,19 +1685,12 @@ func TestCodexAppServerAdapterFetchesChildThreadNickname(t *testing.T) {
 		}),
 	}, newACPTurnNormalizer(), nil)
 
-	waitForCondition(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		for _, event := range markers {
-			if event.Payload.Metadata["messageKind"] == "subAgentName" &&
-				event.Payload.Metadata["subAgentName"] == "Euclid" &&
-				event.OwnerThreadID == "child-thread-1" &&
-				event.OwnerCallID == "spawn-child-1" &&
-				event.Payload.TurnID != "" {
-				return true
-			}
-		}
-		return false
+	waitForSessionEvent(t, markers, "child thread nickname marker", func(event activityshared.Event) bool {
+		return event.Payload.Metadata["messageKind"] == "subAgentName" &&
+			event.Payload.Metadata["subAgentName"] == "Euclid" &&
+			event.OwnerThreadID == "child-thread-1" &&
+			event.OwnerCallID == "spawn-child-1" &&
+			event.Payload.TurnID == "turn-1"
 	})
 }
 
@@ -1782,7 +1790,7 @@ func TestCodexAppServerAdapterDropsEmptyTerminalIDForBoundActiveTurn(t *testing.
 	if !adapter.beginActiveTurn(session.AgentSessionID, appTurn) {
 		t.Fatal("beginActiveTurn failed")
 	}
-	adapter.setSessionActiveTurnID(session.AgentSessionID, "turn-real")
+	adapter.setSessionActiveTurnID(session.AgentSessionID, appTurn, "turn-real")
 	adapter.confirmSessionActiveTurnStarted(session.AgentSessionID, "turn-real")
 
 	adapter.completeActiveTurn(session.AgentSessionID, map[string]any{"status": "completed"})
@@ -1815,7 +1823,7 @@ func TestCodexAppServerAdapterDropsEmptyTerminalIDForUnconfirmedActiveTurn(t *te
 	if !adapter.beginActiveTurn(session.AgentSessionID, appTurn) {
 		t.Fatal("beginActiveTurn failed")
 	}
-	adapter.setSessionActiveTurnID(session.AgentSessionID, "turn-steer-stub")
+	adapter.setSessionActiveTurnID(session.AgentSessionID, appTurn, "turn-steer-stub")
 
 	adapter.completeActiveTurn(session.AgentSessionID, map[string]any{"status": "completed"})
 
@@ -1836,7 +1844,12 @@ func TestCodexAppServerAdapterConfirmActiveTurnStartedScopedToBoundID(t *testing
 	t.Parallel()
 
 	adapter, _, session := startedAppServerAdapter(t)
-	adapter.setSessionActiveTurnID(session.AgentSessionID, "turn-bound")
+	appTurn := &codexAppServerActiveTurn{}
+	if !adapter.beginActiveTurn(session.AgentSessionID, appTurn) {
+		t.Fatal("beginActiveTurn failed")
+	}
+	defer adapter.endActiveTurn(session.AgentSessionID, appTurn)
+	adapter.setSessionActiveTurnID(session.AgentSessionID, appTurn, "turn-bound")
 
 	// A turn/started for a different turn (e.g. racing with a steered
 	// turn/start rebinding the id in between) must not confirm the current
@@ -1949,6 +1962,9 @@ func TestCodexAppServerAdapterCancelInterruptsLinkedChildThreads(t *testing.T) {
 
 func TestCodexAppServerAdapterCancelAfterTurnCompletedStillMarksChildrenCanceled(t *testing.T) {
 	adapter, transport, session := startedAppServerAdapter(t)
+	// A terminal notification may be applied before the turn/start RPC result.
+	// A stale result must not recreate the provider turn id after settle.
+	transport.conn.turnResponseAfterCompletion = true
 	adapter.rememberAppServerChildThreads(session.AgentSessionID, "codex-thread-1", map[string]any{
 		"type":              "collabAgentToolCall",
 		"id":                "spawn-child-1",
@@ -1962,9 +1978,6 @@ func TestCodexAppServerAdapterCancelAfterTurnCompletedStillMarksChildrenCanceled
 	}}, "", "turn-local-1", nil, nil); err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
-	waitForCondition(t, func() bool {
-		return adapter.sessionActiveTurnID(session.AgentSessionID) == ""
-	})
 	if got := adapter.sessionActiveTurnID(session.AgentSessionID); got != "" {
 		t.Fatalf("active turn id after completion = %q, want empty", got)
 	}

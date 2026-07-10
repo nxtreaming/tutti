@@ -10,10 +10,8 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = join(scriptDirectory, "..", "..");
 const agentDaemonModule = "packages/agent/daemon";
 const agentDaemonOnly = process.argv.includes("--agent-daemon-only");
-const moduleRoots = loadGoWorkspaceModuleRoots().filter((moduleRoot) =>
-  agentDaemonOnly
-    ? moduleRoot === agentDaemonModule
-    : moduleRoot !== agentDaemonModule
+const moduleRoots = loadGoWorkspaceModuleRoots().filter(
+  (moduleRoot) => !agentDaemonOnly || moduleRoot === agentDaemonModule
 );
 
 if (agentDaemonOnly && moduleRoots.length === 0) {

@@ -1719,7 +1719,7 @@ func (a *CodexAppServerAdapter) execBlocking(
 	// arrives with the turn/completed notification.
 	initialTurn := appServerTurnFromResult(result)
 	if providerTurnID := asString(initialTurn["id"]); providerTurnID != "" {
-		if a.setSessionActiveTurnID(session.AgentSessionID, providerTurnID) {
+		if a.setSessionActiveTurnID(session.AgentSessionID, appTurn, providerTurnID) {
 			a.interruptActiveTurnAsync(appSession, session, appTurn, providerTurnID, "queued cancel")
 		}
 	}
@@ -2122,7 +2122,7 @@ func (a *CodexAppServerAdapter) execSlashCommand(
 			// so goal progress never depends on this Exec staying alive.
 			initialTurn := appServerTurnFromResult(result)
 			if providerTurnID := asString(initialTurn["id"]); providerTurnID != "" {
-				if a.setSessionActiveTurnID(session.AgentSessionID, providerTurnID) {
+				if a.setSessionActiveTurnID(session.AgentSessionID, appTurn, providerTurnID) {
 					a.interruptActiveTurnAsync(appSession, session, appTurn, providerTurnID, "queued cancel")
 				}
 			}
@@ -2259,7 +2259,7 @@ func (a *CodexAppServerAdapter) adoptServerInitiatedTurn(session Session, provid
 		// A registered turn won the race; leave tracking to it.
 		return
 	}
-	a.setSessionActiveTurnID(session.AgentSessionID, providerTurnID)
+	a.setSessionActiveTurnID(session.AgentSessionID, appTurn, providerTurnID)
 	// The adopted id comes from the turn/started notification itself.
 	a.confirmSessionActiveTurnStarted(session.AgentSessionID, providerTurnID)
 	slog.Info("agent session app-server goal turn adopted",
@@ -3208,14 +3208,21 @@ func (a *CodexAppServerAdapter) requestActiveTurnCancel(agentSessionID string) (
 	return "", true
 }
 
-func (a *CodexAppServerAdapter) setSessionActiveTurnID(agentSessionID string, turnID string) bool {
+func (a *CodexAppServerAdapter) setSessionActiveTurnID(
+	agentSessionID string,
+	expectedTurn *codexAppServerActiveTurn,
+	turnID string,
+) bool {
 	if a == nil {
 		return false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	appSession := a.sessions[strings.TrimSpace(agentSessionID)]
-	if appSession != nil {
+	// A fast terminal notification can settle and clear this turn before the
+	// turn/start RPC result reaches its caller. Do not let that stale result
+	// rebind the provider id after the slot is already empty or reused.
+	if appSession != nil && appSession.activeTurn == expectedTurn {
 		appSession.activeTurnID = strings.TrimSpace(turnID)
 		// The binding starts unconfirmed; a matching turn/started notification
 		// confirms it via confirmSessionActiveTurnStarted.

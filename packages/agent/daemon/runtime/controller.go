@@ -1233,13 +1233,13 @@ func (c *Controller) runAsyncExecTurn(ctx context.Context, session Session, adap
 	var mu sync.Mutex
 	finished := false
 	var emittedSummary agentSubmitRuntimeEventSummary
-	finish := func(next Session) {
+	finish := func(next Session) Session {
 		if finished {
-			return
+			return next
 		}
 		finished = true
 		emittedSummary.log("runtime.async_events_emitted.summary", next, turnID, metadata)
-		c.finishTurn(next, turnID)
+		return c.finishTurn(next, turnID)
 	}
 	emit := func(events []activityshared.Event) {
 		if len(events) == 0 {
@@ -1256,14 +1256,25 @@ func (c *Controller) runAsyncExecTurn(ctx context.Context, session Session, adap
 			session.UpdatedAtUnixMS = unixMS(now())
 		}
 		session = c.preserveCurrentSessionSettings(session)
-		c.store(session)
+		emittedSummary.observe(events, session)
+		terminal := turnHasTerminalEvent(events, turnID) ||
+			turnLifecycleSnapshotSettledTurn(events, turnID) ||
+			turnSteeredIntoActiveTurn(events, turnID)
+		finishBeforePublish := terminal && !sessionNeedsSettledTurnFallback(session, turnID)
+		if finishBeforePublish {
+			// Make the settled session and cleared turn registry visible as one
+			// transition. Otherwise a follow-up can observe status=ready while
+			// HasActiveTurn still rejects it.
+			session = finish(session)
+		} else {
+			c.store(session)
+		}
 		c.publish(session, events)
 		c.enqueueSessionReport(ctx, session, events)
-		emittedSummary.observe(events, session)
-		if turnHasTerminalEvent(events, turnID) ||
-			turnLifecycleSnapshotSettledTurn(events, turnID) ||
-			turnSteeredIntoActiveTurn(events, turnID) {
-			finish(session)
+		if terminal && !finishBeforePublish {
+			// Preserve the established event order when finishTurn must publish a
+			// controller-origin fallback snapshot after this adapter batch.
+			session = finish(session)
 		}
 	}
 	emitCommands := func(snapshot AgentSessionCommandSnapshot) {
@@ -2042,9 +2053,9 @@ func activityEventIdentity(event activityshared.Event) string {
 	)
 }
 
-func (c *Controller) finishTurn(session Session, turnID string) {
+func (c *Controller) finishTurn(session Session, turnID string) Session {
 	if c == nil {
-		return
+		return session
 	}
 	key := sessionKey(session.RoomID, session.AgentSessionID)
 	c.mu.Lock()
@@ -2053,7 +2064,7 @@ func (c *Controller) finishTurn(session Session, turnID string) {
 	}
 	if current, ok := c.sessions[key]; ok && sessionHasDifferentLiveTurn(current, turnID) {
 		c.mu.Unlock()
-		return
+		return current
 	}
 	session = c.preserveCurrentSessionSettingsLocked(key, session)
 	if session.LifecycleAuthority {
@@ -2062,21 +2073,30 @@ func (c *Controller) finishTurn(session Session, turnID string) {
 		// absorption, adapter death before settle) publish a controller-origin
 		// settled snapshot so even the fallback flows through the single copy
 		// pipeline — and reaches reporter/GUI, unlike the old silent write.
-		needsFallback := session.TurnLifecycle != nil &&
-			session.TurnLifecycle.ActiveTurnID != nil &&
-			strings.TrimSpace(*session.TurnLifecycle.ActiveTurnID) == strings.TrimSpace(turnID) &&
-			runtimeTurnLifecyclePhaseIsLive(session.TurnLifecycle.Phase)
+		needsFallback := sessionNeedsSettledTurnFallback(session, turnID)
 		c.sessions[key] = session
 		c.mu.Unlock()
 		if needsFallback {
 			c.applySessionEventsByAgentSessionID(session.AgentSessionID, settledFallbackTurnEvents(session, turnID))
+			if settled, ok := c.get(session.RoomID, session.AgentSessionID); ok {
+				return settled
+			}
 		}
-		return
+		return session
 	}
 	session = settleFinishedTurnLifecycle(session, turnID)
 	session = c.reconcileSessionStatusLocked(key, session)
 	c.sessions[key] = session
 	c.mu.Unlock()
+	return session
+}
+
+func sessionNeedsSettledTurnFallback(session Session, turnID string) bool {
+	return session.LifecycleAuthority &&
+		session.TurnLifecycle != nil &&
+		session.TurnLifecycle.ActiveTurnID != nil &&
+		strings.TrimSpace(*session.TurnLifecycle.ActiveTurnID) == strings.TrimSpace(turnID) &&
+		runtimeTurnLifecyclePhaseIsLive(session.TurnLifecycle.Phase)
 }
 
 // sessionViewHasUnsettledTurn reports whether the GUI-facing session view still

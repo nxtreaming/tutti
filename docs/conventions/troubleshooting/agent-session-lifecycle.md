@@ -44,23 +44,39 @@ Turn state, loading, cancel, restore, rail projection, event updates, imports, a
   Compare renderer state with `tuttid.log` submit traces. If `api.send.failed`
   reports `agent session already has an active turn` after a settled/available
   state patch, inspect whether the controller still has an in-memory `c.turns`
-  entry while the adapter lifecycle snapshot has already settled.
+  entry while the adapter lifecycle snapshot has already settled. For Codex
+  app-server sessions, also compare `turn/completed` notification timing with
+  the triggering `turn/start` RPC result; a stale provider turn id with no
+  active turn object indicates that the late result rebound an already-settled
+  slot.
 - Root cause:
   The controller's async turn registry is separate from adapter lifecycle
   projection. Async execution must clear `c.turns` when the owning adapter
   publishes a non-live `TurnLifecycleSnapshot`, even if the event type is not a
-  terminal `turn.completed`/`turn.failed` event.
+  terminal `turn.completed`/`turn.failed` event. The settled session and the
+  registry cleanup must also become visible together; storing `ready` first
+  leaves a follow-up rejection window. Separately, app-server notifications can
+  settle a turn before the `turn/start` response is applied, so binding that
+  response without checking turn identity can recreate a stale active id.
 - Fix:
   Treat same-turn non-live lifecycle snapshots as async turn completion, in
-  addition to terminal event types and steered prompt messages.
+  addition to terminal event types and steered prompt messages. Clear the
+  matching controller turn record before publishing/storing the terminal
+  session view. Bind a provider turn id only while the exact active-turn object
+  that issued the request still owns the adapter slot.
 - Validation:
   Add controller coverage where an async adapter emits only a settled lifecycle
   snapshot for the turn and no terminal event, then verify a follow-up `Exec`
-  no longer returns `ErrSessionActiveTurn`. Run
+  no longer returns `ErrSessionActiveTurn`. Also cover a terminal snapshot that
+  waits for an open call and assert `ready` is never observable with an active
+  controller turn. For Codex, deliver `turn/completed` before the `turn/start`
+  result and verify the late result cannot restore the provider turn id. Run
   `go test ./packages/agent/daemon/runtime`.
 - References:
   [controller.go](../../../packages/agent/daemon/runtime/controller.go)
   [controller_test.go](../../../packages/agent/daemon/runtime/controller_test.go)
+  [codex_appserver_adapter.go](../../../packages/agent/daemon/runtime/codex_appserver_adapter.go)
+  [codex_appserver_adapter_test.go](../../../packages/agent/daemon/runtime/codex_appserver_adapter_test.go)
 
 ### AgentGUI loading disappears before active turn settles
 
