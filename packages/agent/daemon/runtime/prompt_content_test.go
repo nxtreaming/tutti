@@ -93,7 +93,7 @@ func TestValidateRuntimePromptContentImagesRejectsUnsafeOrAmbiguousURL(t *testin
 	}
 }
 
-func TestUserPromptActivityPayloadRedactsImageSources(t *testing.T) {
+func TestUserPromptActivityPayloadPreservesRemoteURLWithoutInlineData(t *testing.T) {
 	signedURL := "https://bucket.example/image.png?token=bearer-secret"
 	payload := userPromptActivityPayload([]PromptContentBlock{{Type: "image", MimeType: "image/png", URL: signedURL, Data: "base64-secret", AttachmentID: "attachment-1", Name: "screen.png"}}, "", nil)
 	encoded, err := json.Marshal(payload)
@@ -101,8 +101,11 @@ func TestUserPromptActivityPayloadRedactsImageSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	serialized := string(encoded)
-	if strings.Contains(serialized, signedURL) || strings.Contains(serialized, "base64-secret") {
-		t.Fatalf("activity payload leaked image source: %s", serialized)
+	if !strings.Contains(serialized, signedURL) {
+		t.Fatalf("activity payload lost remote image URL: %s", serialized)
+	}
+	if strings.Contains(serialized, "base64-secret") {
+		t.Fatalf("activity payload leaked inline image data: %s", serialized)
 	}
 	if !strings.Contains(serialized, "attachment-1") || !strings.Contains(serialized, "screen.png") {
 		t.Fatalf("activity payload lost safe metadata: %s", serialized)

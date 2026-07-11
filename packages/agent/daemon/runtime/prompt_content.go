@@ -326,6 +326,9 @@ func promptContentForActivity(content []PromptContentBlock) []map[string]any {
 				"mimeType":     block.MimeType,
 				"attachmentId": block.AttachmentID,
 			}
+			if imageURL := strings.TrimSpace(block.URL); imageURL != "" {
+				item["url"] = imageURL
+			}
 			if strings.TrimSpace(block.Name) != "" {
 				item["name"] = strings.TrimSpace(block.Name)
 			}
