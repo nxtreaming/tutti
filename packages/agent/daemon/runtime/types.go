@@ -10,11 +10,11 @@ import (
 const (
 	ProviderClaudeCode = providerregistry.ClaudeCodeProviderID
 	ProviderCodex      = providerregistry.CodexProviderID
-	ProviderTuttiAgent = "tutti-agent"
-	ProviderCursor     = "cursor"
-	ProviderNexight    = "nexight"
-	ProviderHermes     = "hermes"
-	ProviderOpenClaw   = "openclaw"
+	ProviderTuttiAgent = providerregistry.TuttiAgentProviderID
+	ProviderCursor     = providerregistry.CursorProviderID
+	ProviderNexight    = providerregistry.NexightProviderID
+	ProviderHermes     = providerregistry.HermesProviderID
+	ProviderOpenClaw   = providerregistry.OpenClawProviderID
 	ProviderOpenCode   = providerregistry.OpenCodeProviderID
 
 	SessionStatusReady     = "ready"
@@ -57,19 +57,18 @@ const (
 )
 
 type StartInput struct {
-	RoomID               string
-	AgentSessionID       string
-	AgentTargetID        string
-	Provider             string
-	CWD                  string
-	Env                  []string
-	Title                string
-	Visible              *bool
-	RuntimeContext       map[string]any
-	ProviderTargetRef    map[string]any
-	OpenclawGatewayReady bool
-	PermissionModeID     string
-	Settings             *SessionSettings
+	RoomID            string
+	AgentSessionID    string
+	AgentTargetID     string
+	Provider          string
+	CWD               string
+	Env               []string
+	Title             string
+	Visible           *bool
+	RuntimeContext    map[string]any
+	ProviderTargetRef map[string]any
+	PermissionModeID  string
+	Settings          *SessionSettings
 }
 
 type ResumeInput struct {
@@ -111,6 +110,7 @@ type ExecInput struct {
 type CancelInput struct {
 	RoomID         string
 	AgentSessionID string
+	TurnID         string
 	Reason         string
 }
 
@@ -168,26 +168,25 @@ type PromptContentBlock struct {
 }
 
 type Session struct {
-	RoomID               string              `json:"roomId"`
-	AgentSessionID       string              `json:"agentSessionId"`
-	AgentTargetID        string              `json:"agentTargetId,omitempty"`
-	Provider             string              `json:"provider"`
-	ProviderSessionID    string              `json:"providerSessionId"`
-	CWD                  string              `json:"cwd,omitempty"`
-	Env                  []string            `json:"-"`
-	Status               string              `json:"status"`
-	TurnLifecycle        *TurnLifecycle      `json:"turnLifecycle,omitempty"`
-	SubmitAvailability   *SubmitAvailability `json:"submitAvailability,omitempty"`
-	Title                string              `json:"title,omitempty"`
-	LastError            string              `json:"lastError,omitempty"`
-	Visible              bool                `json:"visible"`
-	RuntimeContext       map[string]any      `json:"runtimeContext,omitempty"`
-	ProviderTargetRef    map[string]any      `json:"-"`
-	OpenclawGatewayReady bool                `json:"-"`
-	PermissionModeID     string              `json:"permissionModeId,omitempty"`
-	Settings             *SessionSettings    `json:"settings,omitempty"`
-	CreatedAtUnixMS      int64               `json:"createdAtUnixMs"`
-	UpdatedAtUnixMS      int64               `json:"updatedAtUnixMs"`
+	RoomID             string              `json:"roomId"`
+	AgentSessionID     string              `json:"agentSessionId"`
+	AgentTargetID      string              `json:"agentTargetId,omitempty"`
+	Provider           string              `json:"provider"`
+	ProviderSessionID  string              `json:"providerSessionId"`
+	CWD                string              `json:"cwd,omitempty"`
+	Env                []string            `json:"-"`
+	Status             string              `json:"status"`
+	TurnLifecycle      *TurnLifecycle      `json:"turnLifecycle,omitempty"`
+	SubmitAvailability *SubmitAvailability `json:"submitAvailability,omitempty"`
+	Title              string              `json:"title,omitempty"`
+	LastError          string              `json:"lastError,omitempty"`
+	Visible            bool                `json:"visible"`
+	RuntimeContext     map[string]any      `json:"runtimeContext,omitempty"`
+	ProviderTargetRef  map[string]any      `json:"-"`
+	PermissionModeID   string              `json:"permissionModeId,omitempty"`
+	Settings           *SessionSettings    `json:"settings,omitempty"`
+	CreatedAtUnixMS    int64               `json:"createdAtUnixMs"`
+	UpdatedAtUnixMS    int64               `json:"updatedAtUnixMs"`
 	// LifecycleAuthority is set once an adapter-origin TurnLifecycle snapshot
 	// was applied (ADR 0008). Authority sessions copy lifecycle from
 	// snapshots and derive Status purely; legacy sessions keep the historic
@@ -313,6 +312,7 @@ type TurnLifecycle struct {
 type CancelResult struct {
 	AgentSessionID string `json:"agentSessionId"`
 	Canceled       bool   `json:"canceled"`
+	TargetAbsent   bool   `json:"targetAbsent,omitempty"`
 }
 
 type SubmitInteractiveResult struct {

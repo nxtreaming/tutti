@@ -11,6 +11,15 @@ const (
 	RuntimeKindClaudeSDK      RuntimeKind = "claude_sdk"
 )
 
+type StandardACPAdapterStrategy string
+
+const (
+	StandardACPAdapterStrategyGeneric  StandardACPAdapterStrategy = "generic"
+	StandardACPAdapterStrategyCursor   StandardACPAdapterStrategy = "cursor"
+	StandardACPAdapterStrategyNexight  StandardACPAdapterStrategy = "nexight"
+	StandardACPAdapterStrategyOpenClaw StandardACPAdapterStrategy = "openclaw"
+)
+
 // EndpointConfigKind identifies an optional provider-owned config source for
 // endpoint discovery. Runtime consumers switch on this protocol/config shape,
 // never on provider identity.
@@ -32,7 +41,9 @@ type InstallerKind string
 
 const (
 	InstallerKindCodexCLILatest InstallerKind = "codex_cli_latest"
+	InstallerKindManagedNPM     InstallerKind = "managed_npm"
 	InstallerKindOfficialScript InstallerKind = "official_script"
+	InstallerKindShellCommand   InstallerKind = "shell_command"
 )
 
 type StatusKind string
@@ -41,6 +52,46 @@ const (
 	StatusKindCodexCLI    StatusKind = "codex_cli"
 	StatusKindOpenCodeCLI StatusKind = "opencode_cli"
 	StatusKindClaudeCLI   StatusKind = "claude_cli"
+	StatusKindGenericCLI  StatusKind = "generic_cli"
+)
+
+type StatusActionKind string
+
+const StatusActionKindDaemon StatusActionKind = "daemon_action"
+
+// AuthOutputParserKind identifies the CLI output grammar used by an auth
+// status command. Consumers dispatch on this strategy, never provider identity.
+type AuthOutputParserKind string
+
+const (
+	AuthOutputParserKindCodex    AuthOutputParserKind = "codex"
+	AuthOutputParserKindClaude   AuthOutputParserKind = "claude"
+	AuthOutputParserKindOpenCode AuthOutputParserKind = "opencode"
+	AuthOutputParserKindCursor   AuthOutputParserKind = "cursor"
+)
+
+type AuthMarkerParserKind string
+
+const (
+	AuthMarkerParserKindFileExists AuthMarkerParserKind = "file_exists"
+	AuthMarkerParserKindClaude     AuthMarkerParserKind = "claude"
+	AuthMarkerParserKindTuttiToken AuthMarkerParserKind = "tutti_token"
+)
+
+type AuthCommandRunnerKind string
+
+const (
+	AuthCommandRunnerKindGeneric    AuthCommandRunnerKind = "generic"
+	AuthCommandRunnerKindClaudeGate AuthCommandRunnerKind = "claude_gate"
+	AuthCommandRunnerKindCursor     AuthCommandRunnerKind = "cursor"
+)
+
+type StaticSpecResolverKind string
+
+const (
+	StaticSpecResolverKindGeneric     StaticSpecResolverKind = "generic"
+	StaticSpecResolverKindManagedNode StaticSpecResolverKind = "managed_node"
+	StaticSpecResolverKindCursor      StaticSpecResolverKind = "cursor"
 )
 
 type IdentityDescriptor struct {
@@ -81,22 +132,35 @@ type RuntimeSettingsEnvironmentDescriptor struct {
 }
 
 type StandardACPRuntimeDescriptor struct {
-	PermissionModes     []RuntimePermissionModeDescriptor
-	SettingsEnvironment RuntimeSettingsEnvironmentDescriptor
+	AdapterStrategy                StandardACPAdapterStrategy
+	PermissionModes                []RuntimePermissionModeDescriptor
+	DefaultPermissionModeRuntimeID string
+	SettingsEnvironment            RuntimeSettingsEnvironmentDescriptor
+	PlanModeRuntimeID              string
+	ProjectCurrentMode             bool
+	StartupDiagnostics             bool
+	DeriveImageInputFromPrompt     bool
+	DeriveCompactFromCommands      bool
 }
 
 type InstallerDescriptor struct {
-	Kind            InstallerKind
-	DisplayCommand  string
-	PackageName     string
-	BinaryName      string
-	IncludeOptional bool
-	ScriptURL       string
-	ScriptShell     string
+	Kind                 InstallerKind
+	DisplayCommand       string
+	PackageName          string
+	BinaryName           string
+	IncludeOptional      bool
+	ScriptURL            string
+	ScriptShell          string
+	ShellCommand         string
+	FailureReasonMarkers map[string][]string
 }
 
 type StatusDescriptor struct {
 	Kind                            StatusKind
+	AuthOutputParserKind            AuthOutputParserKind
+	AuthMarkerParserKind            AuthMarkerParserKind
+	AuthCommandRunnerKind           AuthCommandRunnerKind
+	StaticSpecResolverKind          StaticSpecResolverKind
 	MinVersion                      string
 	BinaryNames                     []string
 	AdapterBinaryNames              []string
@@ -109,7 +173,42 @@ type StatusDescriptor struct {
 	NPMRegistryPackage              string
 	Install                         InstallerDescriptor
 	LoginArgs                       []string
+	LoginActionKind                 StatusActionKind
 	AuthWatch                       AuthWatchDescriptor
+	SupportStatus                   string
+	DisabledReasonCode              string
+}
+
+type ExternalImportParserKind string
+
+const (
+	ExternalImportParserKindCodexJSONL  ExternalImportParserKind = "codex_jsonl"
+	ExternalImportParserKindClaudeJSONL ExternalImportParserKind = "claude_jsonl"
+)
+
+type ExternalImportUserTextCleanerKind string
+
+const (
+	ExternalImportUserTextCleanerKindCodex  ExternalImportUserTextCleanerKind = "codex"
+	ExternalImportUserTextCleanerKindClaude ExternalImportUserTextCleanerKind = "claude"
+)
+
+type ExternalImportTitleCatalogKind string
+
+const ExternalImportTitleCatalogKindCodexSQLite ExternalImportTitleCatalogKind = "codex_sqlite"
+
+// ExternalImportDescriptor declares the local transcript layout and parsing
+// strategies for a provider. Enabled=false is an explicit unsupported policy.
+type ExternalImportDescriptor struct {
+	Enabled                  bool
+	RootEnvVar               string
+	DefaultRoot              string
+	ScanDirectories          []string
+	SkipDirectoryPrefixes    []string
+	ParserKind               ExternalImportParserKind
+	UserTextCleanerKind      ExternalImportUserTextCleanerKind
+	TitleCatalogKind         ExternalImportTitleCatalogKind
+	NoProjectHomeRelativeDir string
 }
 
 type AuthWatchDescriptor struct {
@@ -165,6 +264,8 @@ const (
 	CapabilityPlanImplementation             = "planImplementation"
 	CapabilityPermissionModeChangeDuringTurn = "permissionModeChangeDuringTurn"
 	CapabilityPermissionModeChangeDeferred   = "permissionModeChangeDeferred"
+	CapabilityReview                         = "review"
+	CapabilityResumeRunningTurn              = "resumeRunningTurn"
 )
 
 type SkillKind string
@@ -172,6 +273,7 @@ type SkillKind string
 const (
 	SkillKindCodex      SkillKind = "codex"
 	SkillKindClaudeCode SkillKind = "claude-code"
+	SkillKindCursor     SkillKind = "cursor"
 )
 
 type SkillInvocation string
@@ -191,6 +293,7 @@ type ModelCatalogKind string
 const (
 	ModelCatalogKindCodexCLI    ModelCatalogKind = "codex-cli"
 	ModelCatalogKindOpenCodeCLI ModelCatalogKind = "opencode-cli"
+	ModelCatalogKindTuttiCLI    ModelCatalogKind = "tutti-agent-cli"
 )
 
 // CapabilityCatalogKind identifies the protocol used to discover the
@@ -207,7 +310,10 @@ type CapabilityCatalogDescriptor struct {
 
 type LiveModelDiscoveryKind string
 
-const LiveModelDiscoveryKindClaudeSDK LiveModelDiscoveryKind = "claude_sdk"
+const (
+	LiveModelDiscoveryKindClaudeSDK      LiveModelDiscoveryKind = "claude_sdk"
+	LiveModelDiscoveryKindRuntimeSession LiveModelDiscoveryKind = "runtime_session"
+)
 
 type LiveModelDiscoveryDescriptor struct {
 	Kind        LiveModelDiscoveryKind
@@ -215,11 +321,17 @@ type LiveModelDiscoveryDescriptor struct {
 }
 
 type ComposerBehaviorDescriptor struct {
+	CollapseModelOptionsToLatest        bool
 	ModelOptionsAuthoritative           bool
 	RefreshModelOptionsAfterSettings    bool
 	PrewarmDraftSession                 bool
 	PlanModeExclusiveWithPermissionMode bool
+	PreserveLiveModelCache              bool
 }
+
+type ModelCapabilityRuleKind string
+
+const ModelCapabilityRuleKindCursorComposerImage ModelCapabilityRuleKind = "cursor_composer_image"
 
 type SlashCommandEffect string
 
@@ -243,6 +355,13 @@ type SlashCommandPolicyDescriptor struct {
 	CommandCatalogAuthoritative bool
 }
 
+type PlanDecisionStrategy string
+
+const (
+	PlanDecisionStrategyNone            PlanDecisionStrategy = ""
+	PlanDecisionStrategyImplementPrompt PlanDecisionStrategy = "implement_prompt"
+)
+
 type ComposerProfileDescriptor struct {
 	ModelSelection          bool
 	ModelCatalog            ModelCatalogKind
@@ -259,7 +378,9 @@ type ComposerProfileDescriptor struct {
 	CapabilityCatalog       CapabilityCatalogDescriptor
 	LiveModelDiscovery      LiveModelDiscoveryDescriptor
 	SlashCommandPolicy      SlashCommandPolicyDescriptor
+	PlanDecisionStrategy    PlanDecisionStrategy
 	Behavior                ComposerBehaviorDescriptor
+	ModelCapabilityRuleKind ModelCapabilityRuleKind
 }
 
 type TargetDescriptor struct {
@@ -274,7 +395,6 @@ const TargetLaunchRefTypeLocalCLI = "local_cli"
 type TurnLifecycleProjectionPolicy string
 
 const (
-	TurnLifecycleProjectionLegacy   TurnLifecycleProjectionPolicy = "legacy"
 	TurnLifecycleProjectionExplicit TurnLifecycleProjectionPolicy = "explicit"
 )
 
@@ -282,6 +402,73 @@ type EventsDescriptor struct {
 	Enabled                 bool
 	Aliases                 []string
 	TurnLifecycleProjection TurnLifecycleProjectionPolicy
+}
+
+type SidecarMentionRoutingKind string
+
+const (
+	SidecarMentionRoutingClaudeNamespaced SidecarMentionRoutingKind = "claude_namespaced"
+)
+
+type SidecarExecutionEnvironmentKind string
+
+const (
+	SidecarExecutionEnvironmentCodexSandbox SidecarExecutionEnvironmentKind = "codex_sandbox"
+	SidecarExecutionEnvironmentClaudeIPC    SidecarExecutionEnvironmentKind = "claude_ipc"
+	SidecarExecutionEnvironmentLocalIPC     SidecarExecutionEnvironmentKind = "local_ipc"
+)
+
+type SidecarDescriptor struct {
+	MentionRouting       SidecarMentionRoutingKind
+	ExecutionEnvironment SidecarExecutionEnvironmentKind
+	SkillRoot            string
+}
+
+type DesktopUsageProbeKind string
+
+const (
+	DesktopUsageProbeCodex      DesktopUsageProbeKind = "codex"
+	DesktopUsageProbeClaudeCode DesktopUsageProbeKind = "claude_code"
+)
+
+type DesktopVisibilityGate string
+
+const (
+	DesktopVisibilityGateCursorPreview   DesktopVisibilityGate = "cursor_preview"
+	DesktopVisibilityGateOpenCodePreview DesktopVisibilityGate = "opencode_preview"
+	DesktopVisibilityGateTuttiAgent      DesktopVisibilityGate = "tutti_agent"
+)
+
+type DesktopRuntimeProbeFallback string
+
+const (
+	DesktopRuntimeProbeFallbackDirect DesktopRuntimeProbeFallback = "direct"
+)
+
+type DesktopIntegrationDescriptor struct {
+	Managed                    bool
+	ManagedOrder               int
+	StatusProbePriority        int
+	UsageProbeKind             DesktopUsageProbeKind
+	VisibilityGate             DesktopVisibilityGate
+	RuntimeProbeFallback       DesktopRuntimeProbeFallback
+	InstallBootstrap           bool
+	RefreshOnAccountChange     bool
+	UnavailableDockOrderOffset int
+	DeveloperLogs              bool
+	DefaultProviderEligible    bool
+	DefaultProviderPriority    int
+}
+
+type CLIStartAliasDescriptor struct {
+	AppID       string
+	CommandName string
+	Description string
+	Summary     string
+}
+
+type CLIIntegrationDescriptor struct {
+	StartAlias CLIStartAliasDescriptor
 }
 
 // ProviderDescriptor is the single registration contract for a migrated
@@ -294,4 +481,8 @@ type ProviderDescriptor struct {
 	ComposerProfile ComposerProfileDescriptor
 	Target          TargetDescriptor
 	Events          EventsDescriptor
+	Sidecar         SidecarDescriptor
+	Desktop         DesktopIntegrationDescriptor
+	CLI             CLIIntegrationDescriptor
+	ExternalImport  ExternalImportDescriptor
 }

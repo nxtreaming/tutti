@@ -853,37 +853,6 @@ func TestControllerReportsMessageUpdateOnlyRuntimeBatch(t *testing.T) {
 	}
 }
 
-func TestControllerStartPassesOpenclawGatewayReadyToTransport(t *testing.T) {
-	t.Parallel()
-
-	transport := newScriptedACPTransport()
-	controller := NewDefaultControllerWithProcessTransport(nil, transport)
-
-	started, err := controller.Start(context.Background(), StartInput{
-		RoomID:               "room-1",
-		AgentSessionID:       "agent-session-1",
-		Provider:             ProviderOpenClaw,
-		CWD:                  "/workspace",
-		Title:                "OpenClaw",
-		OpenclawGatewayReady: true,
-	})
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	if started.Session.AgentSessionID != "agent-session-1" {
-		t.Fatalf("agent session id = %q, want propagated id", started.Session.AgentSessionID)
-	}
-
-	transport.mu.Lock()
-	defer transport.mu.Unlock()
-	if len(transport.specs) != 1 {
-		t.Fatalf("transport specs = %d, want 1", len(transport.specs))
-	}
-	if !transport.specs[0].OpenclawGatewayReady {
-		t.Fatalf("process spec = %#v, want openclaw gateway ready", transport.specs[0])
-	}
-}
-
 func TestControllerExecRunsOutsideRequestContext(t *testing.T) {
 	t.Parallel()
 
@@ -1816,8 +1785,8 @@ func TestControllerCancelStopsBackgroundTurn(t *testing.T) {
 		AgentSessionID: started.Session.AgentSessionID,
 		RequestID:      "permission-1",
 		OptionID:       "allow_once",
-	}); err == nil {
-		t.Fatal("SubmitInteractive after cancel returned nil error, want no longer live")
+	}); !errors.Is(err, ErrInteractiveRequestNotLive) {
+		t.Fatalf("SubmitInteractive after cancel error = %v, want ErrInteractiveRequestNotLive", err)
 	}
 }
 
@@ -1973,8 +1942,11 @@ func (streamingMessageOnlyAdapter) Cancel(context.Context, Session, string) ([]a
 }
 
 type recordingStartAdapter struct {
-	provider string
-	started  Session
+	provider       string
+	started        Session
+	cancelCalls    int
+	cancelEntered  chan<- struct{}
+	cancelReleased <-chan struct{}
 }
 
 func (a *recordingStartAdapter) Provider() string { return a.provider }
@@ -1998,7 +1970,17 @@ func (*recordingStartAdapter) Exec(context.Context, Session, []PromptContentBloc
 	return nil, nil
 }
 
-func (*recordingStartAdapter) Cancel(context.Context, Session, string) ([]activityshared.Event, error) {
+func (a *recordingStartAdapter) Cancel(context.Context, Session, string) ([]activityshared.Event, error) {
+	a.cancelCalls++
+	if a.cancelEntered != nil {
+		select {
+		case a.cancelEntered <- struct{}{}:
+		default:
+		}
+	}
+	if a.cancelReleased != nil {
+		<-a.cancelReleased
+	}
 	return nil, nil
 }
 
@@ -2721,6 +2703,31 @@ func TestControllerCancelWithoutAnyWorkReturnsNotCanceled(t *testing.T) {
 	}
 	if result.Canceled {
 		t.Fatalf("result = %#v, want Canceled=false when nothing was running", result)
+	}
+}
+
+func TestControllerExactCancelReportsTargetAbsentWithoutTurnRegistryRecord(t *testing.T) {
+	t.Parallel()
+
+	adapter := &cancelReconcileAdapter{empty: true}
+	controller := NewController([]Adapter{adapter}, nil)
+	started, err := controller.Start(context.Background(), StartInput{
+		RoomID: "room-1", AgentSessionID: "agent-session-1", Provider: ProviderCodex, Title: "Test",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	result, err := controller.Cancel(context.Background(), CancelInput{
+		RoomID: "room-1", AgentSessionID: started.Session.AgentSessionID, TurnID: "turn-1",
+	})
+	if err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if result.Canceled || !result.TargetAbsent {
+		t.Fatalf("result = %#v, want exact target absent evidence", result)
+	}
+	if adapter.cancelCalls.Load() != 1 {
+		t.Fatalf("adapter cancel calls = %d, want 1", adapter.cancelCalls.Load())
 	}
 }
 
@@ -5181,6 +5188,95 @@ func TestControllerCancelReconcilesStuckTurnView(t *testing.T) {
 	calls := reporter.waitForCalls(t, 1)
 	if len(calls[len(calls)-1].report.StatePatches) == 0 {
 		t.Fatalf("reconcile report = %#v, want a state patch", calls[len(calls)-1].report)
+	}
+}
+
+func TestControllerExactTurnCancelDoesNotCancelNewerActiveTurn(t *testing.T) {
+	t.Parallel()
+
+	adapter := &recordingStartAdapter{provider: ProviderCodex}
+	controller := NewController([]Adapter{adapter}, &recordingReporter{})
+	controller.store(Session{
+		RoomID: "room-1", AgentSessionID: "agent-1", Provider: ProviderCodex,
+		ProviderSessionID: "prov-1", Status: SessionStatusWorking,
+	})
+	controller.mu.Lock()
+	controller.turns[sessionKey("room-1", "agent-1")] = activeTurn{turnID: "turn-new"}
+	controller.mu.Unlock()
+
+	result, err := controller.Cancel(context.Background(), CancelInput{
+		RoomID: "room-1", AgentSessionID: "agent-1", TurnID: "turn-old", Reason: "user",
+	})
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+	if result.Canceled {
+		t.Fatalf("Cancel() result = %#v, want not canceled", result)
+	}
+	if adapter.cancelCalls != 0 {
+		t.Fatalf("adapter cancel calls = %d, want 0", adapter.cancelCalls)
+	}
+	active, ok := controller.activeTurn("room-1", "agent-1")
+	if !ok || active.turnID != "turn-new" {
+		t.Fatalf("active turn after exact cancel = %#v, %v, want turn-new", active, ok)
+	}
+}
+
+func TestControllerExactTurnCancelHoldsLifecycleLockThroughAdapterCancel(t *testing.T) {
+	t.Parallel()
+
+	cancelEntered := make(chan struct{}, 1)
+	cancelReleased := make(chan struct{})
+	adapter := &recordingStartAdapter{
+		provider: ProviderCodex, cancelEntered: cancelEntered, cancelReleased: cancelReleased,
+	}
+	controller := NewController([]Adapter{adapter}, &recordingReporter{})
+	controller.store(Session{
+		RoomID: "room-1", AgentSessionID: "agent-1", Provider: ProviderCodex,
+		ProviderSessionID: "prov-1", Status: SessionStatusWorking,
+	})
+	controller.mu.Lock()
+	controller.turns[sessionKey("room-1", "agent-1")] = activeTurn{turnID: "turn-1"}
+	controller.mu.Unlock()
+
+	cancelDone := make(chan error, 1)
+	go func() {
+		_, err := controller.Cancel(context.Background(), CancelInput{
+			RoomID: "room-1", AgentSessionID: "agent-1", TurnID: "turn-1", Reason: "user",
+		})
+		cancelDone <- err
+	}()
+	select {
+	case <-cancelEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("adapter cancel did not start")
+	}
+
+	secondLockAcquired := make(chan struct{})
+	go func() {
+		release := controller.acquireLifecycleLock("room-1", "agent-1")
+		close(secondLockAcquired)
+		release()
+	}()
+	select {
+	case <-secondLockAcquired:
+		t.Fatal("session lifecycle lock was released before adapter cancel completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(cancelReleased)
+	select {
+	case err := <-cancelDone:
+		if err != nil {
+			t.Fatalf("Cancel() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Cancel() did not finish")
+	}
+	select {
+	case <-secondLockAcquired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session lifecycle lock was not released after adapter cancel")
 	}
 }
 

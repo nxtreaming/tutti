@@ -15,6 +15,7 @@ import (
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 )
 
 func TestStandardACPAdapterProviderLaunchPrepareMutatesSpecAndCleansUpOnClose(t *testing.T) {
@@ -494,13 +495,17 @@ func TestCursorACPModeID(t *testing.T) {
 
 func TestCursorPlanModeFromACPModeID(t *testing.T) {
 	t.Parallel()
+	descriptor, ok := providerregistry.Find(ProviderCursor)
+	if !ok {
+		t.Fatal("cursor descriptor missing")
+	}
 
 	for modeID, wantPlanMode := range map[string]bool{
 		"plan":  true,
 		"agent": false,
 		"ask":   false,
 	} {
-		got, ok := cursorPlanModeFromACPModeID(modeID)
+		got, ok := projectCurrentPlanModeFromACPModeID(descriptor.Runtime.StandardACP, modeID)
 		if !ok {
 			t.Fatalf("cursorPlanModeFromACPModeID(%q) ok=false, want true", modeID)
 		}
@@ -508,7 +513,7 @@ func TestCursorPlanModeFromACPModeID(t *testing.T) {
 			t.Fatalf("cursorPlanModeFromACPModeID(%q) = %v, want %v", modeID, got, wantPlanMode)
 		}
 	}
-	if _, ok := cursorPlanModeFromACPModeID("auto"); ok {
+	if _, ok := projectCurrentPlanModeFromACPModeID(descriptor.Runtime.StandardACP, "auto"); ok {
 		t.Fatal("cursorPlanModeFromACPModeID(auto) ok=true, want false")
 	}
 }

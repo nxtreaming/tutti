@@ -84,12 +84,6 @@ func (s *Service) SendInput(ctx context.Context, workspaceID string, agentSessio
 		return SendInputResult{}, err
 	}
 	s.reportAgentServiceNodeSuccess(ctx, agentSessionID, "message_send", "session_refreshed", provider, nodeStartedAt)
-	if strings.TrimSpace(result.SessionStatus) != "" {
-		session.Status = serviceStatus(result.SessionStatus)
-		session.EndedAt = endedAtForStatus(result.SessionStatus, session.UpdatedAt)
-	}
-	session.TurnLifecycle = cloneTurnLifecycle(&result.TurnLifecycle)
-	session.SubmitAvailability = cloneSubmitAvailability(&result.SubmitAvailability)
 	return SendInputResult{
 		Session:            session,
 		TurnID:             strings.TrimSpace(result.TurnID),

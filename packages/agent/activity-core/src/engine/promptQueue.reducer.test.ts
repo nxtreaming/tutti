@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentActivitySession } from "../types.ts";
+import { normalizeAgentActivitySession } from "../sessionNormalization.ts";
 import {
   createInitialPromptQueueState,
   promptQueueReducer
@@ -142,7 +143,7 @@ test("stale snapshots and stale cancel results cannot release a newer running tu
   const staleCancel = reduce(state, {
     ...commandResult("cancel-1", "turn/cancel", "succeeded"),
     value: {
-      cancel: { canceled: true, reason: "turn_canceled" },
+      cancel: { canceled: true, reason: "turn_canceled" as const },
       turn: {
         ...session("running", 2).activeTurn!,
         phase: "settled",
@@ -226,16 +227,27 @@ test("cancel result can release send-next without waiting for snapshot ordering"
     promptId: "prompt-1",
     timeoutMs: 30_000
   });
-  const canceled = reduce(promoted.state, {
+  const cancelIntent = {
     ...commandResult("cancel-1", "turn/cancel", "succeeded"),
     value: {
-      cancel: { canceled: true, reason: "turn_canceled" },
+      cancel: { canceled: true, reason: "turn_canceled" as const },
       turn: {
         ...session("running", 2).activeTurn!,
-        phase: "settled",
-        outcome: "canceled",
+        completedCommand: null,
+        error: null,
+        fileChanges: null,
+        phase: "settled" as const,
+        outcome: "canceled" as const,
+        settledAtUnixMs: 2,
         updatedAtUnixMs: 2
       }
+    }
+  };
+  const canceled = promptQueueReducer(promoted.state, cancelIntent, {
+    deletedSessionIds: {},
+    cancelResultValidation: {
+      kind: "valid",
+      response: cancelIntent.value
     }
   });
   assert.equal(canceled.commands.length, 1);
@@ -456,11 +468,10 @@ function session(
   phase: "running" | "settled",
   updatedAtUnixMs: number
 ): AgentActivitySession {
-  return {
+  return normalizeAgentActivitySession({
     agentSessionId: "session-1",
     cwd: "/workspace",
     provider: "codex",
-    status: phase === "running" ? "working" : "completed",
     activeTurnId: phase === "running" ? "turn-1" : null,
     activeTurn:
       phase === "running"
@@ -476,7 +487,7 @@ function session(
     title: "Session",
     updatedAtUnixMs,
     workspaceId: "workspace-1"
-  };
+  });
 }
 
 function commandResult(

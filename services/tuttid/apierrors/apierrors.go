@@ -73,6 +73,8 @@ const (
 	ReasonWorkspaceAgentSessionNotFound                  = "workspace_agent_session_not_found"
 	ReasonWorkspaceAgentSessionUnavailable               = "workspace_agent_session_service_unavailable"
 	ReasonAgentProviderUnavailable                       = "agent_provider_unavailable"
+	ReasonAgentRuntimeOperationReconciling               = "agent_runtime_operation_reconciling"
+	ReasonAgentRuntimeOperationFailed                    = "agent_runtime_operation_failed"
 	ReasonWorkspaceAppNotFound                           = "workspace_app_not_found"
 	ReasonWorkspaceAppDeleteForbidden                    = "workspace_app_delete_forbidden"
 	ReasonWorkspaceAppIconInvalid                        = "workspace_app_icon_invalid"
@@ -405,6 +407,15 @@ func Classify(err error) *ProtocolError {
 		return WorkspaceNotFound(ReasonWorkspaceAgentSessionNotFound, WithCause(err))
 	case errors.Is(err, agentservice.ErrSessionSettingsRequireNewSession):
 		return InvalidRequest("agent.settings_require_new_session", WithCause(err))
+	case errors.Is(err, agentservice.ErrRuntimeOperationInProgress):
+		result := WorkspaceOperationFailed(WithCause(err))
+		result.Reason = ReasonAgentRuntimeOperationReconciling
+		result.Retryable = true
+		return result
+	case errors.Is(err, agentservice.ErrRuntimeOperationFailed):
+		result := WorkspaceOperationFailed(WithCause(err))
+		result.Reason = ReasonAgentRuntimeOperationFailed
+		return result
 	default:
 		return WorkspaceOperationFailed(WithCause(err))
 	}

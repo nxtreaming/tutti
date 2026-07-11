@@ -742,6 +742,7 @@ export const zhCN = {
       goalClearAction: "删除目标",
       processing: "正在规划下一步",
       agentTargetRequired: "请先选择可用的 Agent 目标。",
+      sessionActivationFailed: "Agent 会话启动失败。",
       promptImagesUnsupported: "当前模型不支持图片输入。",
       visibleErrorStartFailed: "{{provider}} 启动失败",
       visibleErrorRequestFailed: "{{provider}} 请求失败",
@@ -772,6 +773,8 @@ export const zhCN = {
       visibleErrorActionDetect: "打开检测",
       systemNoticeTransportRetry: "Agent 连接中断，正在重连",
       systemNoticeTransportFallback: "Agent 已切换到 HTTPS 传输",
+      systemNoticePlanImplementationPendingConfirmation: "计划实现正在等待确认",
+      systemNoticePlanImplementationCompleted: "计划实现已开始",
       systemNoticeWarning: "Agent 警告",
       systemNoticeDefault: "Agent 通知",
       contextCompactionInProgress: "正在压缩上下文",
@@ -1006,10 +1009,7 @@ export const zhCN = {
       mentionCollaboratorFallback: "协作者",
       syncPending: "已保存到本地，正在同步到云端",
       syncSynced: "已同步到云端",
-      syncFailed: "云端同步失败",
-      openclawGatewayStarting: "正在启动 OpenClaw gateway...",
-      openclawGatewayFailed: "OpenClaw gateway 启动失败。",
-      openclawGatewayRetry: "重试 gateway"
+      syncFailed: "云端同步失败"
     },
     workspaceInsights: {
       runtimeTitle: "运行时",

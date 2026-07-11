@@ -272,7 +272,7 @@ func parseModelsDevCatalog(data []byte) (*modelsDevCatalog, error) {
 }
 
 func providerRuleModelImageCapability(provider string, modelID string, label string) modelCapabilityDecision {
-	if agentprovider.Normalize(provider) != agentprovider.Cursor {
+	if composerProfileFor(provider).ModelCapabilityRuleKind != providerregistry.ModelCapabilityRuleKindCursorComposerImage {
 		return modelCapabilityUnknown
 	}
 	baseModelID := normalizeModelCapabilityID(modelID)

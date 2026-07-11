@@ -3,7 +3,7 @@ import type { UiLanguage } from "../contexts/settings/domain/agentSettings.ts";
 import { translateInUiLanguage } from "../i18n/runtime.ts";
 import { resolveAgentGUIProviderCatalogIdentity } from "../providerIdentityCatalog.ts";
 import type { AgentGUIProvider } from "../types.ts";
-import type { WorkspaceAgentActivityTimelineItem } from "./workspaceAgentActivityTypes.ts";
+import type { WorkspaceAgentActivityTimelineItem } from "./workspaceAgentTimelineTypes.ts";
 import { formatAgentSessionMentionText } from "./utils/agentSessionMentionText.ts";
 import { normalizeAgentTitleText } from "./utils/agentTitleText.ts";
 

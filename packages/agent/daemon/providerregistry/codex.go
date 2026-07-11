@@ -30,11 +30,15 @@ func codexDescriptor() ProviderDescriptor {
 			},
 		},
 		Status: StatusDescriptor{
-			Kind:              StatusKindCodexCLI,
-			MinVersion:        CodexMinVersion,
-			BinaryNames:       []string{"codex"},
-			AuthStatusCommand: []string{"login", "-c", `service_tier="fast"`, "status"},
-			AuthMarkerPaths:   []string{"~/.codex/auth.json"},
+			Kind:                   StatusKindCodexCLI,
+			AuthOutputParserKind:   AuthOutputParserKindCodex,
+			AuthMarkerParserKind:   AuthMarkerParserKindFileExists,
+			AuthCommandRunnerKind:  AuthCommandRunnerKindGeneric,
+			StaticSpecResolverKind: StaticSpecResolverKindManagedNode,
+			MinVersion:             CodexMinVersion,
+			BinaryNames:            []string{"codex"},
+			AuthStatusCommand:      []string{"login", "-c", `service_tier="fast"`, "status"},
+			AuthMarkerPaths:        []string{"~/.codex/auth.json"},
 			APIEndpoints: []string{
 				"https://chatgpt.com/backend-api/codex",
 				"https://api.openai.com/v1",
@@ -116,6 +120,7 @@ func codexDescriptor() ProviderDescriptor {
 					{Command: "fast", Effect: SlashCommandEffectToggleSpeed},
 				},
 			},
+			PlanDecisionStrategy: PlanDecisionStrategyImplementPrompt,
 		},
 		Target: TargetDescriptor{
 			ID:            CodexTargetID,
@@ -126,6 +131,23 @@ func codexDescriptor() ProviderDescriptor {
 		Events: EventsDescriptor{
 			Enabled:                 true,
 			TurnLifecycleProjection: TurnLifecycleProjectionExplicit,
+		},
+		Sidecar: SidecarDescriptor{ExecutionEnvironment: SidecarExecutionEnvironmentCodexSandbox},
+		Desktop: DesktopIntegrationDescriptor{Managed: true, ManagedOrder: 2, StatusProbePriority: 1, UsageProbeKind: DesktopUsageProbeCodex, DeveloperLogs: true, DefaultProviderEligible: true, DefaultProviderPriority: 1},
+		CLI: CLIIntegrationDescriptor{StartAlias: CLIStartAliasDescriptor{
+			AppID: "agent-codex", CommandName: "codex",
+			Description: "Start a Codex agent session in the current workspace. Use --show to request AgentGUI activation.",
+			Summary:     "Start a Codex agent session",
+		}},
+		ExternalImport: ExternalImportDescriptor{
+			Enabled:                  true,
+			RootEnvVar:               "CODEX_HOME",
+			DefaultRoot:              "~/.codex",
+			ScanDirectories:          []string{"sessions", "archived_sessions"},
+			ParserKind:               ExternalImportParserKindCodexJSONL,
+			UserTextCleanerKind:      ExternalImportUserTextCleanerKindCodex,
+			TitleCatalogKind:         ExternalImportTitleCatalogKindCodexSQLite,
+			NoProjectHomeRelativeDir: "Documents/Codex",
 		},
 	}
 }

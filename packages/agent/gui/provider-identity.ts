@@ -3,6 +3,8 @@ import { resolveAgentGUIProviderCatalogIdentity } from "./providerIdentityCatalo
 export interface AgentGUIProviderIdentityPresentation {
   providerId: string;
   displayName: string;
+  iconKey: string;
+  targetId: string;
 }
 
 export function resolveAgentGUIProviderIdentity(
@@ -14,6 +16,8 @@ export function resolveAgentGUIProviderIdentity(
   }
   return {
     providerId: identity.providerId,
-    displayName: identity.displayName
+    displayName: identity.displayName,
+    iconKey: identity.iconKey,
+    targetId: identity.target.id
   };
 }

@@ -132,6 +132,27 @@ func TestOpenCodeStatusHelpersDispatchFromDescriptorStrategy(t *testing.T) {
 	}
 }
 
+func TestAuthStrategiesProjectFromProviderDescriptor(t *testing.T) {
+	for _, provider := range []string{
+		providerregistry.CodexProviderID,
+		providerregistry.ClaudeCodeProviderID,
+		providerregistry.CursorProviderID,
+		providerregistry.TuttiAgentProviderID,
+	} {
+		descriptor, ok := providerregistry.Find(provider)
+		if !ok {
+			t.Fatalf("provider %q descriptor missing", provider)
+		}
+		spec, err := providerSpecFromDescriptor(descriptor)
+		if err != nil {
+			t.Fatalf("providerSpecFromDescriptor(%q) error = %v", provider, err)
+		}
+		if spec.AuthOutputParserKind != descriptor.Status.AuthOutputParserKind || spec.AuthMarkerParserKind != descriptor.Status.AuthMarkerParserKind || spec.AuthCommandRunnerKind != descriptor.Status.AuthCommandRunnerKind || spec.StaticSpecResolverKind != descriptor.Status.StaticSpecResolverKind {
+			t.Fatalf("provider %q auth strategies = %#v, want %#v", provider, spec, descriptor.Status)
+		}
+	}
+}
+
 func TestProviderStatusAdapterRejectsUnknownInstallerKind(t *testing.T) {
 	descriptor, ok := providerregistry.Find(providerregistry.CodexProviderID)
 	if !ok {

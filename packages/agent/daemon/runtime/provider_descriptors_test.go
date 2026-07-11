@@ -143,6 +143,22 @@ func TestDefaultControllerRegistersOpenCodeFromMigratedDescriptor(t *testing.T) 
 	}
 }
 
+func TestDefaultControllerRegistersEveryMigratedProviderDescriptor(t *testing.T) {
+	controller := NewDefaultControllerWithProcessTransport(nil, nil)
+	for _, descriptor := range providerregistry.Migrated() {
+		adapter := controller.adapters[descriptor.Identity.ID]
+		if adapter == nil {
+			t.Fatalf("provider %q has no default controller adapter", descriptor.Identity.ID)
+		}
+		if adapter.Provider() != descriptor.Identity.ID {
+			t.Fatalf("provider %q constructed adapter for %q", descriptor.Identity.ID, adapter.Provider())
+		}
+	}
+	if len(controller.adapters) != len(providerregistry.Migrated()) {
+		t.Fatalf("controller adapters = %d, migrated descriptors = %d", len(controller.adapters), len(providerregistry.Migrated()))
+	}
+}
+
 func containsStringWithPrefix(values []string, prefix string) bool {
 	for _, value := range values {
 		if strings.HasPrefix(value, prefix) {

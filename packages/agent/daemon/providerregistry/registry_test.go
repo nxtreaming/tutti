@@ -64,6 +64,72 @@ func TestMigratedCodexDescriptorIsComplete(t *testing.T) {
 	}
 }
 
+func TestMigratedProviderSetIsComplete(t *testing.T) {
+	want := map[string]bool{
+		ClaudeCodeProviderID: true,
+		CodexProviderID:      true,
+		CursorProviderID:     true,
+		HermesProviderID:     true,
+		NexightProviderID:    true,
+		OpenClawProviderID:   true,
+		OpenCodeProviderID:   true,
+		TuttiAgentProviderID: true,
+	}
+	for _, descriptor := range Migrated() {
+		if !want[descriptor.Identity.ID] {
+			t.Fatalf("unexpected migrated provider %q", descriptor.Identity.ID)
+		}
+		delete(want, descriptor.Identity.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("providers missing from migrated registry: %#v", want)
+	}
+}
+
+func TestMigratedProviderSidecarPoliciesAreDescriptorOwned(t *testing.T) {
+	want := map[string]SidecarDescriptor{
+		CodexProviderID:      {ExecutionEnvironment: SidecarExecutionEnvironmentCodexSandbox},
+		ClaudeCodeProviderID: {MentionRouting: SidecarMentionRoutingClaudeNamespaced, ExecutionEnvironment: SidecarExecutionEnvironmentClaudeIPC},
+		CursorProviderID:     {ExecutionEnvironment: SidecarExecutionEnvironmentLocalIPC},
+		TuttiAgentProviderID: {ExecutionEnvironment: SidecarExecutionEnvironmentLocalIPC},
+		OpenCodeProviderID:   {ExecutionEnvironment: SidecarExecutionEnvironmentLocalIPC},
+		NexightProviderID:    {ExecutionEnvironment: SidecarExecutionEnvironmentLocalIPC, SkillRoot: ".nexight/skills"},
+		HermesProviderID:     {ExecutionEnvironment: SidecarExecutionEnvironmentLocalIPC, SkillRoot: ".agent_context/skills"},
+		OpenClawProviderID:   {ExecutionEnvironment: SidecarExecutionEnvironmentLocalIPC, SkillRoot: ".openclaw/skills"},
+	}
+	for _, descriptor := range Migrated() {
+		if descriptor.Sidecar != want[descriptor.Identity.ID] {
+			t.Fatalf("provider %q sidecar = %#v, want %#v", descriptor.Identity.ID, descriptor.Sidecar, want[descriptor.Identity.ID])
+		}
+		delete(want, descriptor.Identity.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("provider sidecar policies missing: %#v", want)
+	}
+}
+
+func TestMigratedProviderDesktopIntegrationIsDescriptorOwned(t *testing.T) {
+	want := map[string]DesktopIntegrationDescriptor{
+		CodexProviderID:      {Managed: true, ManagedOrder: 2, StatusProbePriority: 1, UsageProbeKind: DesktopUsageProbeCodex, DeveloperLogs: true, DefaultProviderEligible: true, DefaultProviderPriority: 1},
+		ClaudeCodeProviderID: {Managed: true, ManagedOrder: 1, StatusProbePriority: 2, UsageProbeKind: DesktopUsageProbeClaudeCode, DeveloperLogs: true, DefaultProviderEligible: true, DefaultProviderPriority: 2},
+		CursorProviderID:     {Managed: true, ManagedOrder: 3, StatusProbePriority: 3, VisibilityGate: DesktopVisibilityGateCursorPreview, RuntimeProbeFallback: DesktopRuntimeProbeFallbackDirect, DeveloperLogs: true},
+		TuttiAgentProviderID: {Managed: true, ManagedOrder: 4, StatusProbePriority: 4, VisibilityGate: DesktopVisibilityGateTuttiAgent, InstallBootstrap: true, RefreshOnAccountChange: true},
+		OpenCodeProviderID:   {Managed: true, ManagedOrder: 5, StatusProbePriority: 5, VisibilityGate: DesktopVisibilityGateOpenCodePreview},
+		NexightProviderID:    {},
+		HermesProviderID:     {Managed: true, ManagedOrder: 6, StatusProbePriority: 6},
+		OpenClawProviderID:   {Managed: true, ManagedOrder: 7, StatusProbePriority: 7, UnavailableDockOrderOffset: 200},
+	}
+	for _, descriptor := range Migrated() {
+		if descriptor.Desktop != want[descriptor.Identity.ID] {
+			t.Fatalf("provider %q desktop = %#v, want %#v", descriptor.Identity.ID, descriptor.Desktop, want[descriptor.Identity.ID])
+		}
+		delete(want, descriptor.Identity.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("provider desktop integrations missing: %#v", want)
+	}
+}
+
 func TestMigratedOpenCodeDescriptorIsComplete(t *testing.T) {
 	if err := ValidateMigrated(); err != nil {
 		t.Fatalf("ValidateMigrated() error = %v", err)
@@ -86,7 +152,7 @@ func TestMigratedOpenCodeDescriptorIsComplete(t *testing.T) {
 		descriptor.ComposerProfile.ConfigOptionIDs.Reasoning != "effort" {
 		t.Fatalf("ComposerProfile = %#v", descriptor.ComposerProfile)
 	}
-	if descriptor.Target.ID != OpenCodeTargetID || descriptor.Events.TurnLifecycleProjection != TurnLifecycleProjectionLegacy {
+	if descriptor.Target.ID != OpenCodeTargetID || descriptor.Events.TurnLifecycleProjection != TurnLifecycleProjectionExplicit {
 		t.Fatalf("target/events = %#v %#v", descriptor.Target, descriptor.Events)
 	}
 }

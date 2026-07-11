@@ -43,6 +43,25 @@ func TestClaudeCodeComposerProfileComesFromProviderDescriptor(t *testing.T) {
 	}
 }
 
+func TestCursorSkillDiscoveryComesFromProviderDescriptor(t *testing.T) {
+	profile := composerProfileFor(agentprovider.Cursor)
+	if profile.SkillKind != string(providerregistry.SkillKindCursor) || profile.SkillInvocation != string(providerregistry.SkillInvocationTextTrigger) {
+		t.Fatalf("cursor skill profile = %#v", profile)
+	}
+}
+
+func TestUnknownProviderHasNoComposerProtocolFallbacks(t *testing.T) {
+	if got := reasoningConfigOptionID("unknown-provider"); got != "" {
+		t.Fatalf("reasoning config option = %q, want empty", got)
+	}
+	if got := speedConfigOptionID("unknown-provider"); got != "" {
+		t.Fatalf("speed config option = %q, want empty", got)
+	}
+	if got := reasoningEffortValuesForProvider("unknown-provider"); len(got) != 0 {
+		t.Fatalf("reasoning effort values = %#v, want none", got)
+	}
+}
+
 func TestCodexModelCatalogSpecComesFromProviderDescriptor(t *testing.T) {
 	spec, ok := agentModelCatalogSpecs[agentprovider.Codex]
 	if !ok {

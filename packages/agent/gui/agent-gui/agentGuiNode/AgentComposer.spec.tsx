@@ -14,7 +14,6 @@ import {
 } from "@tutti-os/workspace-user-project/i18n";
 import { AgentComposer } from "./AgentComposer";
 import { textPromptContent } from "./controller/agentGuiController.promptHelpers";
-import { cursorColorfulUrl } from "../../managedAgentIconAssets";
 import {
   resetAgentActivityRuntimeForTests,
   setAgentActivityRuntimeForTests,
@@ -1506,7 +1505,7 @@ describe("AgentComposer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("uses Cursor colorful artwork for Cursor in the provider switch menu", async () => {
+  it("honors target artwork in the provider switch menu", async () => {
     const codexTarget = {
       targetId: "local:codex",
       agentTargetId: "local:codex",
@@ -1561,7 +1560,7 @@ describe("AgentComposer", () => {
     const trigger = screen.getByRole("combobox", { name: "切换 Provider" });
     expect(trigger.querySelector("img")).toHaveAttribute(
       "src",
-      cursorColorfulUrl
+      "app://old-cursor-target-icon.png"
     );
 
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
@@ -1570,7 +1569,7 @@ describe("AgentComposer", () => {
       (await screen.findByRole("option", { name: "Cursor" })).querySelector(
         "img"
       )
-    ).toHaveAttribute("src", cursorColorfulUrl);
+    ).toHaveAttribute("src", "app://old-cursor-target-icon.png");
   });
 
   it("matches the browser-use slash capability by its English alias", async () => {
@@ -1927,7 +1926,7 @@ describe("AgentComposer", () => {
   });
 
   it("keeps the submitted text visible when starting a brand-new conversation, until the view catches up", () => {
-    // hasActiveConversation is derived from viewModel.activeConversationId
+    // hasActiveConversation is derived from viewModel.rail.activeConversationId
     // (see AgentGUINodeView wiring). startConversation in
     // useAgentGUINodeController now flips activeConversationId synchronously
     // on submit (optimistic entry), so in practice this prop goes true

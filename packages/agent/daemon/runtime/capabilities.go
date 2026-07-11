@@ -1,6 +1,7 @@
 package agentruntime
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
@@ -33,35 +34,28 @@ const (
 // standardACPCapabilities derives the canonical capability list for ACP
 // family providers from the live session state.
 func standardACPCapabilities(provider string, promptImage bool, state acpLiveStateSnapshot) []string {
-	if profile, ok := migratedProviderComposerProfile(provider); ok {
-		capabilities := make([]string, 0, len(profile.Capabilities))
-		for _, capability := range profile.Capabilities {
-			if capability == CapabilityImageInput && !promptImage {
-				continue
-			}
-			capabilities = append(capabilities, capability)
-		}
-		return capabilities
+	descriptor, ok := providerregistry.Find(provider)
+	if !ok {
+		return nil
 	}
-	capabilities := []string{CapabilityInterrupt}
-	if promptImage {
+	profile := descriptor.ComposerProfile
+	capabilities := make([]string, 0, len(profile.Capabilities)+2)
+	for _, capability := range profile.Capabilities {
+		if capability == CapabilityImageInput && !promptImage {
+			continue
+		}
+		capabilities = append(capabilities, capability)
+	}
+	standardACP := descriptor.Runtime.StandardACP
+	if promptImage && standardACP.DeriveImageInputFromPrompt && !slices.Contains(capabilities, CapabilityImageInput) {
 		capabilities = append(capabilities, CapabilityImageInput)
 	}
-	// Cursor exposes plan mode through ACP session/set_mode ("plan"); advertise
-	// it so the composer plan badge survives the authoritative session snapshots
-	// emitted during/after a turn (otherwise supportsPlanMode flips to false and
-	// the badge vanishes once the reply settles).
-	if provider == ProviderCursor {
-		capabilities = append(
-			capabilities,
-			CapabilityPlanMode,
-			CapabilityModelImageInputRequired,
-		)
-	}
-	for _, command := range state.availableCommands {
-		if strings.EqualFold(strings.TrimSpace(command.Name), "compact") {
-			capabilities = append(capabilities, CapabilityCompact)
-			break
+	if standardACP.DeriveCompactFromCommands && !slices.Contains(capabilities, CapabilityCompact) {
+		for _, command := range state.availableCommands {
+			if strings.EqualFold(strings.TrimSpace(command.Name), "compact") {
+				capabilities = append(capabilities, CapabilityCompact)
+				break
+			}
 		}
 	}
 	return capabilities

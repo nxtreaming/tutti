@@ -140,17 +140,7 @@ export function toAgentNodeTitle(
 ): string {
   const providerTitle =
     resolveMigratedAgentGUIProviderIdentity(provider)?.providerId ??
-    (provider === "claude-code"
-      ? "claude"
-      : provider === "nexight"
-        ? "nexight"
-        : provider === "openclaw"
-          ? "openclaw"
-          : provider === "hermes"
-            ? "hermes"
-            : provider === "cursor"
-              ? "cursor"
-              : "codex");
+    (provider.trim().toLowerCase() || "unknown");
   return `${providerTitle} · ${model ?? translate("common.defaultModel")}`;
 }
 

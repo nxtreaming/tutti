@@ -1,20 +1,18 @@
 package agentprovider
 
 import (
-	"strings"
-
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 )
 
 const (
 	ClaudeCode = providerregistry.ClaudeCodeProviderID
 	Codex      = providerregistry.CodexProviderID
-	Cursor     = "cursor"
-	Hermes     = "hermes"
-	Nexight    = "nexight"
-	OpenClaw   = "openclaw"
+	Cursor     = providerregistry.CursorProviderID
+	Hermes     = providerregistry.HermesProviderID
+	Nexight    = providerregistry.NexightProviderID
+	OpenClaw   = providerregistry.OpenClawProviderID
 	OpenCode   = providerregistry.OpenCodeProviderID
-	TuttiAgent = "tutti-agent"
+	TuttiAgent = providerregistry.TuttiAgentProviderID
 )
 
 func All() []string {
@@ -30,9 +28,6 @@ func All() []string {
 	for _, descriptor := range providerregistry.Migrated() {
 		appendProvider(descriptor.Identity.ID)
 	}
-	for _, provider := range []string{TuttiAgent, Cursor, Nexight, Hermes, OpenClaw} {
-		appendProvider(provider)
-	}
 	return providers
 }
 
@@ -40,20 +35,7 @@ func Normalize(provider string) string {
 	if providerID, ok := providerregistry.ResolveProviderID(provider); ok {
 		return providerID
 	}
-	switch strings.TrimSpace(strings.ToLower(provider)) {
-	case TuttiAgent:
-		return TuttiAgent
-	case "cursor-agent", "cursor-cli", Cursor:
-		return Cursor
-	case "hermes-agent", Hermes:
-		return Hermes
-	case "tutti", Nexight:
-		return Nexight
-	case "open-claw", OpenClaw:
-		return OpenClaw
-	default:
-		return ""
-	}
+	return ""
 }
 
 func IsSupported(provider string) bool {

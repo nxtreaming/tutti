@@ -16,8 +16,8 @@ import (
 const (
 	IDLocalCodex      = providerregistry.CodexTargetID
 	IDLocalClaudeCode = providerregistry.ClaudeCodeTargetID
-	IDLocalTuttiAgent = "local:tutti-agent"
-	IDLocalCursor     = "local:cursor"
+	IDLocalTuttiAgent = providerregistry.TuttiAgentTargetID
+	IDLocalCursor     = providerregistry.CursorTargetID
 	IDLocalOpenCode   = providerregistry.OpenCodeTargetID
 
 	LaunchRefTypeLocalCLI = "local_cli"
@@ -50,36 +50,10 @@ type LaunchRef struct {
 }
 
 func DefaultSystemTargets(nowUnixMS int64) []Target {
-	targets := make([]Target, 0, len(providerregistry.Migrated())+3)
+	targets := make([]Target, 0, len(providerregistry.Migrated()))
 	for _, descriptor := range providerregistry.Migrated() {
 		targets = append(targets, systemTargetFromProviderDescriptor(descriptor, nowUnixMS))
 	}
-	targets = append(targets,
-		Target{
-			ID:              IDLocalTuttiAgent,
-			Provider:        agentproviderbiz.TuttiAgent,
-			LaunchRefJSON:   MustLocalCLILaunchRefJSON(agentproviderbiz.TuttiAgent),
-			Name:            "Tutti Agent",
-			IconKey:         "tutti-agent",
-			Enabled:         true,
-			Source:          SourceSystem,
-			SortOrder:       30,
-			CreatedAtUnixMS: nowUnixMS,
-			UpdatedAtUnixMS: nowUnixMS,
-		},
-		Target{
-			ID:              IDLocalCursor,
-			Provider:        agentproviderbiz.Cursor,
-			LaunchRefJSON:   MustLocalCLILaunchRefJSON(agentproviderbiz.Cursor),
-			Name:            "Cursor",
-			IconKey:         "cursor",
-			Enabled:         true,
-			Source:          SourceSystem,
-			SortOrder:       40,
-			CreatedAtUnixMS: nowUnixMS,
-			UpdatedAtUnixMS: nowUnixMS,
-		},
-	)
 	sort.SliceStable(targets, func(left int, right int) bool {
 		if targets[left].SortOrder == targets[right].SortOrder {
 			return targets[left].ID < targets[right].ID
@@ -230,12 +204,5 @@ func normalizeFirstIterationProvider(value string) string {
 	if _, ok := providerregistry.Find(normalized); ok {
 		return normalized
 	}
-	switch normalized {
-	case agentproviderbiz.TuttiAgent:
-		return agentproviderbiz.TuttiAgent
-	case agentproviderbiz.Cursor:
-		return agentproviderbiz.Cursor
-	default:
-		return ""
-	}
+	return ""
 }

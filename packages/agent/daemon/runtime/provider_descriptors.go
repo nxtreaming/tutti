@@ -53,12 +53,18 @@ func newAdapterFromProviderDescriptor(
 			commandResolver,
 		)
 	case providerregistry.RuntimeKindStandardACP:
-		return newStandardACPAdapterFromProviderDescriptor(
-			descriptor,
-			transport,
-			host,
-			commandResolver,
-		)
+		switch descriptor.Runtime.StandardACP.AdapterStrategy {
+		case "", providerregistry.StandardACPAdapterStrategyGeneric:
+			return newStandardACPAdapterFromProviderDescriptor(descriptor, transport, host, commandResolver)
+		case providerregistry.StandardACPAdapterStrategyCursor:
+			return newCursorAdapterFromProviderDescriptor(descriptor, transport, host, cursorACPCommandResolver)
+		case providerregistry.StandardACPAdapterStrategyNexight:
+			return newNexightAdapterFromProviderDescriptor(descriptor, transport, host, commandResolver)
+		case providerregistry.StandardACPAdapterStrategyOpenClaw:
+			return newOpenClawAdapterFromProviderDescriptor(descriptor, transport, host, commandResolver)
+		default:
+			return nil
+		}
 	case providerregistry.RuntimeKindClaudeSDK:
 		return NewClaudeCodeSDKAdapter(transport)
 	default:
@@ -77,6 +83,8 @@ func newStandardACPAdapterFromProviderDescriptor(
 		modeIDs[strings.TrimSpace(mode.InputID)] = strings.TrimSpace(mode.RuntimeID)
 	}
 	settingsEnvironment := descriptor.Runtime.StandardACP.SettingsEnvironment
+	standardACP := descriptor.Runtime.StandardACP
+	defaultRuntimeModeID := strings.TrimSpace(descriptor.Runtime.StandardACP.DefaultPermissionModeRuntimeID)
 	return &standardACPAdapter{
 		config: standardACPConfig{
 			provider:            descriptor.Identity.ID,
@@ -86,7 +94,10 @@ func newStandardACPAdapterFromProviderDescriptor(
 			defaultTitleAliases: append([]string{descriptor.Identity.DisplayName, descriptor.Identity.ID}, descriptor.Identity.Aliases...),
 			authRequiredMessage: descriptor.Runtime.AuthRequiredMessage,
 			permissionModeID: func(mode string) string {
-				return modeIDs[strings.TrimSpace(mode)]
+				if runtimeModeID := modeIDs[strings.TrimSpace(mode)]; runtimeModeID != "" {
+					return runtimeModeID
+				}
+				return defaultRuntimeModeID
 			},
 			initializeParams: func() map[string]any { return defaultACPInitializeParams(host) },
 			env: func(session Session) []string {
@@ -96,7 +107,10 @@ func newStandardACPAdapterFromProviderDescriptor(
 				}
 				return env
 			},
-			commandResolver: commandResolver,
+			commandResolver:    commandResolver,
+			planModeRuntimeID:  strings.TrimSpace(standardACP.PlanModeRuntimeID),
+			projectCurrentMode: standardACP.ProjectCurrentMode,
+			startupDiagnostics: standardACP.StartupDiagnostics,
 		},
 		transport: transport,
 		host:      host,
@@ -112,8 +126,7 @@ func runtimeSettingsEnvironmentValue(
 	values := make(map[string]string, len(descriptor.JSONFields))
 	for _, field := range descriptor.JSONFields {
 		var value string
-		switch field.Setting {
-		case providerregistry.RuntimeSettingFieldModel:
+		if field.Setting == providerregistry.RuntimeSettingFieldModel {
 			value = strings.TrimSpace(settings.Model)
 		}
 		if value != "" {

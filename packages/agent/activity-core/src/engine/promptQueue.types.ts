@@ -100,6 +100,7 @@ export interface PromptQueueSendCommand {
   type: "queue/sendPrompt";
   agentSessionId: string;
   commandId: string;
+  clientSubmitId: string;
   correlationId?: string;
   content: readonly AgentPromptContentBlock[];
   displayPrompt?: string;

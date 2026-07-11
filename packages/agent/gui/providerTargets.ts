@@ -10,45 +10,23 @@ import {
   resolveMigratedAgentGUIProviderIdentity
 } from "./providerIdentityCatalog.ts";
 
-const legacyAgentGUIDefaultTargetOrder = [
-  { provider: "cursor", sortOrder: 30 },
-  { provider: "tutti-agent", sortOrder: 40 },
-  { provider: "hermes", sortOrder: 60 },
-  { provider: "openclaw", sortOrder: 70 }
-] as const satisfies readonly {
-  provider: AgentGUIProvider;
-  sortOrder: number;
-}[];
-
 export const agentGUIDefaultTargetProviders: readonly AgentGUIProvider[] =
   createAgentGUIDefaultTargetProviders();
 
+const disabledAgentGUIProviderTargetProviders =
+  migratedAgentGUIProviderIdentityCatalog
+    .filter((identity) => !identity.target.enabled)
+    .map((identity) => identity.providerId as AgentGUIProvider);
+
 function createAgentGUIDefaultTargetProviders(): AgentGUIProvider[] {
-  const entries = [
-    ...migratedAgentGUIProviderIdentityCatalog.map((identity) => ({
+  return migratedAgentGUIProviderIdentityCatalog
+    .map((identity) => ({
       provider: identity.providerId as AgentGUIProvider,
       sortOrder: identity.target.sortOrder
-    })),
-    ...legacyAgentGUIDefaultTargetOrder
-  ];
-  const seen = new Set<AgentGUIProvider>();
-  for (const entry of entries) {
-    if (seen.has(entry.provider)) {
-      throw new Error(
-        `Provider ${entry.provider} is registered in both generated and legacy target catalogs`
-      );
-    }
-    seen.add(entry.provider);
-  }
-  return entries
+    }))
     .sort((left, right) => left.sortOrder - right.sortOrder)
     .map((entry) => entry.provider);
 }
-
-const legacyAgentGUIDisabledPlaceholderProviders = [
-  "hermes",
-  "openclaw"
-] as const satisfies readonly AgentGUIProvider[];
 
 export function createLocalAgentGUIProviderTarget(
   provider: AgentGUIProvider
@@ -65,7 +43,7 @@ export function createLocalAgentGUIProviderTarget(
       kind: "local",
       provider
     },
-    label: identity?.targetDisplayName ?? identity?.displayName ?? provider,
+    label: identity?.displayName ?? provider,
     ...(migratedIdentity?.target.enabled === false ? { disabled: true } : {})
   };
 }
@@ -129,17 +107,10 @@ export function createLocalAgentGUIProviderTargets(
 
 function createStaticAgentGUIProviderTargets(
   providers: readonly AgentGUIProvider[] = agentGUIDefaultTargetProviders,
-  options?: { includeDisabledPlaceholders?: boolean }
+  _options?: { includeDisabledPlaceholders?: boolean }
 ): AgentGUIProviderTarget[] {
-  const disabledProviders = new Set<AgentGUIProvider>(
-    options?.includeDisabledPlaceholders === true
-      ? legacyAgentGUIDisabledPlaceholderProviders
-      : []
-  );
   return providers.map((provider) =>
-    disabledProviders.has(provider)
-      ? createDisabledPlaceholderAgentGUIProviderTarget(provider)
-      : createLocalAgentGUIProviderTarget(provider)
+    createLocalAgentGUIProviderTarget(provider)
   );
 }
 
@@ -186,13 +157,10 @@ export function normalizeAgentGUIProviderTargets(
     normalizedTargets.push(normalized);
   }
   if (includeDisabledPlaceholders && normalizedTargets.length > 0) {
-    for (const provider of legacyAgentGUIDisabledPlaceholderProviders) {
-      if (seenProviders.has(provider)) {
-        continue;
+    for (const provider of disabledAgentGUIProviderTargetProviders) {
+      if (!seenProviders.has(provider)) {
+        normalizedTargets.push(createLocalAgentGUIProviderTarget(provider));
       }
-      normalizedTargets.push(
-        createDisabledPlaceholderAgentGUIProviderTarget(provider)
-      );
     }
   }
   return normalizedTargets.length > 0 || !useStaticCatalog

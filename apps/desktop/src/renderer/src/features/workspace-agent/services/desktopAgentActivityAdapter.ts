@@ -1,8 +1,9 @@
-import type {
-  AgentActivityAdapter,
-  AgentActivityMessage,
-  AgentActivitySession,
-  AgentPromptContentBlock
+import {
+  workspaceAgentSessionStatus,
+  type AgentActivityAdapter,
+  type AgentActivityMessage,
+  type AgentActivitySession,
+  type AgentPromptContentBlock
 } from "@tutti-os/agent-activity-core";
 import type {
   TuttidClient,
@@ -79,6 +80,7 @@ export function createDesktopAgentActivityAdapter({
       input.workspaceId,
       agentSessionId,
       {
+        clientSubmitId: input.clientSubmitId,
         content: initialContent,
         ...(input.metadata ? { metadata: input.metadata } : {})
       }
@@ -222,12 +224,12 @@ export function createDesktopAgentActivityAdapter({
         const agentTargetId = requiredAgentTargetId(input.agentTargetId);
         const session = await withAbortableRequestTimeout(
           (signal) => {
-            const runtimeContext = createSessionRuntimeContext(input);
             return tuttidClient.createWorkspaceAgentSession(
               input.workspaceId,
               {
                 agentSessionId,
                 agentTargetId,
+                clientSubmitId: input.clientSubmitId,
                 cwd: input.cwd ?? null,
                 initialContent: toTuttidPromptContentBlocks(
                   input.initialContent ?? []
@@ -235,10 +237,11 @@ export function createDesktopAgentActivityAdapter({
                 initialDisplayPrompt: input.initialDisplayPrompt ?? null,
                 ...(input.metadata ? { metadata: input.metadata } : {}),
                 model: input.model ?? null,
+                noProject:
+                  input.noProject ?? (normalizeText(input.cwd) ? null : true),
                 planMode: input.planMode ?? null,
                 permissionModeId: input.permissionModeId ?? null,
                 reasoningEffort: input.reasoningEffort ?? null,
-                ...(runtimeContext ? { runtimeContext } : {}),
                 speed: input.speed ?? null,
                 title: input.title ?? null,
                 visible: input.visible ?? null
@@ -258,7 +261,7 @@ export function createDesktopAgentActivityAdapter({
           metadata: input.metadata,
           provider: session.provider,
           workspaceId: input.workspaceId,
-          fields: { sessionStatus: session.status }
+          fields: { sessionStatus: workspaceAgentSessionStatus(session) }
         });
         return agentActivitySessionFromTuttidSession(
           input.workspaceId,
@@ -285,12 +288,16 @@ export function createDesktopAgentActivityAdapter({
         input.workspaceId,
         input.agentSessionId,
         {
+          clientSubmitId: input.clientSubmitId,
           content: toTuttidPromptContentBlocks(input.content),
           displayPrompt: input.displayPrompt ?? null,
           ...(input.guidance === true ? { guidance: true } : {}),
           ...(input.metadata ? { metadata: input.metadata } : {})
         }
       );
+      if (!result.turn) {
+        throw new Error("workspace_agent.send_response_turn_required");
+      }
       reportDesktopAgentSubmitTrace(runtimeApi, {
         agentSessionId: input.agentSessionId,
         event: "renderer_adapter.send.resolved",
@@ -298,9 +305,9 @@ export function createDesktopAgentActivityAdapter({
         provider: result.session.provider,
         workspaceId: input.workspaceId,
         fields: {
-          sessionStatus: result.session.status,
+          sessionStatus: workspaceAgentSessionStatus(result.session),
           turnId: result.turnId,
-          turnPhase: result.turnLifecycle?.phase ?? null
+          turnPhase: result.turn.phase
         }
       });
       return {
@@ -309,22 +316,7 @@ export function createDesktopAgentActivityAdapter({
           result.session
         ),
         turnId: result.turnId,
-        turnLifecycle: result.turnLifecycle,
-        submitAvailability: result.submitAvailability
-      };
-    },
-    async cancelSession(input) {
-      const result = await tuttidClient.cancelWorkspaceAgentSessionWithResult(
-        input.workspaceId,
-        input.agentSessionId
-      );
-      return {
-        canceled: result.cancel.canceled,
-        reason: result.cancel.reason,
-        session: agentActivitySessionFromTuttidSession(
-          input.workspaceId,
-          result.session
-        )
+        turn: result.turn
       };
     },
     async goalControl(input) {
@@ -339,7 +331,7 @@ export function createDesktopAgentActivityAdapter({
         }
       );
       return {
-        goal: result.goal ?? null,
+        goal: result.session.goal ?? null,
         session: agentActivitySessionFromTuttidSession(
           input.workspaceId,
           result.session
@@ -347,16 +339,23 @@ export function createDesktopAgentActivityAdapter({
       };
     },
     async submitInteractive(input) {
-      return await tuttidClient.submitWorkspaceAgentInteractive(
+      const session = await tuttidClient.submitWorkspaceAgentInteractive(
         input.workspaceId,
         input.agentSessionId,
         input.requestId,
         {
+          turnId: input.turnId,
           action: input.action ?? null,
           optionId: input.optionId ?? null,
           payload: input.payload ?? null
         }
       );
+      return {
+        session: agentActivitySessionFromTuttidSession(
+          input.workspaceId,
+          session
+        )
+      };
     },
     async deleteSession(input) {
       return await tuttidClient.deleteWorkspaceAgentSession(
@@ -529,17 +528,6 @@ function requiredAgentTargetId(value: string | null | undefined): string {
   return agentTargetId;
 }
 
-function createSessionRuntimeContext(input: {
-  cwd?: string | null;
-  runtimeContext?: Record<string, unknown> | null;
-}): Record<string, unknown> | undefined {
-  const runtimeContext = { ...(input.runtimeContext ?? {}) };
-  if (!normalizeText(input.cwd)) {
-    runtimeContext.noProject = true;
-  }
-  return Object.keys(runtimeContext).length > 0 ? runtimeContext : undefined;
-}
-
 function toTuttidPromptContentBlocks(
   content: readonly AgentPromptContentBlock[]
 ): TuttidAgentPromptContentBlock[] {
@@ -577,37 +565,38 @@ export function agentActivitySessionFromTuttidSession(
   workspaceId: string,
   session: WorkspaceAgentSession
 ): AgentActivitySession {
-  const createdAtUnixMs = toUnixMs(session.createdAt);
-  const updatedAtUnixMs = toUnixMs(session.updatedAt ?? session.createdAt);
-  const endedAtUnixMs = toOptionalUnixMs(session.endedAt);
+  const createdAtUnixMs = session.createdAtUnixMs;
+  const updatedAtUnixMs = session.updatedAtUnixMs;
   return {
     workspaceId,
     agentSessionId: session.id,
-    ...(session.agentTargetId ? { agentTargetId: session.agentTargetId } : {}),
+    agentTargetId: session.agentTargetId ?? null,
     provider: session.provider,
     providerSessionId: session.providerSessionId ?? session.id,
     cwd: session.cwd ?? "/",
     title: session.title ?? "",
-    status: session.status,
     activeTurnId: session.activeTurnId ?? null,
     activeTurn: session.activeTurn ?? null,
+    latestTurn: session.latestTurn ?? null,
+    latestTurnInteractions: session.latestTurnInteractions ?? [],
     pendingInteractions: session.pendingInteractions ?? [],
+    settings: structuredClone(session.settings),
+    permissionConfig: structuredClone(session.permissionConfig),
+    capabilities: session.capabilities
+      ? structuredClone(session.capabilities)
+      : null,
+    backgroundAgents: session.backgroundAgents
+      ? structuredClone(session.backgroundAgents)
+      : null,
+    goal: session.goal ? structuredClone(session.goal) : null,
+    imported: session.imported ?? false,
     visible: session.visible ?? true,
     resumable: session.resumable ?? false,
-    ...(session.turnLifecycle != null
-      ? { turnLifecycle: session.turnLifecycle }
-      : {}),
-    ...(session.submitAvailability != null
-      ? { submitAvailability: session.submitAvailability }
-      : {}),
-    lastError: session.lastError ?? null,
-    ...(session.runtimeContext != null
-      ? { runtimeContext: recordValue(session.runtimeContext) }
-      : {}),
+    messageVersion: 0,
     lastEventUnixMs: updatedAtUnixMs,
     pinnedAtUnixMs: session.pinnedAtUnixMs ?? null,
     startedAtUnixMs: createdAtUnixMs,
-    ...(endedAtUnixMs !== undefined ? { endedAtUnixMs } : {}),
+    endedAtUnixMs: session.endedAtUnixMs ?? null,
     createdAtUnixMs,
     updatedAtUnixMs
   };
@@ -621,13 +610,32 @@ export function agentActivityMessageFromTuttidMessage(
     workspaceId,
     agentSessionId: message.agentSessionId,
     completedAtUnixMs: message.completedAtUnixMs ?? undefined,
-    id: message.id,
     kind: message.kind,
     messageId: message.messageId,
     occurredAtUnixMs: normalizedTuttidMessageOccurredAtUnixMs(message),
     payload: recordValue(message.payload),
     role: message.role,
-    ...(message.semantics != null ? { semantics: message.semantics } : {}),
+    ...(message.semantics != null
+      ? {
+          semantics: {
+            ...(message.semantics.userVisibleAssistantResponse !== undefined
+              ? {
+                  userVisibleAssistantResponse:
+                    message.semantics.userVisibleAssistantResponse
+                }
+              : {}),
+            ...(message.semantics.turnSettling !== undefined
+              ? { turnSettling: message.semantics.turnSettling }
+              : {}),
+            ...(isNoticeCommand(message.semantics.noticeCommand)
+              ? { noticeCommand: message.semantics.noticeCommand }
+              : {}),
+            ...(isNoticeCommandStatus(message.semantics.noticeCommandStatus)
+              ? { noticeCommandStatus: message.semantics.noticeCommandStatus }
+              : {})
+          }
+        }
+      : {}),
     startedAtUnixMs: message.startedAtUnixMs ?? undefined,
     status: message.status ?? undefined,
     turnId: normalizedTuttidMessageTurnId(message),
@@ -635,19 +643,26 @@ export function agentActivityMessageFromTuttidMessage(
   };
 }
 
-function toUnixMs(value: string): number {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Date.now();
+function isNoticeCommand(
+  value: string | undefined
+): value is "compact" | "review" | "undo" | "goal" {
+  return (
+    value === "compact" ||
+    value === "review" ||
+    value === "undo" ||
+    value === "goal"
+  );
 }
 
-function toOptionalUnixMs(
-  value: string | null | undefined
-): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
+function isNoticeCommandStatus(
+  value: string | undefined
+): value is "running" | "completed" | "failed" | "canceled" {
+  return (
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "canceled"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

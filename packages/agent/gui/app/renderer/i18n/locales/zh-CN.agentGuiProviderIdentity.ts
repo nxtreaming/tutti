@@ -2,5 +2,9 @@ export const zhCNAgentGuiProviderIdentity = {
   conversationFilterCodex: "Codex",
   conversationFilterClaudeCode: "Claude Code",
   conversationFilterOpenCode: "OpenCode",
-  conversationFilterTutti: "Tutti"
+  conversationFilterTutti: "Tutti",
+  conversationFilterCursor: "Cursor",
+  conversationFilterNexight: "Nexight",
+  conversationFilterHermes: "Hermes Agent",
+  conversationFilterOpenClaw: "OpenClaw"
 } as const;

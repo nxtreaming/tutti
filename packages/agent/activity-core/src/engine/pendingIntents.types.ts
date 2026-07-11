@@ -1,7 +1,6 @@
 import type {
   AgentActivityMessage,
-  AgentActivitySendInputResult,
-  AgentActivitySession,
+  AgentActivitySessionSettings,
   AgentPromptContentBlock
 } from "../types.ts";
 
@@ -10,17 +9,6 @@ export type PendingActivationStatus =
   | "confirmed"
   | "uncertain"
   | "failed";
-
-export interface AgentSessionActivationResult {
-  activation: {
-    status: string;
-  };
-  error?: {
-    code?: string;
-    message?: string;
-  } | null;
-  session: AgentActivitySession;
-}
 
 export interface PendingActivationIntentRecord {
   agentSessionId: string;
@@ -33,10 +21,11 @@ export interface PendingActivationIntentRecord {
   expiresAtUnixMs: number;
   metadata?: Readonly<Record<string, unknown>>;
   mode: "existing" | "new";
+  pendingSettingsPatch?: Readonly<Record<string, unknown>>;
+  settingsUpdateStatus?: "failed" | "inFlight" | "unknown";
   requestedAtUnixMs: number;
   requestId: string;
-  result: AgentSessionActivationResult | null;
-  settings?: Readonly<Record<string, unknown>>;
+  settings?: AgentActivitySessionSettings;
   status: PendingActivationStatus;
   title: string | null;
   workspaceId: string;
@@ -61,7 +50,6 @@ export interface PendingSubmitIntentRecord {
   guidance: boolean;
   metadata?: Readonly<Record<string, unknown>>;
   requestedAtUnixMs: number;
-  result: AgentActivitySendInputResult | null;
   status: PendingSubmitStatus;
   turnId: string | null;
   workspaceId: string;
@@ -86,10 +74,9 @@ export interface SessionActivationRequestedIntent {
   initialDisplayPrompt?: string;
   metadata?: Readonly<Record<string, unknown>>;
   mode: "existing" | "new";
-  openclawGatewayReady?: boolean;
   requestedAtUnixMs: number;
   requestId: string;
-  settings?: Readonly<Record<string, unknown>>;
+  settings?: AgentActivitySessionSettings;
   title?: string;
   visible?: boolean;
   workspaceId: string;
@@ -98,6 +85,12 @@ export interface SessionActivationRequestedIntent {
 export interface SessionActivationDismissedIntent {
   type: "activation/dismissed";
   requestId: string;
+}
+
+export interface SessionActivationSettingsPatchedIntent {
+  type: "activation/settingsPatched";
+  agentSessionId: string;
+  settings: Readonly<Record<string, unknown>>;
 }
 
 export interface SessionActivationFailureRecordedIntent {
@@ -127,14 +120,14 @@ export interface SessionActivateCommand {
   agentSessionId: string;
   agentTargetId?: string | null;
   commandId: string;
+  clientSubmitId: string;
   correlationId: string;
   cwd?: string;
   initialContent?: readonly AgentPromptContentBlock[];
   initialDisplayPrompt?: string;
   metadata?: Readonly<Record<string, unknown>>;
   mode: "existing" | "new";
-  openclawGatewayReady?: boolean;
-  settings?: Readonly<Record<string, unknown>>;
+  settings?: AgentActivitySessionSettings;
   timeoutMs?: number;
   title?: string;
   visible?: boolean;
@@ -145,6 +138,15 @@ export interface SessionUnactivateCommand {
   type: "session/unactivate";
   agentSessionId: string;
   commandId: string;
+  workspaceId: string;
+}
+
+export interface SessionUpdateSettingsCommand {
+  type: "session/updateSettings";
+  agentSessionId: string;
+  commandId: string;
+  correlationId: string;
+  settings: Readonly<Record<string, unknown>>;
   workspaceId: string;
 }
 
@@ -183,6 +185,7 @@ export interface ActivityMessagesReceivedIntent {
 export type PendingIntentsIntent =
   | ActivityMessagesReceivedIntent
   | SessionActivationDismissedIntent
+  | SessionActivationSettingsPatchedIntent
   | SessionActivationFailureClearedIntent
   | SessionActivationFailureRecordedIntent
   | SessionActivationRequestedIntent

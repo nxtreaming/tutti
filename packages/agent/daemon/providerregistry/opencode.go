@@ -34,10 +34,14 @@ func openCodeDescriptor() ProviderDescriptor {
 			},
 		},
 		Status: StatusDescriptor{
-			Kind:              StatusKindOpenCodeCLI,
-			BinaryNames:       []string{"opencode"},
-			AuthStatusCommand: []string{"auth", "list"},
-			AuthMarkerPaths:   []string{"~/.local/share/opencode/auth.json"},
+			Kind:                   StatusKindOpenCodeCLI,
+			AuthOutputParserKind:   AuthOutputParserKindOpenCode,
+			AuthMarkerParserKind:   AuthMarkerParserKindFileExists,
+			AuthCommandRunnerKind:  AuthCommandRunnerKindGeneric,
+			StaticSpecResolverKind: StaticSpecResolverKindGeneric,
+			BinaryNames:            []string{"opencode"},
+			AuthStatusCommand:      []string{"auth", "list"},
+			AuthMarkerPaths:        []string{"~/.local/share/opencode/auth.json"},
 			CustomConfigEnvVars: []string{
 				"OPENCODE_CONFIG",
 				"OPENCODE_CONFIG_DIR",
@@ -99,7 +103,9 @@ func openCodeDescriptor() ProviderDescriptor {
 		Events: EventsDescriptor{
 			Enabled:                 true,
 			Aliases:                 []string{"open-code", "opencode-ai", "opencode_ai"},
-			TurnLifecycleProjection: TurnLifecycleProjectionLegacy,
+			TurnLifecycleProjection: TurnLifecycleProjectionExplicit,
 		},
+		Sidecar: SidecarDescriptor{ExecutionEnvironment: SidecarExecutionEnvironmentLocalIPC},
+		Desktop: DesktopIntegrationDescriptor{Managed: true, ManagedOrder: 5, StatusProbePriority: 5, VisibilityGate: DesktopVisibilityGateOpenCodePreview},
 	}
 }

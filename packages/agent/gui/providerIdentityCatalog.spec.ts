@@ -20,7 +20,18 @@ describe("provider identity catalog", () => {
         enabled: true,
         sortOrder: 10
       },
+      desktop: {
+        runtimeProbeFallback: ""
+      },
       source: "generated"
+    });
+  });
+
+  it("reads desktop runtime probe fallback strategy from the generated catalog", () => {
+    expect(
+      resolveMigratedAgentGUIProviderIdentity("cursor")?.desktop
+    ).toMatchObject({
+      runtimeProbeFallback: "direct"
     });
   });
 
