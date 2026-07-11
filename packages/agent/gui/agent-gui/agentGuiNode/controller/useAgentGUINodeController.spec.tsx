@@ -1496,6 +1496,121 @@ describe("useAgentGUINodeController", () => {
     expect(result.current.viewModel.providerReadinessGate).toBeNull();
   });
 
+  it("does not replace an explicit default target with the first ready provider", async () => {
+    installAgentHostApi({
+      list: vi.fn(async () => ({ presences: [], sessions: [] })),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+    const onDataChange = vi.fn();
+    const initialData = agentGuiData(null, "codex", { agentTargetId: null });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: initialData,
+        defaultAgentTargetId: "local:codex",
+        providerTargets: [
+          {
+            targetId: "local:codex",
+            agentTargetId: "local:codex",
+            provider: "codex",
+            ref: { kind: "local", provider: "codex" },
+            label: "Codex"
+          },
+          {
+            targetId: "local:claude-code",
+            agentTargetId: "local:claude-code",
+            provider: "claude-code",
+            ref: { kind: "local", provider: "claude-code" },
+            label: "Claude Code"
+          }
+        ],
+        providerReadinessGates: {
+          codex: { status: "checking" },
+          "claude-code": null
+        },
+        onDataChange
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.selectedProviderTarget).toMatchObject({
+        agentTargetId: "local:codex",
+        provider: "codex"
+      });
+      expect(result.current.viewModel.providerReadinessGate).toEqual({
+        status: "checking"
+      });
+    });
+    const nextData = onDataChange.mock.calls.reduce(
+      (current, [updater]) => updater(current),
+      initialData
+    );
+    expect(nextData.agentTargetId).not.toBe("local:claude-code");
+  });
+
+  it("keeps a missing explicit default unavailable instead of choosing a ready provider", async () => {
+    installAgentHostApi({
+      list: vi.fn(async () => ({ presences: [], sessions: [] })),
+      listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
+      subscribeEvents: vi.fn(() => vi.fn())
+    });
+    const onDataChange = vi.fn();
+    const initialData = agentGuiData(null, "codex", { agentTargetId: null });
+
+    const { result } = renderHook(() =>
+      useAgentGUINodeController({
+        workspaceId: "room-1",
+        currentUserId: "user-1",
+        workspacePath: "/workspace",
+        avoidGroupingEdits: false,
+        data: initialData,
+        defaultAgentTargetId: "missing-codex",
+        providerTargets: [
+          {
+            targetId: "local:codex",
+            agentTargetId: "local:codex",
+            provider: "codex",
+            ref: { kind: "local", provider: "codex" },
+            label: "Codex"
+          },
+          {
+            targetId: "local:claude-code",
+            agentTargetId: "local:claude-code",
+            provider: "claude-code",
+            ref: { kind: "local", provider: "claude-code" },
+            label: "Claude Code"
+          }
+        ],
+        providerReadinessGates: {
+          codex: { status: "checking" },
+          "claude-code": null
+        },
+        onDataChange
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.viewModel.selectedProviderTarget).toMatchObject({
+        agentTargetId: "missing-codex",
+        disabled: true,
+        ref: { kind: "missing-agent" }
+      });
+      expect(result.current.viewModel.providerReadinessGate).toEqual({
+        status: "unavailable"
+      });
+    });
+    const nextData = onDataChange.mock.calls.reduce(
+      (current, [updater]) => updater(current),
+      initialData
+    );
+    expect(nextData.agentTargetId).not.toBe("local:claude-code");
+  });
+
   it("selects target-backed rail targets for the empty composer", async () => {
     installAgentHostApi({
       list: vi.fn(async () => ({ presences: [], sessions: [] })),

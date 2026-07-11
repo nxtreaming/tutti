@@ -386,6 +386,7 @@ interface AgentGUIComposerTargetResolution {
 }
 
 interface AgentGUIHomeDirectorySelection {
+  source: "explicit-data" | "explicit-default" | "implicit";
   status: AgentGUIComposerTargetResolutionStatus;
   target: AgentGUIProviderTarget;
 }
@@ -438,18 +439,26 @@ function resolveAgentGUIHomeDirectorySelection(input: {
   directory: readonly AgentGUIProviderTarget[];
   directoryLoading: boolean;
 }): AgentGUIHomeDirectorySelection {
-  const explicitAgentTargetId =
-    normalizeOptionalText(input.data.agentTargetId) ??
-    normalizeOptionalText(input.defaultAgentTargetId);
+  const dataAgentTargetId = normalizeOptionalText(input.data.agentTargetId);
+  const defaultAgentTargetId = normalizeOptionalText(
+    input.defaultAgentTargetId
+  );
+  const explicitAgentTargetId = dataAgentTargetId ?? defaultAgentTargetId;
+  const source = dataAgentTargetId
+    ? "explicit-data"
+    : defaultAgentTargetId
+      ? "explicit-default"
+      : "implicit";
   if (explicitAgentTargetId) {
     const exact = findAgentGUIDirectoryTarget(
       input.directory,
       explicitAgentTargetId
     );
     if (exact) {
-      return { status: "resolved", target: exact };
+      return { source, status: "resolved", target: exact };
     }
     return {
+      source,
       status: input.directoryLoading ? "loading" : "missing",
       target: {
         targetId: explicitAgentTargetId,
@@ -470,6 +479,7 @@ function resolveAgentGUIHomeDirectorySelection(input: {
     input.directory.find((target) => target.disabled !== true) ??
     input.directory[0];
   return {
+    source,
     status: input.directoryLoading ? "loading" : "resolved",
     target:
       fallback ??
@@ -12044,15 +12054,15 @@ export function useAgentGUINodeController({
   const resolveDefaultHomeComposerTarget =
     useCallback((): AgentGUIProviderTarget | null => {
       const defaultTargetId = defaultAgentTargetId?.trim() ?? "";
-      const explicitDefaultTarget = defaultTargetId
-        ? (normalizedProviderTargets.find(
-            (target) =>
-              target.targetId === defaultTargetId ||
-              target.agentTargetId === defaultTargetId
-          ) ?? null)
-        : null;
+      if (defaultTargetId) {
+        return (
+          findAgentGUIDirectoryTarget(
+            normalizedProviderTargets,
+            defaultTargetId
+          ) ?? null
+        );
+      }
       return (
-        explicitDefaultTarget ??
         normalizedProviderTargets.find((target) => target.disabled !== true) ??
         normalizedProviderTargets[0] ??
         null
@@ -12251,6 +12261,7 @@ export function useAgentGUINodeController({
       conversationFilter.kind !== "all" ||
       homeComposerTargetOverride !== null ||
       agentGUINodeDataHasComposerTarget(data) ||
+      homeDirectorySelection.source !== "implicit" ||
       !providerReadinessGates ||
       !firstReadyHomeComposerProviderTarget
     ) {
@@ -12290,6 +12301,7 @@ export function useAgentGUINodeController({
     data,
     effectiveSelectedProviderTarget,
     firstReadyHomeComposerProviderTarget,
+    homeDirectorySelection.source,
     homeComposerTargetOverride,
     previewMode,
     providerReadinessGates,
