@@ -856,6 +856,14 @@ type without recording base64 data or full signed URLs. UI-local composer
 drafts and optimistic overlays may retain the URL when needed for preview and
 submission; they must not convert it to base64 or persist it as a local prompt
 attachment.
+When `uploadPromptContent` returns an image, the composer upload continuation
+must accept every normalized image reference shape: `url`, `attachmentId`,
+`path`, or `data`. A URL-backed result replaces the pre-upload base64 runtime
+source with the trimmed URL while retaining the original `previewUrl` only for
+UI rendering. Submitted-draft reconciliation must compare normalized URLs so
+an in-flight edit to a URL-backed image cannot be mistaken for the submitted
+draft and cleared. Validate this handoff with the focused `AgentComposer` and
+`useAgentGUINodeController` test suites listed under Boundary Checks.
 Claude Code runtime options follow the same parity rule. The legacy ACP adapter
 and the Claude SDK adapter must derive system prompt append text, Tutti detail
 mode instructions, plan-mode instructions, plugin directory, custom model args,

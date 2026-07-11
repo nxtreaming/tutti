@@ -2346,9 +2346,11 @@ export function AgentComposer({
             const uploadedImage = result.content.find(
               (block) => block.type === "image"
             );
+            const uploadedUrl = uploadedImage?.url?.trim();
             if (
               !uploadedImage ||
-              (!uploadedImage.attachmentId &&
+              (!uploadedUrl &&
+                !uploadedImage.attachmentId &&
                 !uploadedImage.path &&
                 !uploadedImage.data)
             ) {
@@ -2365,7 +2367,11 @@ export function AgentComposer({
                     ...(uploadedImage.attachmentId
                       ? { attachmentId: uploadedImage.attachmentId }
                       : {}),
-                    ...(uploadedImage.data ? { data: uploadedImage.data } : {}),
+                    ...(uploadedUrl
+                      ? { url: uploadedUrl }
+                      : uploadedImage.data
+                        ? { data: uploadedImage.data }
+                        : {}),
                     ...(uploadedImage.path ? { path: uploadedImage.path } : {}),
                     previewUrl: image.previewUrl,
                     uploading: false

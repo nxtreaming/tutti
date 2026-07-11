@@ -1191,7 +1191,7 @@ function toRuntimeSendContent(
   });
 }
 
-function shouldClearSubmittedDraft(input: {
+function promptSubmissionMatchesCurrentDraft(input: {
   currentDraft: AgentComposerDraft | undefined;
   submittedContent: readonly AgentPromptContentBlock[];
 }): boolean {
@@ -1223,11 +1223,14 @@ function shouldClearSubmittedDraft(input: {
     const submittedPath = submittedImage.path?.trim() ?? "";
     const draftData = image.data?.trim() ?? "";
     const submittedData = submittedImage.data?.trim() ?? "";
+    const draftUrl = image.url?.trim() ?? "";
+    const submittedUrl = submittedImage.url?.trim() ?? "";
     const draftName = image.name.trim();
     const submittedName = submittedImage.name?.trim() ?? "";
     return (
       draftPath === submittedPath &&
       draftData === submittedData &&
+      draftUrl === submittedUrl &&
       draftName === submittedName
     );
   });
@@ -3393,6 +3396,7 @@ function areAgentComposerDraftsEqual(
         image.name === other.name &&
         image.mimeType === other.mimeType &&
         image.data === other.data &&
+        image.url === other.url &&
         image.path === other.path &&
         image.previewUrl === other.previewUrl &&
         image.uploading === other.uploading &&
@@ -8855,7 +8859,7 @@ export function useAgentGUINodeController({
           setDraftBySessionId((current) => {
             const currentDraft = current[agentSessionId];
             if (
-              !shouldClearSubmittedDraft({
+              !promptSubmissionMatchesCurrentDraft({
                 currentDraft,
                 submittedContent: normalizedContent
               })
