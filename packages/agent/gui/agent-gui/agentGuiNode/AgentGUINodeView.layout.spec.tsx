@@ -786,6 +786,36 @@ describe("AgentGUINodeView layout persistence", () => {
     });
   });
 
+  it("selects All without selecting a fallback target from a disabled target", () => {
+    const actions = createActions();
+    const disabledCodexTarget = {
+      ...createLocalAgentGUIAgentTarget("codex"),
+      disabled: true
+    };
+    renderAgentGUINodeView({
+      actions,
+      viewModel: {
+        ...createViewModel(),
+        conversationFilter: {
+          kind: "agentTarget",
+          agentTargetId: disabledCodexTarget.agentTargetId ?? ""
+        },
+        selectedAgentTarget: disabledCodexTarget,
+        agentTargets: [
+          disabledCodexTarget,
+          createLocalAgentGUIAgentTarget("claude-code")
+        ]
+      }
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "All" }));
+
+    expect(actions.updateConversationFilter).toHaveBeenCalledWith({
+      kind: "all"
+    });
+    expect(actions.selectConversationFilterTarget).not.toHaveBeenCalled();
+  });
+
   it("keeps unavailable provider rail targets visually disabled but selectable", () => {
     const actions = createActions();
     const tuttiTarget = {
@@ -1142,13 +1172,17 @@ describe("AgentGUINodeView layout persistence", () => {
   });
 
   it("selects only the All tile for all-conversation mode", () => {
+    const disabledCodexTarget = {
+      ...createLocalAgentGUIAgentTarget("codex"),
+      disabled: true
+    };
     renderAgentGUINodeView({
       viewModel: {
         ...createViewModel(),
         conversationFilter: { kind: "all" },
-        selectedAgentTarget: createLocalAgentGUIAgentTarget("codex"),
+        selectedAgentTarget: disabledCodexTarget,
         agentTargets: [
-          createLocalAgentGUIAgentTarget("codex"),
+          disabledCodexTarget,
           createLocalAgentGUIAgentTarget("claude-code")
         ]
       }

@@ -1850,7 +1850,6 @@ export function AgentGUINodeView({
               labels={labels}
               previewMode={previewMode}
               workspaceId={viewModel.workspaceId}
-              selectedAgentTarget={viewModel.selectedAgentTarget}
               agentTargets={viewModel.agentTargets}
               agentTargetsLoading={viewModel.agentTargetsLoading}
               renderProviderRailEmpty={renderProviderRailEmpty}
@@ -5538,7 +5537,6 @@ interface AgentGUIProviderRailProps {
   labels: AgentGUIViewLabels;
   previewMode: boolean;
   workspaceId: string;
-  selectedAgentTarget: AgentGUINodeViewModel["selectedAgentTarget"];
   agentTargets: AgentGUINodeViewModel["agentTargets"];
   agentTargetsLoading: AgentGUINodeViewModel["agentTargetsLoading"];
   renderProviderRailEmpty?: AgentGUIProviderRailEmptyRenderer;
@@ -5563,7 +5561,6 @@ const AgentGUIProviderRail = memo(function AgentGUIProviderRail({
   labels,
   previewMode,
   workspaceId,
-  selectedAgentTarget,
   agentTargets,
   agentTargetsLoading,
   renderProviderRailEmpty,
@@ -5621,30 +5618,11 @@ const AgentGUIProviderRail = memo(function AgentGUIProviderRail({
     return applyAgentGUIProviderRailOrder(railAgentTargets, providerRailOrder);
   }, [providerRailOrder, railAgentTargets]);
   const visibleProviderTiles = providerTiles;
-  const selectedAgentTargetIsPlaceholder =
-    selectedAgentTarget?.disabled === true;
-  const allTileSelected =
-    conversationFilter.kind === "all" && !selectedAgentTargetIsPlaceholder;
+  const allTileSelected = conversationFilter.kind === "all";
   const selectAllProviders = useCallback(() => {
     onUpdateConversationFilter({ kind: "all" });
-    if (selectedAgentTargetIsPlaceholder) {
-      const fallbackTarget =
-        railAgentTargets.find((target) => target.disabled !== true) ?? null;
-      if (fallbackTarget) {
-        onSelectConversationFilterTarget({
-          provider: fallbackTarget.provider,
-          agentTargetId: fallbackTarget.targetId
-        });
-      }
-    }
     onRequestComposerFocus();
-  }, [
-    onSelectConversationFilterTarget,
-    onRequestComposerFocus,
-    onUpdateConversationFilter,
-    railAgentTargets,
-    selectedAgentTargetIsPlaceholder
-  ]);
+  }, [onRequestComposerFocus, onUpdateConversationFilter]);
   const selectAgentTargetTile = useCallback(
     (target: AgentGUINodeViewModel["agentTargets"][number]) => {
       onSelectConversationFilterTarget({
@@ -5937,13 +5915,10 @@ const AgentGUIProviderRail = memo(function AgentGUIProviderRail({
           const providerSelected =
             visibleProviderTiles.length === 1
               ? true
-              : target.disabled === true
-                ? selectedAgentTarget?.provider === target.provider &&
-                  selectedAgentTarget?.targetId === target.targetId
-                : agentGUIAgentTargetMatchesConversationFilter(
-                    target,
-                    conversationFilter
-                  );
+              : agentGUIAgentTargetMatchesConversationFilter(
+                  target,
+                  conversationFilter
+                );
           const label = agentGUIProviderRailLabel(
             target.provider,
             target.label,
