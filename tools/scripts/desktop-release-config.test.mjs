@@ -178,11 +178,17 @@ test("desktop release workflow passes tsh-aligned Feishu card context", async ()
     workflow,
     /TUTTI_DESKTOP_RELEASE_ASSETS_BASE_URL:\s+\${{\s*vars\.TUTTI_DESKTOP_RELEASE_ASSETS_BASE_URL\s*}}/
   );
-  assert.ok(
-    workflow.includes(
-      "RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.resolve.outputs.release_tag }}"
-    ),
-    "Feishu cards should link to the matching release, including authorized RC and beta drafts"
+  assert.match(
+    workflow,
+    /outputs:\s*\n\s*release_url:\s*\${{\s*steps\.stage-release\.outputs\.url\s*}}/
+  );
+  assert.match(
+    workflow,
+    /id:\s+stage-release\s*\n\s*name:\s+Stage GitHub release assets/
+  );
+  assert.match(
+    workflow,
+    /RELEASE_URL:\s+\${{\s*needs\.publish\.outputs\.release_url\s*}}/
   );
   assert.match(workflow, /RELEASE_ASSET_DIRECTORY:\s+release-assets/);
 });

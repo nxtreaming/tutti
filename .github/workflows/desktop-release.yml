@@ -379,6 +379,8 @@ jobs:
     needs: [resolve, build-macos]
     if: ${{ github.event_name == 'push' || needs.resolve.outputs.release_dry_run != 'true' }}
     runs-on: ubuntu-latest
+    outputs:
+      release_url: ${{ steps.stage-release.outputs.url }}
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       TUTTI_DESKTOP_RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
@@ -449,7 +451,8 @@ jobs:
             echo "TUTTI_DESKTOP_RELEASE_ASSETS_BASE_URL=https://${TUTTI_DESKTOP_RELEASE_ASSETS_S3_BUCKET}.s3-accelerate.amazonaws.com/${TUTTI_DESKTOP_RELEASE_ASSETS_S3_PREFIX%/}" >> "$GITHUB_ENV"
           fi
 
-      - name: Stage GitHub release assets
+      - id: stage-release
+        name: Stage GitHub release assets
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -718,7 +721,7 @@ jobs:
       RELEASE_BRANCH: ${{ github.ref_type == 'branch' && github.ref_name || '' }}
       RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
       RELEASE_TARGET: ${{ needs.resolve.outputs.release_target }}
-      RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.resolve.outputs.release_tag }}
+      RELEASE_URL: ${{ needs.publish.outputs.release_url }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
     steps:

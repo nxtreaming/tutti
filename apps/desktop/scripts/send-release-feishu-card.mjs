@@ -389,8 +389,16 @@ async function main() {
       "TUTTI_DESKTOP_RELEASE_ASSETS_S3_PREFIX"
     )
   });
-  const release = await loadRelease(repository, tag, resolveGithubToken());
   const mirroredAssetNames = await listAssetNames(releaseAssetDirectory);
+  const mirroredMacUrl = resolveMirroredAssetUrl(
+    mirroredAssetNames,
+    /\.dmg$/i,
+    releaseAssetBaseUrl,
+    tag
+  );
+  const release = mirroredMacUrl
+    ? null
+    : await loadRelease(repository, tag, resolveGithubToken());
   const summary = await loadReleaseSummary(
     readOption(args, "summary", "RELEASE_SUMMARY_PATH")
   );
@@ -398,12 +406,7 @@ async function main() {
     actor,
     branch,
     macUrl:
-      resolveMirroredAssetUrl(
-        mirroredAssetNames,
-        /\.dmg$/i,
-        releaseAssetBaseUrl,
-        tag
-      ) || findAssetUrl(release, /\.dmg$/i, releaseAssetBaseUrl),
+      mirroredMacUrl || findAssetUrl(release, /\.dmg$/i, releaseAssetBaseUrl),
     releaseUrl,
     runUrl,
     summary,
