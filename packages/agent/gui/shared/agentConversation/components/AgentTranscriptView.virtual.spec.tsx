@@ -226,6 +226,11 @@ function conversationWithRows(
         userAvatarUrl: ""
       },
       session: normalizeAgentActivitySession({
+        ...{
+          activeTurnId: null,
+          latestTurnInteractions: [],
+          pendingInteractions: []
+        },
         workspaceId: "workspace-1",
         agentSessionId: "session-1",
         userId: "user-1",
@@ -250,9 +255,7 @@ function conversationWithRows(
       })),
       showProcessingIndicator: false
     },
-    rows,
-    pendingApproval: null,
-    pendingInteractivePrompt: null
+    rows
   };
 }
 
