@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -60,6 +61,10 @@ const (
 	claudeSDKPackageScopeDir = "@anthropic-ai"
 	claudeSDKPackageName     = "claude-agent-sdk"
 )
+
+// claudeBinaryProvisionMu serializes EnsureClaudeCodeBinary within this
+// process; the file-based install lock arbitrates across processes.
+var claudeBinaryProvisionMu sync.Mutex
 
 type ClaudeCodeBinaryStatus struct {
 	// Path is the provisioned executable, empty when provisioning was skipped.
@@ -140,12 +145,19 @@ func (s Service) EnsureClaudeCodeBinary(ctx context.Context) (ClaudeCodeBinarySt
 		return ClaudeCodeBinaryStatus{Path: finalPath, Version: descriptor.ClaudeVersion, Source: "installed"}, nil
 	}
 
+	// In-process serialization first: two goroutines of the same daemon would
+	// otherwise race Recover/Acquire on the same PID-keyed lock file (the file
+	// lock only arbitrates between processes).
+	claudeBinaryProvisionMu.Lock()
+	defer claudeBinaryProvisionMu.Unlock()
+
 	lock := newInstallCommandLock(claudeCodeBinaryLockCommand)
 	// Self-heal an orphaned lock (daemon crash mid-provisioning) before
 	// acquiring: Acquire polls indefinitely on an existing lock file and the
 	// startup recovery in main.go only sweeps the npm-global lock. Recover
-	// removes the file only when its owning PID is dead, so it cannot break a
-	// live concurrent provisioning run.
+	// removes the file only when its owning PID is dead and re-verifies the
+	// file's identity right before deletion, so it cannot break a live
+	// concurrent provisioning run.
 	if _, err := lock.Recover(); err != nil {
 		return ClaudeCodeBinaryStatus{}, fmt.Errorf("recover claude binary install lock: %w", err)
 	}

@@ -119,12 +119,15 @@ jobs:
                 --output json 2>head-error.txt)"; then
               remote_size="$(node -e "process.stdout.write(String(JSON.parse(process.argv[1]).ContentLength))" "${head_json}")"
               remote_sha256="$(node -e "process.stdout.write(JSON.parse(process.argv[1]).Metadata?.['claude-sha256'] ?? '')" "${head_json}")"
-              if [ -n "${remote_sha256}" ] && [ "${remote_sha256}" != "${local_sha256}" ]; then
-                echo "immutable key already exists with different content: s3://${S3_BUCKET_VALUE}/${key} (remote sha256 ${remote_sha256}, staged ${local_sha256})" >&2
+              # The size check is unconditional: the sha256 metadata is
+              # caller-supplied at upload time, not derived from the stored
+              # body, so matching metadata alone cannot vouch for the bytes.
+              if [ "${remote_size}" != "${local_size}" ]; then
+                echo "immutable key already exists with different content: s3://${S3_BUCKET_VALUE}/${key} (remote ${remote_size} bytes, staged ${local_size} bytes)" >&2
                 exit 1
               fi
-              if [ -z "${remote_sha256}" ] && [ "${remote_size}" != "${local_size}" ]; then
-                echo "immutable key already exists with different content: s3://${S3_BUCKET_VALUE}/${key} (remote ${remote_size} bytes, staged ${local_size} bytes)" >&2
+              if [ -n "${remote_sha256}" ] && [ "${remote_sha256}" != "${local_sha256}" ]; then
+                echo "immutable key already exists with different content: s3://${S3_BUCKET_VALUE}/${key} (remote sha256 ${remote_sha256}, staged ${local_sha256})" >&2
                 exit 1
               fi
               echo "exists with matching content, skipping: s3://${S3_BUCKET_VALUE}/${key}"

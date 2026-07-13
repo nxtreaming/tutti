@@ -1,6 +1,7 @@
 package agentstatus
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -183,6 +184,22 @@ func (l installCommandLock) Recover() (InstallCommandLockRecoveryResult, error) 
 		processExists = tuttitypes.ProcessExists
 	}
 	if processExists(pid) {
+		return result, nil
+	}
+
+	// Re-verify identity immediately before deletion: between the first read
+	// and this point another process may have recovered the same orphan and
+	// created its own live lock at this path. Only remove the file when it
+	// still holds the exact bytes observed as stale, so a freshly created
+	// lock is never deleted out from under its owner.
+	current, err := readFile(lockPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return result, nil
+		}
+		return result, fmt.Errorf("re-read install lock before removal: %w", err)
+	}
+	if !bytes.Equal(current, body) {
 		return result, nil
 	}
 
