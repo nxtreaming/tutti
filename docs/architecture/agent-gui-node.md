@@ -1250,6 +1250,10 @@ User-visible rules:
   daemon's typed pre-session composer capabilities and typed live session
   capabilities must both advertise `planMode` before AgentGUI enables the
   toggle for a provider.
+- The slash palette opens immediately when an initial composer capability
+  request is in flight, even before selectable entries exist. The capability
+  section renders a non-selectable loading row driven by the activity snapshot
+  request lifecycle; it must not infer loading from an empty catalog.
 - Browser/computer capability controls come from daemon composer options and
   live runtime capabilities. `computerUse` must not be advertised or injected
   unless the daemon can reach the local `cua-driver` and its read-only

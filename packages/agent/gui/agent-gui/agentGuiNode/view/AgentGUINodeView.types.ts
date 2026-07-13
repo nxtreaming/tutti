@@ -252,6 +252,7 @@ export interface AgentGUIViewLabels {
   skillPickerPalette: string;
   slashPaletteCommandsGroup: string;
   slashPaletteCapabilitiesGroup: string;
+  slashPaletteCapabilitiesLoading: string;
   slashPaletteSkillsGroup: string;
   slashPalettePluginsGroup: string;
   slashPaletteConnectorsGroup: string;

@@ -252,7 +252,9 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     !showFileMentionPalette &&
     !disabled &&
     isPaletteOpen &&
-    ((slashQuery !== null && slashPaletteEntries.length > 0) ||
+    ((slashQuery !== null &&
+      (slashPaletteEntries.length > 0 ||
+        composerSettings.isCapabilityOptionsLoading === true)) ||
       (slashQuery === null &&
         skillQueryMatch !== null &&
         filteredSkills.length > 0));

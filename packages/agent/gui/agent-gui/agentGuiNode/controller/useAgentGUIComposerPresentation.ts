@@ -51,6 +51,7 @@ interface UseAgentGUIComposerPresentationInput {
   activeSessionState: AgentSessionState | null;
   agentActivityRuntime: AgentActivityRuntime;
   composerSupport: ReturnType<typeof composerSettingsSupportFromOptions>;
+  composerOptionsLoading: boolean;
   composerTargetProvider: AgentGUIProvider;
   data: AgentGUINodeData;
   defaultReasoningEffort: AgentSessionReasoningEffort | null;
@@ -245,6 +246,7 @@ export function useAgentGUIComposerPresentation(
         input.providerComposerOptions?.behavior
           ?.planModeExclusiveWithPermissionMode === true,
       isSettingsLoading: !hasACPSettings,
+      isCapabilityOptionsLoading: input.composerOptionsLoading,
       isModelOptionsLoading: isForegroundModelOptionsLoading({
         modelOptionsLoading: input.providerComposerOptions?.modelOptionsLoading,
         selection: activeSessionModelSelection,
@@ -318,6 +320,7 @@ export function useAgentGUIComposerPresentation(
     input.activeConversationId,
     input.agentActivityRuntime.projectPathIsRemote,
     input.composerSupport,
+    input.composerOptionsLoading,
     input.composerTargetProvider,
     input.providerComposerOptions,
     input.selectedProjectPath,

@@ -663,6 +663,9 @@ export function useAgentGUIViewLabels(input: {
       slashPaletteCapabilitiesGroup: t(
         "agentHost.agentGui.slashPaletteCapabilitiesGroup"
       ),
+      slashPaletteCapabilitiesLoading: t(
+        "agentHost.agentGui.slashPaletteCapabilitiesLoading"
+      ),
       slashPaletteSkillsGroup: t("agentHost.agentGui.slashPaletteSkillsGroup"),
       slashPalettePluginsGroup: t(
         "agentHost.agentGui.slashPalettePluginsGroup"

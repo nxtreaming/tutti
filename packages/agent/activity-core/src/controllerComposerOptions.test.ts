@@ -32,10 +32,48 @@ test("composer options deduplicate identical inflight requests", async () => {
     targetKey: "local:codex",
     settings: { model: "model-1" }
   });
+  assert.equal(
+    controller.getSnapshot().composerOptionsLoadStatusByTargetKey?.[
+      "local:codex"
+    ],
+    "loading"
+  );
   pending.resolve(testComposerOptions("codex", 1));
   await Promise.all([first, second]);
 
   assert.equal(loadCount, 1);
+  assert.equal(
+    controller.getSnapshot().composerOptionsLoadStatusByTargetKey?.[
+      "local:codex"
+    ],
+    "ready"
+  );
+});
+
+test("composer options expose a terminal error state after loading fails", async () => {
+  const controller = createAgentActivityController({
+    adapter: testAdapter({
+      loadComposerOptions: () => {
+        throw new Error("composer unavailable");
+      }
+    }),
+    workspaceId: "workspace-1"
+  });
+
+  await assert.rejects(
+    controller.loadComposerOptions({
+      provider: "codex",
+      targetKey: "local:codex"
+    }),
+    /composer unavailable/
+  );
+
+  assert.equal(
+    controller.getSnapshot().composerOptionsLoadStatusByTargetKey?.[
+      "local:codex"
+    ],
+    "error"
+  );
 });
 
 test("composer cache separates agent targets and request signatures", async () => {

@@ -66,15 +66,31 @@ export function createAgentActivityComposerOptionsController(input: {
       return existingLoad.then(cloneAgentActivityComposerOptions);
     }
     const loadVersion = cache.nextLoadVersion(primaryCacheKey);
-    const pending = input.adapter
-      .loadComposerOptions({
-        agentTargetId: targetKey,
-        workspaceId: input.workspaceId,
-        provider,
-        cwd: request.cwd,
-        settings: request.settings,
-        signal: request.signal
-      })
+    input.updateSnapshot((current) => {
+      if (
+        current.composerOptionsLoadStatusByTargetKey?.[targetKey] === "loading"
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        composerOptionsLoadStatusByTargetKey: {
+          ...current.composerOptionsLoadStatusByTargetKey,
+          [targetKey]: "loading"
+        }
+      };
+    });
+    const pending = Promise.resolve()
+      .then(() =>
+        input.adapter.loadComposerOptions({
+          agentTargetId: targetKey,
+          workspaceId: input.workspaceId,
+          provider,
+          cwd: request.cwd,
+          settings: request.settings,
+          signal: request.signal
+        })
+      )
       .then((options) => {
         const normalized = cloneAgentActivityComposerOptions({
           ...options,
@@ -88,9 +104,14 @@ export function createAgentActivityComposerOptionsController(input: {
         input.updateSnapshot((current) => {
           const currentOptions =
             current.composerOptionsByTargetKey?.[targetKey];
-          if (
+          const optionsUnchanged = Boolean(
             currentOptions &&
             areComposerOptionsEqual(currentOptions, normalized)
+          );
+          if (
+            optionsUnchanged &&
+            current.composerOptionsLoadStatusByTargetKey?.[targetKey] ===
+              "ready"
           ) {
             return current;
           }
@@ -98,11 +119,28 @@ export function createAgentActivityComposerOptionsController(input: {
             ...current,
             composerOptionsByTargetKey: {
               ...current.composerOptionsByTargetKey,
-              [targetKey]: normalized
+              [targetKey]:
+                optionsUnchanged && currentOptions ? currentOptions : normalized
+            },
+            composerOptionsLoadStatusByTargetKey: {
+              ...current.composerOptionsLoadStatusByTargetKey,
+              [targetKey]: "ready"
             }
           };
         });
         return cloneAgentActivityComposerOptions(normalized);
+      })
+      .catch((error: unknown) => {
+        if (cache.isLatest(primaryCacheKey, loadVersion)) {
+          input.updateSnapshot((current) => ({
+            ...current,
+            composerOptionsLoadStatusByTargetKey: {
+              ...current.composerOptionsLoadStatusByTargetKey,
+              [targetKey]: "error"
+            }
+          }));
+        }
+        throw error;
       })
       .finally(() => cache.finishActive(primaryCacheKey, pending));
     cache.markActive(primaryCacheKey, requestSignature, pending);

@@ -159,6 +159,19 @@ export function composerOptionsForTarget(input: {
     : null;
 }
 
+export function composerOptionsLoadingForTarget(input: {
+  snapshot: AgentActivitySnapshot;
+  target: AgentGUIComposerTargetData;
+}): boolean {
+  const targetKey = input.target.agentTargetId?.trim() ?? "";
+  return Boolean(
+    targetKey &&
+    !input.snapshot.composerOptionsByTargetKey?.[targetKey] &&
+    input.snapshot.composerOptionsLoadStatusByTargetKey?.[targetKey] ===
+      "loading"
+  );
+}
+
 export function agentGUIProviderTargetsEqual(
   left: AgentGUIAgentTarget,
   right: AgentGUIAgentTarget

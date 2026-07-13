@@ -253,6 +253,11 @@ export interface AgentActivityLoadComposerOptionsInput {
   signal?: AbortSignal;
 }
 
+export type AgentActivityComposerOptionsLoadStatus =
+  | "loading"
+  | "ready"
+  | "error";
+
 export interface AgentActivitySnapshot {
   workspaceId: string;
   sessions: AgentActivitySession[];
@@ -264,6 +269,11 @@ export interface AgentActivitySnapshot {
    * never parsed or rewritten.
    */
   composerOptionsByTargetKey?: Record<string, AgentActivityComposerOptions>;
+  /** Request lifecycle for composer options, keyed by the same opaque target. */
+  composerOptionsLoadStatusByTargetKey?: Record<
+    string,
+    AgentActivityComposerOptionsLoadStatus
+  >;
 }
 
 export type AgentActivityUpdatedEvent = Extract<

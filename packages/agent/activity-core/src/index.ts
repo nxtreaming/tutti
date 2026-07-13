@@ -221,6 +221,7 @@ export type {
   AgentActivityComposerPermissionModeOption,
   AgentActivityComposerSettingOption,
   AgentActivityComposerSettings,
+  AgentActivityComposerOptionsLoadStatus,
   AgentActivitySlashCommandEffect,
   AgentActivitySlashCommandPolicy,
   AgentActivityComposerSkillOption,

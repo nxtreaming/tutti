@@ -932,6 +932,7 @@ export const en = {
       skillPickerPalette: "Skills",
       slashPaletteCommandsGroup: "Commands",
       slashPaletteCapabilitiesGroup: "Capabilities",
+      slashPaletteCapabilitiesLoading: "Loading capabilities…",
       slashPaletteSkillsGroup: "Skills",
       slashPalettePluginsGroup: "Plugins",
       slashPaletteConnectorsGroup: "Connectors",

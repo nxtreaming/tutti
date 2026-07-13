@@ -13,7 +13,10 @@ import type {
 import type { AgentGUINodeData } from "../../../types";
 import { composerSettingsSupportFromOptions } from "../model/composerSettingsSupport";
 import { normalizeOptionalText } from "./agentGuiController.promptHelpers";
-import { composerOptionsForTarget } from "./agentGuiController.providerHelpers";
+import {
+  composerOptionsForTarget,
+  composerOptionsLoadingForTarget
+} from "./agentGuiController.providerHelpers";
 import {
   composerTargetDataForConversation,
   type AgentGUIComposerTargetData
@@ -40,6 +43,10 @@ export function useAgentGUIComposerCapabilities(
     selectedTarget: input.selectedComposerTargetData
   });
   const providerComposerOptions = composerOptionsForTarget({
+    snapshot: input.agentActivitySnapshot,
+    target: composerTargetData
+  });
+  const composerOptionsLoading = composerOptionsLoadingForTarget({
     snapshot: input.agentActivitySnapshot,
     target: composerTargetData
   });
@@ -108,6 +115,7 @@ export function useAgentGUIComposerCapabilities(
         sessionCapabilities
       }),
     composerSupport,
+    composerOptionsLoading,
     composerTargetData,
     defaultReasoningEffort,
     goalPauseSupported:

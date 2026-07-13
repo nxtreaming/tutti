@@ -5721,6 +5721,7 @@ function createLabels(): AgentGUIViewLabels {
     skillPickerPalette: "skillPickerPalette",
     slashPaletteCommandsGroup: "slashPaletteCommandsGroup",
     slashPaletteCapabilitiesGroup: "slashPaletteCapabilitiesGroup",
+    slashPaletteCapabilitiesLoading: "slashPaletteCapabilitiesLoading",
     slashPaletteSkillsGroup: "slashPaletteSkillsGroup",
     slashPalettePluginsGroup: "slashPalettePluginsGroup",
     slashPaletteConnectorsGroup: "slashPaletteConnectorsGroup",

@@ -220,6 +220,8 @@ export interface AgentGUIComposerSettingsVM {
   permissionModeChangeDuringTurn?: boolean;
   slashCommandPolicy?: AgentSlashCommandPolicy | null;
   isSettingsLoading: boolean;
+  /** Initial slash command and capability catalog request is in flight. */
+  isCapabilityOptionsLoading?: boolean;
   isModelOptionsLoading?: boolean;
   modelUnavailable: boolean;
   reasoningUnavailable: boolean;

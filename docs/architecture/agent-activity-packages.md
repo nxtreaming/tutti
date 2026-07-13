@@ -128,6 +128,11 @@ typed composer capability contract and must remain an unknown/loading state.
 Core capability booleans must not be reconstructed from private
 `runtimeContext` fields or represented as plugin/tool entries in the composer
 capability catalog.
+The activity snapshot also exposes the composer-options request lifecycle per
+opaque target key. Consumers use `loading` only for the initial request when no
+cached options exist; background refreshes keep rendering the last successful
+catalog, and failures transition to `error` instead of leaving indefinite
+loading UI.
 Provider context-window and quota updates enter the daemon at the runtime
 adapter boundary, are split into typed durable session metadata, and reach
 Agent GUI through the protocol-v2 `usage` field. GUI projections must not read

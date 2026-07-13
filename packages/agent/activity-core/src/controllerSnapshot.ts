@@ -27,7 +27,8 @@ export function createEmptyAgentActivitySnapshot(
     sessions: [],
     presences: [],
     sessionMessagesById: {},
-    composerOptionsByTargetKey: {}
+    composerOptionsByTargetKey: {},
+    composerOptionsLoadStatusByTargetKey: {}
   };
 }
 
@@ -46,6 +47,9 @@ export function cloneAgentActivitySnapshot(
         ]
       )
     ),
+    composerOptionsLoadStatusByTargetKey: {
+      ...snapshot.composerOptionsLoadStatusByTargetKey
+    },
     sessionMessagesById: Object.fromEntries(
       Object.entries(snapshot.sessionMessagesById).map(
         ([agentSessionId, messages]) => [

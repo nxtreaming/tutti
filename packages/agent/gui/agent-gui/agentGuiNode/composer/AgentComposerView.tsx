@@ -458,6 +458,12 @@ export function AgentComposerView(input: Props): React.JSX.Element {
                 }
                 commandsGroupLabel={labels.slashPaletteCommandsGroup}
                 capabilitiesGroupLabel={labels.slashPaletteCapabilitiesGroup}
+                capabilitiesLoading={
+                  composerSettings.isCapabilityOptionsLoading === true
+                }
+                capabilitiesLoadingLabel={
+                  labels.slashPaletteCapabilitiesLoading
+                }
                 skillsGroupLabel={labels.slashPaletteSkillsGroup}
                 pluginsGroupLabel={labels.slashPalettePluginsGroup}
                 connectorsGroupLabel={labels.slashPaletteConnectorsGroup}

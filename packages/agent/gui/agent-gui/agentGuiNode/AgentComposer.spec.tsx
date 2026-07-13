@@ -375,6 +375,8 @@ vi.mock("./AgentComposerSettingsMenus", () => ({
 
 vi.mock("./AgentSlashCommandPalette", () => ({
   AgentSlashCommandPalette: ({
+    capabilitiesLoading,
+    capabilitiesLoadingLabel,
     capabilitiesGroupLabel,
     commandsGroupLabel,
     entries,
@@ -386,6 +388,8 @@ vi.mock("./AgentSlashCommandPalette", () => ({
     pluginsGroupLabel,
     skillsGroupLabel
   }: {
+    capabilitiesLoading?: boolean;
+    capabilitiesLoadingLabel?: string;
     capabilitiesGroupLabel?: string;
     commandsGroupLabel: string;
     connectorsGroupLabel: string;
@@ -398,6 +402,7 @@ vi.mock("./AgentSlashCommandPalette", () => ({
     skillsGroupLabel: string;
   }) => (
     <div data-testid="mock-slash-palette">
+      {capabilitiesLoading ? <div>{capabilitiesLoadingLabel}</div> : null}
       {entries.some((entry) => entry.type === "command") ? (
         <div>{commandsGroupLabel}</div>
       ) : null}
@@ -678,6 +683,46 @@ describe("AgentComposer", () => {
     expect(onDraftContentChange).toHaveBeenCalledWith(createDraft("/browser "));
     expect(screen.getByRole("textbox")).toHaveValue("/browser ");
     expect(onSettingsChange).toHaveBeenCalledWith({ browserUse: true });
+  });
+
+  it("opens the slash palette while initial capabilities are loading", async () => {
+    render(
+      <AgentComposer
+        workspaceId="workspace-1"
+        currentUserId="user-1"
+        provider="cursor"
+        draftContent={createDraft("/")}
+        availableCommands={[] satisfies readonly AgentHostAgentSessionCommand[]}
+        disabled={false}
+        submitDisabled={false}
+        placeholder="placeholder"
+        composerSettings={createComposerSettings({
+          isCapabilityOptionsLoading: true
+        })}
+        queuedPrompts={[]}
+        drainingQueuedPromptId={null}
+        canQueueWhileBusy={false}
+        showStopButton={false}
+        activePrompt={null}
+        isInterrupting={false}
+        isSendingTurn={false}
+        isSubmittingPrompt={false}
+        labels={createLabels()}
+        workspaceUserProjectI18n={workspaceUserProjectI18n}
+        onDraftContentChange={vi.fn()}
+        onSettingsChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onSendQueuedPromptNext={vi.fn()}
+        onRemoveQueuedPrompt={vi.fn()}
+        onEditQueuedPrompt={vi.fn()}
+        onInterruptCurrentTurn={vi.fn()}
+        onSubmitInteractivePrompt={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByTestId("mock-slash-palette")).toHaveTextContent(
+      "能力加载中…"
+    );
   });
 
   it("requests browser-use settings from the slash capability group", async () => {
@@ -5740,6 +5785,7 @@ function createLabels(): Parameters<typeof AgentComposer>[0]["labels"] {
     skillPickerPalette: "技能",
     slashPaletteCommandsGroup: "命令",
     slashPaletteCapabilitiesGroup: "能力",
+    slashPaletteCapabilitiesLoading: "能力加载中…",
     slashPaletteSkillsGroup: "技能",
     slashPalettePluginsGroup: "插件",
     slashPaletteConnectorsGroup: "连接器",

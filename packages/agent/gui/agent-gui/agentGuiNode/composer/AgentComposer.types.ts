@@ -139,6 +139,7 @@ export interface AgentComposerProps {
     skillPickerPalette: string;
     slashPaletteCommandsGroup: string;
     slashPaletteCapabilitiesGroup: string;
+    slashPaletteCapabilitiesLoading: string;
     slashPaletteSkillsGroup: string;
     slashPalettePluginsGroup: string;
     slashPaletteConnectorsGroup: string;
