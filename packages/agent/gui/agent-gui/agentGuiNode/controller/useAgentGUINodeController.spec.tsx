@@ -12415,15 +12415,12 @@ describe("useAgentGUINodeController", () => {
   });
 
   it("uses the imported-conversation copy for non-resumable imported sessions", async () => {
+    // The list summary deliberately carries no import marker so this
+    // exercises the session-state runtimeContext fallback on its own.
     installAgentHostApi({
       list: vi.fn(async () => ({
         presences: [],
-        sessions: [
-          workspaceAgentSession("session-1", {
-            resumable: false,
-            runtimeContext: { imported: true }
-          })
-        ]
+        sessions: [workspaceAgentSession("session-1", { resumable: false })]
       })),
       listSessionTimeline: vi.fn(async () => ({ timelineItems: [] })),
       subscribeEvents: vi.fn(() => vi.fn()),
