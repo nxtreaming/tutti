@@ -28,9 +28,7 @@ import {
 } from "../../../actions/workspaceLinkActions";
 import {
   AGENT_COMPOSER_PASTED_TEXT_FILE_PREFIX,
-  AGENT_COMPOSER_PASTED_TEXT_MIME,
   agentComposerTextByteLength,
-  agentComposerTextToBase64,
   buildGoalModePrompt,
   goalDraftObjectiveFromPrompt
 } from "./composerDraftUtils";
@@ -58,6 +56,7 @@ interface UseComposerDraftAttachmentsInput {
   promptImagesSupported: boolean;
   promptFileUploadSupported: boolean;
   promptFilesSupported: boolean;
+  pastedTextStagingSupported: boolean;
   editorHandleRef: RefObject<AgentRichTextEditorHandle | null>;
   draftPromptRef: RefObject<string>;
   draftImagesRef: RefObject<AgentComposerDraftImage[]>;
@@ -86,6 +85,7 @@ export function useComposerDraftAttachments({
   promptImagesSupported,
   promptFileUploadSupported,
   promptFilesSupported,
+  pastedTextStagingSupported,
   editorHandleRef,
   draftPromptRef,
   draftImagesRef,
@@ -398,30 +398,9 @@ export function useComposerDraftAttachments({
       if (!normalizedText.trim()) {
         return;
       }
-      const uploadPromptContent = promptFileUploadSupported
-        ? agentActivityRuntime?.uploadPromptContent
+      const stagePastedText = pastedTextStagingSupported
+        ? agentActivityRuntime?.stagePastedText
         : undefined;
-      if (!uploadPromptContent) {
-        // Landing is unsupported by this runtime (e.g. web). The editor already
-        // swallowed the native paste, so re-insert the text inline via the
-        // controlled prompt value to avoid losing it.
-        const currentPrompt = draftPromptRef.current;
-        const nextPrompt = currentPrompt.trim()
-          ? `${currentPrompt}\n${normalizedText}`
-          : normalizedText;
-        draftPromptRef.current = nextPrompt;
-        setPaletteDraftPrompt(nextPrompt);
-        onDraftContentChange({
-          prompt: nextPrompt,
-          images: draftImagesRef.current,
-          files: draftFilesRef.current,
-          largeTexts: draftLargeTextsRef.current
-        });
-        window.requestAnimationFrame(() => {
-          editorHandleRef.current?.focusAtEnd();
-        });
-        return;
-      }
       const id = crypto.randomUUID();
       const name = `${AGENT_COMPOSER_PASTED_TEXT_FILE_PREFIX}.txt`;
       const sizeBytes = agentComposerTextByteLength(normalizedText);
@@ -432,7 +411,13 @@ export function useComposerDraftAttachments({
           name,
           text: normalizedText,
           sizeBytes,
-          uploading: true
+          uploading: Boolean(stagePastedText),
+          ...(!stagePastedText
+            ? {
+                uploadError:
+                  "Pasted text staging is not supported by this agent runtime."
+              }
+            : {})
         }
       ];
       draftLargeTextsRef.current = nextDraftLargeTexts;
@@ -442,24 +427,18 @@ export function useComposerDraftAttachments({
         files: draftFilesRef.current,
         largeTexts: nextDraftLargeTexts
       });
-      void uploadPromptContent({
+      if (!stagePastedText) {
+        return;
+      }
+      void stagePastedText({
         workspaceId,
-        content: [
-          {
-            type: "file",
-            data: agentComposerTextToBase64(normalizedText),
-            mimeType: AGENT_COMPOSER_PASTED_TEXT_MIME,
-            name
-          }
-        ]
+        text: normalizedText,
+        name
       })
         .then((result) => {
-          const uploadedFile = result.content.find(
-            (block) => block.type === "file"
-          );
-          const uploadedPath = uploadedFile?.path?.trim() ?? "";
+          const uploadedPath = result.path.trim();
           if (!uploadedPath) {
-            throw new Error("Prompt text upload completed without path.");
+            throw new Error("Pasted text staging completed without path.");
           }
           const uploadedDraftLargeTexts = draftLargeTextsRef.current.map(
             (item) =>
@@ -467,7 +446,8 @@ export function useComposerDraftAttachments({
                 ? {
                     ...item,
                     path: uploadedPath,
-                    sizeBytes: uploadedFile?.sizeBytes ?? item.sizeBytes,
+                    name: result.name || item.name,
+                    sizeBytes: result.sizeBytes,
                     uploading: false
                   }
                 : item
@@ -500,7 +480,7 @@ export function useComposerDraftAttachments({
     [
       agentActivityRuntime,
       onDraftContentChange,
-      promptFileUploadSupported,
+      pastedTextStagingSupported,
       workspaceId
     ]
   );

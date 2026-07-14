@@ -2006,9 +2006,11 @@ Runtime capability declarations are also part of this contract. Missing
 capability keys default to enabled for backwards compatibility. Hosts can set
 `capabilities.canCancel`, `canSubmitInteractive`, `canGoalControl`, or
 `canUploadAttachment` to `false` to hide and no-op the corresponding AgentGUI
-UI affordance. `canUploadAttachment` applies to prompt attachment upload paths
-(pasted images, pasted large text, dropped/host-local files) and must not hide
-ordinary `@` references or workspace-reference mention selection.
+UI affordance. `canUploadAttachment` applies to prompt attachment paths and
+must not hide ordinary `@` references or workspace-reference mention
+selection. Large pasted text also requires the explicit optional
+`AgentActivityRuntime.stagePastedText` operation; generic file upload support
+is not sufficient evidence that a host can persist in-memory text.
 When `reportDiagnostic` is omitted, development builds use a low-cost console
 sink for AgentGUI diagnostics such as composer upload/submit state, message page
 requests/resolutions, render-state changes, and caught errors. Hosts can set
@@ -2338,6 +2340,25 @@ unless the paste leaves the caret immediately after the `@` trigger. A bare
 `@` paste may open the mention panel; a complete pasted query such as `@readme`
 should remain plain prompt text until the user explicitly places the caret in
 an active trigger position.
+
+Plain-text paste classification happens before structured mention-HTML
+delegation. Once the trimmed plain-text representation reaches 5,000
+characters, every editor paste entry point must classify it as large text and
+must not insert it inline. The composer creates one `pasted-text` draft item,
+then calls the dedicated `AgentActivityRuntime.stagePastedText` host boundary
+with raw text. The host owns local persistence and returns a managed absolute
+path, display name, and byte size. Do not encode pasted text as a generic
+`uploadPromptContent` file block or infer text-staging support from
+`promptContentUploadSupport.file`; external hosts may accept host paths while
+rejecting inline file bytes.
+
+The pasted-text state machine is `detected -> staging -> landed | failed`.
+Missing host support is a failed attachment state, not an inline fallback. The
+draft keeps the original text in memory so the user may explicitly restore it
+through “Show in text field”; automatic failure recovery must not violate the
+large-paste invariant. Uploading and failed pasted-text items block submission.
+The desktop runtime implements `stagePastedText` through the host prompt-asset
+archive and returns only the managed path metadata to AgentGUI.
 
 `workspace-reference` hrefs are the passive reference contract, not a visual
 metadata store. Do not serialize app icons into the href just to render a chip.

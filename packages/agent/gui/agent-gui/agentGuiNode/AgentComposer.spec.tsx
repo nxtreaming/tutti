@@ -18,6 +18,7 @@ import {
   resetAgentActivityRuntimeForTests,
   setAgentActivityRuntimeForTests,
   type AgentActivityRuntime,
+  type AgentActivityRuntimeStagePastedTextResult,
   type AgentActivityRuntimeUploadPromptContentResult
 } from "../../agentActivityRuntime";
 import type {
@@ -4127,9 +4128,7 @@ describe("AgentComposer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("falls back to inline text when the runtime cannot land pasted text", () => {
-    // Runtime without uploadPromptContent (e.g. web): the large paste must not
-    // be lost — it is re-inserted inline instead of becoming an un-landable chip.
+  it("keeps pasted large text out of the prompt when staging is unsupported", () => {
     setAgentActivityRuntimeForTests({} as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("hello");
@@ -4170,19 +4169,18 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
 
-    expect(draftContent.prompt).toBe(
-      "hello\nfirst pasted line\nsecond pasted line"
-    );
-    expect(draftContent.largeTexts ?? []).toEqual([]);
-    expect(
-      screen.queryByTestId("agent-gui-composer-large-text-draft")
-    ).not.toBeInTheDocument();
+    expect(draftContent.prompt).toBe("hello");
+    expect(draftContent.largeTexts?.[0]).toMatchObject({
+      text: "first pasted line\nsecond pasted line",
+      uploading: false,
+      uploadError: expect.any(String)
+    });
   });
 
   it("does not upload pasted large text when attachment upload is disabled", () => {
-    const uploadPromptContent = vi.fn();
+    const stagePastedText = vi.fn();
     setAgentActivityRuntimeForTests({
-      uploadPromptContent
+      stagePastedText
     } as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("hello");
@@ -4224,24 +4222,26 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
 
-    expect(uploadPromptContent).not.toHaveBeenCalled();
-    expect(draftContent.prompt).toBe(
-      "hello\nfirst pasted line\nsecond pasted line"
-    );
-    expect(draftContent.largeTexts ?? []).toEqual([]);
+    expect(stagePastedText).not.toHaveBeenCalled();
+    expect(draftContent.prompt).toBe("hello");
+    expect(draftContent.largeTexts?.[0]).toMatchObject({
+      text: "first pasted line\nsecond pasted line",
+      uploading: false,
+      uploadError: expect.any(String)
+    });
   });
 
   it("lands pasted large text as a file and submits a pasted-text file block", async () => {
-    type UploadResult = AgentActivityRuntimeUploadPromptContentResult;
+    type UploadResult = AgentActivityRuntimeStagePastedTextResult;
     let resolveUpload: (result: UploadResult) => void = () => undefined;
-    const uploadPromptContent = vi.fn(
+    const stagePastedText = vi.fn(
       () =>
         new Promise<UploadResult>((resolve) => {
           resolveUpload = resolve;
         })
     );
     setAgentActivityRuntimeForTests({
-      uploadPromptContent
+      stagePastedText
     } as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("");
@@ -4284,17 +4284,11 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
 
-    // Phase 1: uploads the pasted text as UTF-8 base64 in a file block.
-    expect(uploadPromptContent).toHaveBeenCalledWith({
+    // Phase 1: stages raw pasted text through the dedicated host contract.
+    expect(stagePastedText).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
-      content: [
-        {
-          type: "file",
-          data: "Zmlyc3QgcGFzdGVkIGxpbmUKc2Vjb25kIHBhc3RlZCBsaW5l",
-          mimeType: "text/plain",
-          name: "pasted-text.txt"
-        }
-      ]
+      text: "first pasted line\nsecond pasted line",
+      name: "pasted-text.txt"
     });
     expect(draftContent.largeTexts?.[0]).toMatchObject({
       text: "first pasted line\nsecond pasted line",
@@ -4317,14 +4311,9 @@ describe("AgentComposer", () => {
 
     // Phase 3: upload resolves → path filled, uploading cleared.
     resolveUpload({
-      content: [
-        {
-          type: "file",
-          path: "/archive/aa/deadbeef.txt",
-          name: "pasted-text.txt",
-          sizeBytes: 36
-        }
-      ]
+      path: "/archive/aa/deadbeef.txt",
+      name: "pasted-text.txt",
+      sizeBytes: 36
     });
     await waitFor(() =>
       expect(draftContent.largeTexts?.[0]).toMatchObject({
@@ -4359,16 +4348,16 @@ describe("AgentComposer", () => {
   });
 
   it("restores a pasted-text chip back into the composer as inline text", async () => {
-    type UploadResult = AgentActivityRuntimeUploadPromptContentResult;
+    type UploadResult = AgentActivityRuntimeStagePastedTextResult;
     let resolveUpload: (result: UploadResult) => void = () => undefined;
-    const uploadPromptContent = vi.fn(
+    const stagePastedText = vi.fn(
       () =>
         new Promise<UploadResult>((resolve) => {
           resolveUpload = resolve;
         })
     );
     setAgentActivityRuntimeForTests({
-      uploadPromptContent
+      stagePastedText
     } as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("hello");
@@ -4410,14 +4399,9 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
     resolveUpload({
-      content: [
-        {
-          type: "file",
-          path: "/archive/aa/deadbeef.txt",
-          name: "pasted-text.txt",
-          sizeBytes: 36
-        }
-      ]
+      path: "/archive/aa/deadbeef.txt",
+      name: "pasted-text.txt",
+      sizeBytes: 36
     });
     await waitFor(() =>
       expect(draftContent.largeTexts?.[0]).toMatchObject({ uploading: false })
