@@ -94,13 +94,6 @@ test("controller notifies once for a canonical running to settled transition", (
   const harness = createOutcomeNotificationHarness(engine);
 
   dispatchTurn(engine, "running");
-  harness.events[0]?.(
-    messageUpdateEvent({
-      content: "Fix the installer bug",
-      role: "user",
-      turnId: "turn-1"
-    })
-  );
   dispatchTurn(engine, "settled", "completed");
   dispatchTurn(engine, "settled", "completed");
 
@@ -110,7 +103,7 @@ test("controller notifies once for a canonical running to settled transition", (
       agentSessionId: "session-1",
       body: "The agent finished this run.",
       closeLabel: "Close",
-      conversationTitle: "Fix the installer bug",
+      conversationTitle: "Build feature",
       level: "success",
       provider: "codex",
       statusLabel: "Completed",
@@ -118,28 +111,16 @@ test("controller notifies once for a canonical running to settled transition", (
     }
   ]);
   assert.equal(harness.notifications.length, 1);
-  assert.equal(
-    harness.notifications[0]?.title,
-    "Fix the installer bug completed"
-  );
+  assert.equal(harness.notifications[0]?.title, "Build feature completed");
 
   harness.controller.dispose();
-  assert.equal(harness.events.length, 0);
 });
 
-test("message updates only cache titles and never synthesize outcomes", () => {
+test("session messages never synthesize outcomes", () => {
   const engine = createTestEngine();
   dispatchSession(engine);
   markWorkspaceReconcileReady(engine);
   const harness = createOutcomeNotificationHarness(engine);
-
-  harness.events[0]?.(
-    messageUpdateEvent({
-      content: "Title only",
-      role: "user",
-      turnId: "turn-1"
-    })
-  );
 
   assert.deepEqual(harness.notifications, []);
   harness.controller.dispose();
@@ -252,38 +233,13 @@ function activitySession(): AgentActivitySession {
   });
 }
 
-function messageUpdateEvent(input: {
-  content: string;
-  role: "assistant" | "user";
-  turnId: string;
-}): unknown {
-  return {
-    data: {
-      agentSessionId: "session-1",
-      kind: "text",
-      messageId: `message-${input.turnId}`,
-      payload: {
-        content: [{ text: input.content, type: "text" }],
-        text: input.content
-      },
-      role: input.role,
-      status: "completed",
-      turnId: input.turnId,
-      workspaceId: "ws-1"
-    },
-    eventType: "message_update"
-  };
-}
-
 function createOutcomeNotificationHarness(engine: AgentSessionEngine): {
   controller: ReturnType<
     typeof createWorkspaceAgentOutcomeNotificationController
   >;
-  events: Array<(event: unknown) => void>;
   foregroundNotifications: unknown[];
   notifications: NotificationMessage[];
 } {
-  const events: Array<(event: unknown) => void> = [];
   const foregroundNotifications: unknown[] = [];
   const notifications: NotificationMessage[] = [];
   const controller = createWorkspaceAgentOutcomeNotificationController({
@@ -308,17 +264,9 @@ function createOutcomeNotificationHarness(engine: AgentSessionEngine): {
     workspaceAgentActivityService: {
       getSessionEngine() {
         return engine;
-      },
-      onSessionEvent(workspaceId, listener) {
-        assert.equal(workspaceId, "ws-1");
-        events.push(listener);
-        return () => {
-          const index = events.indexOf(listener);
-          if (index >= 0) events.splice(index, 1);
-        };
       }
     },
     workspaceId: "ws-1"
   });
-  return { controller, events, foregroundNotifications, notifications };
+  return { controller, foregroundNotifications, notifications };
 }

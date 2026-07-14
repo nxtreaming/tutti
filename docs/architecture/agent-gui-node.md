@@ -1562,15 +1562,21 @@ User-visible rules:
 
 ```text
 runtime snapshot session + cached messages
-  -> Agent GUI title projection
+  -> canonical session.title from the daemon
   -> rail row / detail header / workbench header / dock popup / toast title
 ```
 
 User-visible rules:
 
-- AgentGUI conversation titles must use the shared title projection before they
-  reach desktop-owned chrome, dock previews, message center cards, or toast
-  notifications. Do not display raw `session.title.trim()` in those surfaces.
+- `session.title` is a shared, user-visible canonical plain-text field. The
+  daemon converts rich title input once before session state is persisted, and
+  the SQLite store backfills existing rows during migration without changing
+  session creation/update timestamps. CLI, Agent, and desktop surfaces consume
+  this same field and must not independently parse title Markdown or add
+  mention prefixes.
+- AgentGUI projection may still handle UI-local concerns such as provider-only
+  placeholders and localized fallback labels, but it must not be the source of
+  title syntax normalization.
 - Live runtime snapshot data is the source for workbench and dock titles. Do
   not persist or restore `lastActiveConversationTitle` from workbench node
   state.
@@ -1579,9 +1585,10 @@ User-visible rules:
   authoritative session into the runtime snapshot. Do not update only the rail
   list, otherwise the rail row, active detail header, workbench title, and dock
   surfaces can diverge.
-- Title projection must normalize rich mention markdown, strip provider-only and
-  untitled placeholders from workbench chrome, and use cached first-user-message
-  content only when the session title is not displayable.
+- Title projection strips provider-only and untitled placeholders from workbench
+  chrome. First-user-message fallback is compatibility behavior for snapshots
+  that predate the canonical title write boundary; new session writes should
+  establish the title before persistence.
 
 ### Detail Pane And Transcript
 
@@ -1596,6 +1603,13 @@ activeConversationId
 
 User-visible rules:
 
+- Transcript message bodies and copy payloads retain their rich-text
+  serialization. Compact presentation derived from those messages, including
+  the user-message locator, activity summaries, and tooltips, converts rich
+  links to human-readable labels in the frontend projection without mutating
+  the source message. This display formatter is separate from session-title
+  canonicalization: new and migrated `session.title` values remain daemon-owned
+  plain text and must not depend on renderer parsing.
 - A row can be selected while its transcript is still loading. Treat rail
   selection and detail message loading as separate states.
 - Transcript rows are projected data. Rendering components should not parse

@@ -198,13 +198,13 @@ function resolveSessionTitle(
   latestUserMessageSummary: string,
   firstUserMessageSummary: string
 ): string {
-  const latest = latestUserMessageSummary.trim();
-  if (latest) {
-    return latest;
-  }
   const title = session.title.trim();
   if (title) {
     return title;
+  }
+  const latest = latestUserMessageSummary.trim();
+  if (latest) {
+    return latest;
   }
   return firstUserMessageSummary || session.provider || session.agentSessionId;
 }
