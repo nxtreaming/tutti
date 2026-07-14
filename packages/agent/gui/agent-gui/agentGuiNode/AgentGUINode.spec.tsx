@@ -2111,9 +2111,8 @@ describe("AgentGUINode", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders mention markdown titles as @session dot text instead of mention tokens", () => {
-    const mentionTitle =
-      "[@wang jomes & Codex hi](mention://agent-session/session-1?workspaceId=room-1)";
+  it("renders canonical mention titles without mention tokens", () => {
+    const mentionTitle = "@wang jomes & Codex hi";
     const conversation = {
       id: "session-1",
       provider: "codex" as const,
@@ -2143,16 +2142,13 @@ describe("AgentGUINode", () => {
       ".agent-gui-node__conversation-title, .agent-gui-node__detail-header-title"
     );
 
-    expect(screen.queryByText(mentionTitle)).toBeNull();
-    expect(
-      screen.getAllByText("@session · wang jomes & Codex hi").length
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(mentionTitle).length).toBeGreaterThan(0);
     for (const root of titleRoots) {
       expect(root.querySelector('[data-agent-file-mention="true"]')).toBeNull();
     }
   });
 
-  it("formats plain session-style titles as @session dot text instead of mention tokens", () => {
+  it("renders plain canonical session titles without a session prefix", () => {
     const plainTitle = "@Jun Sun & Claude Code 看看文件夹有什么内容 总结下这里";
     const conversation = {
       id: "session-1",
@@ -2183,11 +2179,7 @@ describe("AgentGUINode", () => {
       ".agent-gui-node__conversation-title"
     );
 
-    expect(
-      screen.getAllByText(
-        "@session · Jun Sun & Claude Code 看看文件夹有什么内容 总结下这里"
-      ).length
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(plainTitle).length).toBeGreaterThan(0);
     for (const root of titleRoots) {
       expect(root.querySelector('[data-agent-file-mention="true"]')).toBeNull();
     }

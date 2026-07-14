@@ -2839,7 +2839,7 @@ describe("buildWorkspaceAgentActivityListViewModel", () => {
     ]);
   });
 
-  it("humanizes mention markdown titles for display", () => {
+  it("keeps canonical mention titles unchanged", () => {
     const snapshot = {
       presences: [],
       sessions: [
@@ -2851,8 +2851,7 @@ describe("buildWorkspaceAgentActivityListViewModel", () => {
           providerSessionId: "provider-mention",
           cwd: "/repo",
           effectiveStatus: "working",
-          title:
-            "[@wang jomes & Codex hi](mention://agent-session/session-1?workspaceId=room-1)"
+          title: "@wang jomes & Codex hi"
         }
       ]
     };
@@ -2862,7 +2861,7 @@ describe("buildWorkspaceAgentActivityListViewModel", () => {
     expect(view.activities[0]?.title).toBe("@wang jomes & Codex hi");
   });
 
-  it("humanizes workspace markdown link titles for display", () => {
+  it("keeps canonical workspace link labels unchanged", () => {
     const snapshot = {
       presences: [],
       sessions: [
@@ -2874,8 +2873,7 @@ describe("buildWorkspaceAgentActivityListViewModel", () => {
           providerSessionId: "provider-file",
           cwd: "/repo",
           effectiveStatus: "working",
-          title:
-            "[@aa.md](/workspace/ccb5cd30-b863-4b61-ab17-ccab/aa.md) 这是什么内容"
+          title: "@aa.md 这是什么内容"
         }
       ]
     };

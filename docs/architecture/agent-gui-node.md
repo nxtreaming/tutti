@@ -1552,15 +1552,20 @@ User-visible rules:
 
 ```text
 runtime snapshot session + cached messages
-  -> Agent GUI title projection
+  -> canonical session.title from the daemon
   -> rail row / detail header / workbench header / dock popup / toast title
 ```
 
 User-visible rules:
 
-- AgentGUI conversation titles must use the shared title projection before they
-  reach desktop-owned chrome, dock previews, message center cards, or toast
-  notifications. Do not display raw `session.title.trim()` in those surfaces.
+- `session.title` is a shared, user-visible canonical plain-text field. The
+  daemon canonicalizes Markdown link labels and whitespace before session
+  state is persisted, and the SQLite store backfills existing rows during
+  migration. CLI, Agent, and desktop surfaces consume this same field; they
+  must not independently parse title Markdown or add mention prefixes.
+- AgentGUI projection may still handle UI-local concerns such as provider-only
+  placeholders and localized fallback labels, but it must not be the source of
+  title syntax normalization.
 - Live runtime snapshot data is the source for workbench and dock titles. Do
   not persist or restore `lastActiveConversationTitle` from workbench node
   state.
@@ -1569,9 +1574,10 @@ User-visible rules:
   authoritative session into the runtime snapshot. Do not update only the rail
   list, otherwise the rail row, active detail header, workbench title, and dock
   surfaces can diverge.
-- Title projection must normalize rich mention markdown, strip provider-only and
-  untitled placeholders from workbench chrome, and use cached first-user-message
-  content only when the session title is not displayable.
+- Title projection strips provider-only and untitled placeholders from workbench
+  chrome. First-user-message fallback is compatibility behavior for snapshots
+  that predate the canonical title write boundary; new session writes should
+  establish the title before persistence.
 
 ### Detail Pane And Transcript
 

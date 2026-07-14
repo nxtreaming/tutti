@@ -44,14 +44,9 @@ export interface WorkspaceAgentOutcomeNotificationControllerInput {
   translate(key: DesktopI18nKey, params?: I18nParams): string;
   workspaceAgentActivityService: Pick<
     IWorkspaceAgentActivityService,
-    "getSessionEngine" | "onSessionEvent"
+    "getSessionEngine"
   >;
   workspaceId: string;
-}
-
-interface WorkspaceAgentOutcomeUserTitleCache {
-  bySessionId: Map<string, string>;
-  bySessionTurnId: Map<string, string>;
 }
 
 export function createWorkspaceAgentOutcomeNotificationController(
@@ -60,14 +55,6 @@ export function createWorkspaceAgentOutcomeNotificationController(
   const workspaceId = input.workspaceId.trim();
   if (!workspaceId) return { dispose() {} };
 
-  const userTitleCache: WorkspaceAgentOutcomeUserTitleCache = {
-    bySessionId: new Map(),
-    bySessionTurnId: new Map()
-  };
-  const unsubscribeSessionEvents =
-    input.workspaceAgentActivityService.onSessionEvent(workspaceId, (event) =>
-      rememberWorkspaceAgentOutcomeUserTitle(event, userTitleCache)
-    );
   const engine =
     input.workspaceAgentActivityService.getSessionEngine(workspaceId);
   const settledTurns = new Set<string>();
@@ -88,11 +75,6 @@ export function createWorkspaceAgentOutcomeNotificationController(
       if (!notifyTransitions) continue;
       const notification =
         buildWorkspaceAgentOutcomeNotificationFromSettledTurn({
-          conversationTitle: resolveWorkspaceAgentOutcomeConversationTitle({
-            cache: userTitleCache,
-            session: item.session,
-            turn
-          }),
           session: item.session,
           turn
         });
@@ -126,23 +108,8 @@ export function createWorkspaceAgentOutcomeNotificationController(
   return {
     dispose() {
       unsubscribeEngine();
-      unsubscribeSessionEvents();
     }
   };
-}
-
-function resolveWorkspaceAgentOutcomeConversationTitle(input: {
-  cache: WorkspaceAgentOutcomeUserTitleCache;
-  session: CanonicalAgentSession;
-  turn: AgentActivityTurn;
-}): string {
-  const agentSessionId = input.session.agentSessionId;
-  const cachedTitle =
-    input.cache.bySessionTurnId.get(
-      sessionTurnKey(agentSessionId, input.turn.turnId)
-    ) ?? input.cache.bySessionId.get(agentSessionId);
-  if (cachedTitle) return cachedTitle;
-  return input.session.title;
 }
 
 export function buildWorkspaceAgentOutcomeNotificationFromSettledTurn(input: {
@@ -165,28 +132,6 @@ export function buildWorkspaceAgentOutcomeNotificationFromSettledTurn(input: {
     status,
     workspaceId
   };
-}
-
-function rememberWorkspaceAgentOutcomeUserTitle(
-  event: unknown,
-  cache: WorkspaceAgentOutcomeUserTitleCache
-): void {
-  const source = recordValue(event);
-  if (stringValue(source?.eventType) !== "message_update") return;
-  const data = recordValue(source?.data);
-  if (!data) return;
-  for (const message of messageUpdateRecords(data)) {
-    if (stringValue(message.role).toLowerCase() !== "user") continue;
-    const agentSessionId =
-      stringValue(message.agentSessionId) || stringValue(data.agentSessionId);
-    const title = messageTitle(message);
-    if (!agentSessionId || !title) continue;
-    cache.bySessionId.set(agentSessionId, title);
-    const turnId = stringValue(message.turnId);
-    if (turnId) {
-      cache.bySessionTurnId.set(sessionTurnKey(agentSessionId, turnId), title);
-    }
-  }
 }
 
 function workspaceAgentOutcomeNotificationMessage(
@@ -275,60 +220,8 @@ function formatWorkspaceAgentProviderName(provider: string): string {
     .join(" ");
 }
 
-function messageUpdateRecords(
-  data: Record<string, unknown>
-): Record<string, unknown>[] {
-  if (Array.isArray(data.messages)) {
-    return data.messages.flatMap((message) => {
-      const record = recordValue(message);
-      return record ? [record] : [];
-    });
-  }
-  return [data];
-}
-
-function messageTitle(message: Record<string, unknown>): string {
-  const payload = recordValue(message.payload);
-  return firstNonEmptyString(
-    stringValue(payload?.summary),
-    stringValue(payload?.displayPrompt),
-    stringValue(payload?.text),
-    contentText(payload?.content),
-    stringValue(payload?.message),
-    stringValue(payload?.body),
-    stringValue(payload?.title)
-  );
-}
-
-function contentText(value: unknown): string {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-  if (!Array.isArray(value)) {
-    return "";
-  }
-  return value
-    .map((part) => {
-      const record = recordValue(part);
-      return record ? stringValue(record.text) : "";
-    })
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-}
-
-function firstNonEmptyString(...values: string[]): string {
-  return values.find(Boolean) ?? "";
-}
-
 function sessionTurnKey(agentSessionId: string, turnId: string): string {
   return `${agentSessionId}\n${turnId}`;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 function stringValue(value: unknown): string {

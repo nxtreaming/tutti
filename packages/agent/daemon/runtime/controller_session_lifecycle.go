@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	"github.com/tutti-os/tutti/packages/agent/daemon/titletext"
 )
 
 func (c *Controller) Start(ctx context.Context, input StartInput) (StartResult, error) {
@@ -50,7 +51,7 @@ func (c *Controller) Start(ctx context.Context, input StartInput) (StartResult, 
 		CWD:               strings.TrimSpace(input.CWD),
 		Env:               append([]string(nil), input.Env...),
 		Status:            SessionStatusReady,
-		Title:             firstNonEmpty(strings.TrimSpace(input.Title), provider),
+		Title:             firstNonEmpty(titletext.Normalize(input.Title), provider),
 		Visible:           sessionVisible(input.Visible),
 		RuntimeContext:    clonePayload(input.RuntimeContext),
 		ProviderTargetRef: clonePayload(input.ProviderTargetRef),
@@ -266,7 +267,7 @@ func (c *Controller) SetTitle(ctx context.Context, roomID, agentSessionID string
 	if !ok {
 		return Session{}, ErrSessionNotFound
 	}
-	title = strings.TrimSpace(title)
+	title = titletext.Normalize(title)
 	if session.Title == title {
 		return session, nil
 	}

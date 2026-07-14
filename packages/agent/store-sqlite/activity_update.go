@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tutti-os/tutti/packages/agent/daemon/titletext"
 )
 
 func (s *Store) UpdateSessionPinned(
@@ -62,7 +64,7 @@ func (s *Store) UpdateSessionTitle(
 	}
 	workspaceID = strings.TrimSpace(workspaceID)
 	agentSessionID = strings.TrimSpace(agentSessionID)
-	title = strings.TrimSpace(title)
+	title = titletext.Normalize(title)
 	if workspaceID == "" || agentSessionID == "" || title == "" {
 		return Session{}, false, nil
 	}
