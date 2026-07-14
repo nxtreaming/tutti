@@ -656,22 +656,30 @@ function AgentVisibleErrorMessage({
   const actionKey = presentation?.actionKey ?? null;
   const externalUrl = presentation?.externalUrl ?? null;
   const hint = visibleErrorHint(message);
+  // Plan/quota gates are account limits, not crashes — use the calmer warning
+  // tone so a Cursor free-plan "Upgrade your plan…" retry is not a danger card.
+  const isPlanOrQuotaLimit = error?.code === "quota_or_rate_limit";
+  const toneClassName = isPlanOrQuotaLimit
+    ? SYSTEM_NOTICE_WARNING_CLASS_NAME
+    : "border-[var(--on-danger-hover)] bg-[var(--on-danger)] text-[var(--state-danger)]";
+  const displayHeadline =
+    isPlanOrQuotaLimit && isProviderPlanLimitDetail(detail) ? detail : headline;
   return (
     <section
-      role="alert"
-      className="box-border w-full min-w-0 rounded-[8px] border border-[var(--on-danger-hover)] bg-[var(--on-danger)] p-3 text-[13px] leading-5 text-[var(--state-danger)]"
+      role={isPlanOrQuotaLimit ? "status" : "alert"}
+      className={`box-border w-full min-w-0 rounded-[8px] border p-3 text-[13px] leading-5 text-[var(--text-primary)] ${toneClassName}`}
     >
       <div className="flex min-w-0 items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="font-medium text-[var(--text-primary)]">
-            {headline}
+            {displayHeadline}
           </div>
           {hint ? (
             <div className="mt-1 text-[11px] text-[var(--text-secondary)]">
               {hint}
             </div>
           ) : null}
-          {detail ? (
+          {detail && displayHeadline !== detail ? (
             <AgentMessageDetailsDisclosure
               detail={detail}
               className="mt-1"
@@ -703,6 +711,14 @@ function AgentVisibleErrorMessage({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function isProviderPlanLimitDetail(detail: string): boolean {
+  const normalized = detail.trim().toLowerCase();
+  return (
+    normalized.includes("upgrade your plan to continue") ||
+    normalized.includes("add a payment method to continue")
   );
 }
 

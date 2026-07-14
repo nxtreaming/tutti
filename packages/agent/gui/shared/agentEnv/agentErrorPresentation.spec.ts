@@ -31,6 +31,15 @@ describe("classifyFailedAgentMessage", () => {
     expect(classifyFailedAgentMessage("here is your answer")).toBeNull();
     expect(classifyFailedAgentMessage(null)).toBeNull();
   });
+
+  it("recovers Cursor plan-limit copy into the quota bucket", () => {
+    expect(classifyFailedAgentMessage("Upgrade your plan to continue")).toBe(
+      "quota_or_rate_limit"
+    );
+    expect(classifyFailedAgentMessage("Add a payment method to continue")).toBe(
+      "quota_or_rate_limit"
+    );
+  });
 });
 
 describe("resolveAgentErrorPresentation", () => {

@@ -159,6 +159,10 @@ const FAILED_MESSAGE_CODE_MARKERS: ReadonlyArray<
   [
     "network_error",
     ["enotfound", "econnrefused", "econnreset", "getaddrinfo", "socket hang up"]
+  ],
+  [
+    "quota_or_rate_limit",
+    ["upgrade your plan to continue", "add a payment method to continue"]
   ]
 ];
 
