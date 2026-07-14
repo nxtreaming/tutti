@@ -23,13 +23,11 @@ const recentCandidateCap = 400
 // stalls the picker.
 const recentLookupTimeout = 4 * time.Second
 
-// recentLookupWindow is the rolling time window for "last used" candidates,
-// mirroring Finder's "Recents" behavior. We use a rolling window (not a natural
-// month) so the list never resets at the start of a month, and bound it because
-// mdfind returns hits unordered: an unbounded query would force us to cap an
-// arbitrary slice of (potentially) hundreds of thousands of all-time hits,
-// dropping the newest ones. 30 days matches Finder's widest named group.
-const recentLookupWindow = "$time.today(-30)"
+// finderRecentSpotlightQuery mirrors Finder's Recents scope: files that
+// LaunchServices has recorded as opened, excluding folders and incomplete
+// Safari downloads. Finder keeps older opened documents in Recents, so this
+// intentionally has no rolling date window.
+const finderRecentSpotlightQuery = "kMDItemLastUsedDate == * && kMDItemContentTypeTree != 'public.folder' && kMDItemFSName != '*.download'cd"
 
 // mdlsLastUsedDateLayout matches `mdls -name kMDItemLastUsedDate` output, e.g.
 // "kMDItemLastUsedDate = 2026-06-17 06:35:10 +0000".
@@ -108,15 +106,15 @@ type recentCandidate struct {
 	lastUsed     time.Time
 }
 
-// spotlightRecentCandidates returns recently used, non-folder paths under
-// rootPath within recentLookupWindow, capped to recentCandidateCap. Order is
-// Spotlight's (unranked by date here).
+// spotlightRecentCandidates returns Finder-compatible recent, non-folder paths
+// under rootPath, capped to recentCandidateCap. Order is Spotlight's (unranked
+// by date here).
 func spotlightRecentCandidates(ctx context.Context, rootPath string) ([]string, error) {
 	cmd := exec.CommandContext(
 		ctx,
 		"mdfind",
 		"-onlyin", rootPath,
-		"kMDItemLastUsedDate >= "+recentLookupWindow+" && kMDItemContentTypeTree != 'public.folder'",
+		finderRecentSpotlightQuery,
 	)
 	output, err := cmd.Output()
 	if err != nil {
