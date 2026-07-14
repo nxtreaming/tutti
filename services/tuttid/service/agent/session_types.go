@@ -121,8 +121,10 @@ type Session struct {
 }
 
 type ListSessionsInput struct {
-	SearchQuery string
-	Limit       int
+	AgentTargetID string
+	Cursor        string
+	SearchQuery   string
+	Limit         int
 }
 
 type SessionListPage struct {
@@ -143,27 +145,25 @@ type ListSessionSectionPageInput struct {
 	AgentTargetID string
 }
 
-type CountSessionSectionInput struct {
+type ListSessionSectionDeletionCandidatesInput struct {
 	SectionKey    string
 	AgentTargetID string
+	ExcludePinned bool
 }
 
-type SessionSectionCount struct {
+type SessionSectionDeletionCandidates struct {
 	WorkspaceID   string
 	SectionKey    string
 	AgentTargetID string
-	Count         int
+	ExcludePinned bool
+	SessionIDs    []string
 }
 
-type DeleteSessionSectionInput struct {
-	SectionKey    string
-	AgentTargetID string
+type DeleteSessionsBatchInput struct {
+	SessionIDs []string
 }
 
-type DeleteSessionSectionResult struct {
-	WorkspaceID       string
-	SectionKey        string
-	AgentTargetID     string
+type DeleteSessionsBatchResult struct {
 	RemovedMessages   int
 	RemovedSessions   int
 	RemovedSessionIDs []string
@@ -184,6 +184,7 @@ type SessionSectionsPage struct {
 type SessionPage struct {
 	Sessions   []Session
 	HasMore    bool
+	TotalCount int
 	NextCursor string
 }
 
@@ -193,6 +194,7 @@ type SessionSection struct {
 	UserProject *userprojectbiz.Project
 	Sessions    []Session
 	HasMore     bool
+	TotalCount  int
 	NextCursor  string
 }
 
@@ -238,18 +240,19 @@ type SessionMessage struct {
 type SessionReader interface {
 	GetSession(workspaceID string, agentSessionID string) (PersistedSession, bool)
 	ListSessions(workspaceID string) ([]PersistedSession, bool)
+	SessionDeleted(workspaceID string, agentSessionID string) (bool, error)
 }
 
 type SessionSectionReader interface {
 	ListSessionSection(context.Context, agentactivitybiz.ListSessionSectionInput) (agentactivitybiz.SessionSectionPage, bool)
 }
 
-type SessionSectionCounter interface {
-	CountSessionSection(context.Context, agentactivitybiz.CountSessionSectionInput) (agentactivitybiz.SessionSectionCount, bool)
+type SessionSectionDeletionCandidateReader interface {
+	ListSessionSectionDeletionCandidates(context.Context, agentactivitybiz.ListSessionSectionDeletionCandidatesInput) (agentactivitybiz.SessionSectionDeletionCandidates, bool)
 }
 
-type SessionSectionDeleter interface {
-	DeleteSessionSection(context.Context, agentactivitybiz.DeleteSessionSectionInput) (agentactivitybiz.DeleteSessionSectionResult, bool)
+type SessionBatchDeleter interface {
+	DeleteSessionsBatch(context.Context, agentactivitybiz.DeleteSessionsBatchInput) (agentactivitybiz.DeleteSessionsBatchResult, error)
 }
 
 type UserProjectReader interface {

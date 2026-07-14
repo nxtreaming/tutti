@@ -97,8 +97,9 @@ export type {
   AgentActivityRuntimeListSessionMessagesInput,
   AgentActivityRuntimeProviderProps,
   AgentActivityRuntimePromptContentBlock,
-  AgentActivityRuntimeDeleteSessionSectionResult,
-  AgentActivityRuntimeSessionSectionCount,
+  AgentActivityRuntimeDeleteSessionsBatchInput,
+  AgentActivityRuntimeDeleteSessionsBatchResult,
+  AgentActivityRuntimeSessionSectionDeletionCandidates,
   AgentActivityRuntimeSessionSectionScopeInput,
   AgentActivityRuntimeSetSessionPinnedInput,
   AgentActivityRuntimeUploadPromptContentInput,
@@ -131,7 +132,6 @@ export {
 } from "@tutti-os/agent-activity-core";
 export type {
   AgentActivityAdapter,
-  AgentActivityController,
   AgentActivityMessage,
   AgentActivityNeedsAttentionItem,
   AgentActivitySnapshot

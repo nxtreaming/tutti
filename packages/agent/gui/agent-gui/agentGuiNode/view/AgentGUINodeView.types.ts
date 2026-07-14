@@ -439,7 +439,10 @@ export interface AgentGUINodeViewProps {
       payload?: Record<string, unknown>;
     }) => void;
     interruptCurrentTurn: (noRunningResponseMessage: string) => void;
-    updateDraftContent: (draftContent: AgentComposerDraft) => void;
+    updateDraftContent: (
+      draftContent: AgentComposerDraft,
+      sourceScopeKey?: string
+    ) => void;
     updateSelectedProjectPath?: AgentComposerProps["onProjectPathChange"];
     updateComposerSettings: (settings: {
       model?: string | null;
@@ -463,7 +466,10 @@ export interface AgentGUINodeViewProps {
       title: string
     ) => Promise<void>;
     removeProject: (path: string) => void;
-    confirmDeleteProjectConversations: (path?: string) => void;
+    confirmDeleteProjectConversations: (
+      sectionKey?: string,
+      agentTargetId?: string | null
+    ) => Promise<string[]>;
     confirmDeleteConversations: (agentSessionIds: string[]) => void;
     requestDeleteConversation: (agentSessionId: string) => void;
     cancelDeleteConversation: () => void;

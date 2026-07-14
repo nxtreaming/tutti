@@ -14,21 +14,13 @@ import type {
   WorkbenchContribution,
   WorkbenchHostHandle
 } from "@tutti-os/workbench-surface";
-import {
-  CloseIcon,
-  FileTextIcon,
-  ImageFileIcon,
-  VideoFileIcon,
-  cn
-} from "@tutti-os/ui-system";
+import { CloseIcon, cn } from "@tutti-os/ui-system";
 import type { WorkspaceAgentActivityService } from "@renderer/features/workspace-agent";
 import type { DesktopBrowserApi } from "@preload/types";
 import { useTranslation } from "@renderer/i18n";
 import type { StandaloneAgentIssueManagerOpenRequest } from "../services/standaloneAgentIssueManagerLaunch.ts";
 import {
-  createStandaloneAgentFilePreviewTab,
   createStandaloneAgentToolSidebarState,
-  isStandaloneAgentFilePreviewTab,
   reduceStandaloneAgentToolSidebarState,
   type StandaloneAgentToolPanelId,
   type StandaloneAgentToolTab
@@ -47,6 +39,7 @@ import {
   type StandaloneAgentFileOpenRequest
 } from "./StandaloneAgentToolSidebarPanel.tsx";
 import { StandaloneAgentToolLoadingState } from "./StandaloneAgentToolLoadingState.tsx";
+import { StandaloneAgentDecisionNotifications } from "./StandaloneAgentDecisionNotifications.tsx";
 
 export type { StandaloneAgentFileOpenRequest } from "./StandaloneAgentToolSidebarPanel.tsx";
 const standaloneAgentToolPanelContentMountDelayMs = 260;
@@ -226,16 +219,8 @@ export function StandaloneAgentToolSidebar({
     }
     lastHandledFileOpenRequestRef.current = fileOpenRequest.requestID;
     const filesTabId = resolveToolTabId(state.mountedTabs, "files");
+    fileOpenRequestTabIdRef.current = filesTabId;
     dispatch({ panel: "files", tabId: filesTabId, type: "open-panel" });
-    if (fileOpenRequest.target) {
-      fileOpenRequestTabIdRef.current = null;
-      dispatch({
-        tab: createStandaloneAgentFilePreviewTab(fileOpenRequest.target),
-        type: "open-file"
-      });
-    } else {
-      fileOpenRequestTabIdRef.current = filesTabId;
-    }
     scheduleResizeForPanel("files");
   }, [fileOpenRequest, scheduleResizeForPanel, state.mountedTabs]);
   useEffect(() => {
@@ -325,6 +310,12 @@ export function StandaloneAgentToolSidebar({
 
   return (
     <>
+      <StandaloneAgentDecisionNotifications
+        activityService={activityService}
+        i18n={i18n}
+        messageCenterOpen={activePanel === "messages"}
+        workspaceId={workspaceId}
+      />
       <div
         className="workbench-window__header workbench-window__header--custom"
         style={
@@ -563,7 +554,7 @@ function resolveToolTabId(
 ): string {
   for (let index = tabs.length - 1; index >= 0; index -= 1) {
     const tab = tabs[index];
-    if (tab?.panel === panel && !isStandaloneAgentFilePreviewTab(tab)) {
+    if (tab?.panel === panel) {
       return tab.id;
     }
   }
@@ -574,9 +565,7 @@ function resolveToolTabLabel(
   tab: StandaloneAgentToolTab,
   copy: ToolSidebarCopy
 ): string {
-  return isStandaloneAgentFilePreviewTab(tab)
-    ? tab.filePreview.name
-    : copy[tab.panel];
+  return copy[tab.panel];
 }
 
 function ToolSidebarTabIcon({
@@ -584,22 +573,13 @@ function ToolSidebarTabIcon({
 }: {
   tab: StandaloneAgentToolTab;
 }): ReactNode {
-  if (!isStandaloneAgentFilePreviewTab(tab)) {
-    return (
-      <ToolSidebarPanelIcon
-        aria-hidden
-        className="size-3.5 shrink-0"
-        panel={tab.panel}
-      />
-    );
-  }
-  const Icon =
-    tab.filePreview.fileKind === "image"
-      ? ImageFileIcon
-      : tab.filePreview.fileKind === "video"
-        ? VideoFileIcon
-        : FileTextIcon;
-  return <Icon aria-hidden className="size-3.5 shrink-0" />;
+  return (
+    <ToolSidebarPanelIcon
+      aria-hidden
+      className="size-3.5 shrink-0"
+      panel={tab.panel}
+    />
+  );
 }
 
 function createToolTabId(panel: StandaloneAgentToolPanelId): string {

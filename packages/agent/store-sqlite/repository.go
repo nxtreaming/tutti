@@ -12,10 +12,10 @@ import "context"
 // All methods are scoped by a host-defined workspace ID.
 type Repository interface {
 	ClearSessions(context.Context, string) (ClearSessionsResult, error)
-	CountSessionSection(context.Context, CountSessionSectionInput) (SessionSectionCount, bool, error)
 	DeleteSession(context.Context, string, string) (bool, error)
-	DeleteSessionSection(context.Context, DeleteSessionSectionInput) (DeleteSessionSectionResult, bool, error)
+	DeleteSessionsBatch(context.Context, DeleteSessionsBatchInput) (DeleteSessionsBatchResult, error)
 	GetSession(context.Context, string, string) (Session, bool, error)
+	SessionDeleted(context.Context, string, string) (bool, error)
 	GetLatestTurn(context.Context, string, string) (Turn, bool, error)
 	GetTurn(context.Context, string, string, string) (Turn, bool, error)
 	ListSessionInteractions(context.Context, ListSessionInteractionsInput) ([]Interaction, error)
@@ -24,6 +24,7 @@ type Repository interface {
 	ListTurnsBySession(context.Context, string, map[string]string) (map[string]Turn, error)
 	ListPendingInteractionsBySession(context.Context, string, []string) (map[string][]Interaction, error)
 	ListSessionSection(context.Context, ListSessionSectionInput) (SessionSectionPage, bool, error)
+	ListSessionSectionDeletionCandidates(context.Context, ListSessionSectionDeletionCandidatesInput) (SessionSectionDeletionCandidates, bool, error)
 	ListSessionTurns(context.Context, string, string) ([]Turn, error)
 	ListSessions(context.Context, string) ([]Session, bool, error)
 	ListWorkspaceGeneratedFiles(context.Context, ListWorkspaceGeneratedFilesInput) (GeneratedFileList, bool, error)
@@ -87,37 +88,35 @@ type GeneratedFileList struct {
 }
 
 type ListSessionSectionInput struct {
-	WorkspaceID       string
-	SectionKey        string
-	AgentTargetID     string
-	CursorUpdatedAtMS int64
-	CursorSessionID   string
-	Limit             int
+	WorkspaceID          string
+	SectionKey           string
+	AgentTargetID        string
+	CursorSortTimeUnixMS int64
+	CursorSessionID      string
+	Limit                int
 }
 
-type CountSessionSectionInput struct {
+type ListSessionSectionDeletionCandidatesInput struct {
 	WorkspaceID   string
 	SectionKey    string
 	AgentTargetID string
+	ExcludePinned bool
 }
 
-type SessionSectionCount struct {
+type SessionSectionDeletionCandidates struct {
 	WorkspaceID   string
 	SectionKey    string
 	AgentTargetID string
-	Count         int
+	ExcludePinned bool
+	SessionIDs    []string
 }
 
-type DeleteSessionSectionInput struct {
-	WorkspaceID   string
-	SectionKey    string
-	AgentTargetID string
+type DeleteSessionsBatchInput struct {
+	WorkspaceID string
+	SessionIDs  []string
 }
 
-type DeleteSessionSectionResult struct {
-	WorkspaceID       string
-	SectionKey        string
-	AgentTargetID     string
+type DeleteSessionsBatchResult struct {
 	RemovedMessages   int
 	RemovedSessions   int
 	RemovedSessionIDs []string
@@ -130,6 +129,7 @@ type SessionSectionPage struct {
 	SectionKey    string
 	Sessions      []Session
 	HasMore       bool
+	TotalCount    int
 	NextCursor    string
 	NextUpdatedAt int64
 }

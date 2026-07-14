@@ -13,6 +13,10 @@ const standaloneWindowPanelHostsSource = readFileSync(
   resolve(currentDirectory, "StandaloneAgentWindowPanelHosts.tsx"),
   "utf8"
 );
+const standaloneHeaderIdentitySource = readFileSync(
+  resolve(currentDirectory, "standaloneAgentHeaderIdentity.ts"),
+  "utf8"
+);
 const standaloneLaunchRoutingSource = readFileSync(
   resolve(currentDirectory, "useStandaloneAgentLaunchRouting.ts"),
   "utf8"
@@ -70,14 +74,10 @@ test("standalone Agent starts the app runtime lifecycle only when apps open", ()
   );
 });
 
-test("standalone Agent routes files and apps into the right sidebar", () => {
+test("standalone Agent opens files like Finder and routes links into the right sidebar", () => {
   assert.match(
     standaloneWindowSource,
-    /setCanvasFilePreviewLauncher\([\s\S]*?openFileInSidebar\(target\)/
-  );
-  assert.match(
-    standaloneWindowSource,
-    /typeof file === "string" \? \{\} : \{ target: file \}/
+    /setCanvasFilePreviewLauncher\([\s\S]*?desktopApi\.host\.files\.openFile\(workspaceId, target\.path\)[\s\S]*?return true/
   );
   assert.match(standaloneWindowSource, /workspaceFilePreviewMode: "canvas"/);
   assert.match(
@@ -166,21 +166,31 @@ test("standalone Agent widens a narrow window before expanding the conversation 
   );
 });
 
-test("standalone Agent restores the active session title in the window header", () => {
+test("standalone Agent hides home identity and shows it after local session start", () => {
   assert.match(
     standaloneWindowSource,
-    /activitySnapshot\.sessions\s*\.find\([\s\S]*?session\.agentSessionId[\s\S]*?nodeState\.lastActiveAgentSessionId[\s\S]*?\)\s*\?\.title\?\.trim\(\) \|\| null/
+    /resolveStandaloneAgentHeaderIdentity\(\{[\s\S]*?agentTargetId: activeAgentTargetId,[\s\S]*?lastActiveAgentSessionId: nodeState\.lastActiveAgentSessionId,[\s\S]*?sessions: activitySnapshot\.sessions/
   );
+  assert.match(
+    standaloneHeaderIdentitySource,
+    /if \(!input\.lastActiveAgentSessionId\?\.trim\(\)\) \{[\s\S]*?agentTitle: null,[\s\S]*?conversationIconUrl: null,[\s\S]*?conversationTitle: null/
+  );
+  assert.match(
+    standaloneHeaderIdentitySource,
+    /agentTitle: resolveAgentGuiWorkbenchHeaderTitle\(\{[\s\S]*?agentName: agent\?\.name,[\s\S]*?conversationTitle,[\s\S]*?provider/
+  );
+  assert.match(standaloneWindowSource, /agentTitle=\{headerAgentTitle\}/);
   assert.match(
     standaloneWindowSource,
     /conversationTitle=\{headerConversationTitle\}/
   );
 });
 
-test("standalone Agent keeps its window title visible", () => {
-  assert.match(
+test("standalone Agent hides the generic app title", () => {
+  assert.match(standaloneWindowSource, /showAppTitle=\{false\}/);
+  assert.doesNotMatch(
     standaloneWindowSource,
-    /showAppTitle\s*\n?\s+title=\{i18n\.t\("workspace\.agentGui\.fallbackAgentLabel"\)\}/
+    /title=\{i18n\.t\("workspace\.agentGui\.fallbackAgentLabel"\)\}/
   );
 });
 

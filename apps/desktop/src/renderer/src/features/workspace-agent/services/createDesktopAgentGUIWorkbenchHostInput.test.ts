@@ -1464,7 +1464,7 @@ function createWorkspaceAgentActivityService(
     },
     async listSessionSections(input) {
       return {
-        pinned: { hasMore: false, sessions: [] },
+        pinned: { hasMore: false, sessions: [], totalCount: 0 },
         sections: [],
         workspaceId: input.workspaceId
       };
@@ -1474,29 +1474,30 @@ function createWorkspaceAgentActivityService(
         kind: "conversations",
         sectionKey: input.sectionKey,
         sessions: [],
-        hasMore: false
+        hasMore: false,
+        totalCount: 0
       };
     },
-    async countSessionSection(input) {
+    async listSessionSectionDeletionCandidates(input) {
       return {
-        count: 0,
+        excludePinned: input.excludePinned ?? false,
         sectionKey: input.sectionKey,
+        sessionIds: [],
         workspaceId: input.workspaceId
       };
     },
-    async deleteSessionSection(input) {
+    async deleteSessionsBatch() {
       return {
         removedMessages: 0,
         removedSessionIds: [],
-        removedSessions: 0,
-        sectionKey: input.sectionKey,
-        workspaceId: input.workspaceId
+        removedSessions: 0
       };
     },
     async listPinnedSessionsPage() {
       return {
         hasMore: false,
-        sessions: []
+        sessions: [],
+        totalCount: 0
       };
     },
     async scanExternalSessionImports() {

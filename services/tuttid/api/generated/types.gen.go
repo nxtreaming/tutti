@@ -2896,14 +2896,16 @@ type DeleteWorkspaceAgentSessionResponse struct {
 	Removed bool `json:"removed"`
 }
 
-// DeleteWorkspaceAgentSessionSectionResponse defines model for DeleteWorkspaceAgentSessionSectionResponse.
-type DeleteWorkspaceAgentSessionSectionResponse struct {
-	AgentTargetId     *string  `json:"agentTargetId,omitempty"`
+// DeleteWorkspaceAgentSessionsBatchRequest defines model for DeleteWorkspaceAgentSessionsBatchRequest.
+type DeleteWorkspaceAgentSessionsBatchRequest struct {
+	SessionIds []string `json:"sessionIds"`
+}
+
+// DeleteWorkspaceAgentSessionsBatchResponse defines model for DeleteWorkspaceAgentSessionsBatchResponse.
+type DeleteWorkspaceAgentSessionsBatchResponse struct {
 	RemovedMessages   int      `json:"removedMessages"`
 	RemovedSessionIds []string `json:"removedSessionIds"`
 	RemovedSessions   int      `json:"removedSessions"`
-	SectionKey        string   `json:"sectionKey"`
-	WorkspaceId       string   `json:"workspaceId"`
 }
 
 // DeleteWorkspaceAppResponse defines model for DeleteWorkspaceAppResponse.
@@ -4016,6 +4018,10 @@ type WorkspaceAgentSessionGoalControlResponse struct {
 
 // WorkspaceAgentSessionListResponse defines model for WorkspaceAgentSessionListResponse.
 type WorkspaceAgentSessionListResponse struct {
+	HasMore bool `json:"hasMore"`
+
+	// NextCursor Cursor for the next older matching session page, encoded as conversationSortTimeUnixMs|agentSessionId.
+	NextCursor  *string                 `json:"nextCursor,omitempty"`
 	Sessions    []WorkspaceAgentSession `json:"sessions"`
 	WorkspaceId string                  `json:"workspaceId"`
 }
@@ -4055,6 +4061,9 @@ type WorkspaceAgentSessionPage struct {
 	// NextCursor Cursor for the next older page, encoded as pinnedAtUnixMs|agentSessionId for pinned pages.
 	NextCursor *string                 `json:"nextCursor,omitempty"`
 	Sessions   []WorkspaceAgentSession `json:"sessions"`
+
+	// TotalCount Total visible sessions in this page scope before cursor pagination.
+	TotalCount int `json:"totalCount"`
 }
 
 // WorkspaceAgentSessionPageResponse defines model for WorkspaceAgentSessionPageResponse.
@@ -4073,19 +4082,23 @@ type WorkspaceAgentSessionSection struct {
 	HasMore bool                             `json:"hasMore"`
 	Kind    WorkspaceAgentSessionSectionKind `json:"kind"`
 
-	// NextCursor Cursor for the next older page, encoded as updatedAtUnixMs|agentSessionId.
-	NextCursor  *string                 `json:"nextCursor,omitempty"`
-	SectionKey  string                  `json:"sectionKey"`
-	Sessions    []WorkspaceAgentSession `json:"sessions"`
-	UserProject *UserProject            `json:"userProject,omitempty"`
+	// NextCursor Cursor for the next older page, encoded as conversationSortTimeUnixMs|agentSessionId.
+	NextCursor *string                 `json:"nextCursor,omitempty"`
+	SectionKey string                  `json:"sectionKey"`
+	Sessions   []WorkspaceAgentSession `json:"sessions"`
+
+	// TotalCount Total visible sessions in this section before cursor pagination.
+	TotalCount  int          `json:"totalCount"`
+	UserProject *UserProject `json:"userProject,omitempty"`
 }
 
-// WorkspaceAgentSessionSectionCountResponse defines model for WorkspaceAgentSessionSectionCountResponse.
-type WorkspaceAgentSessionSectionCountResponse struct {
-	AgentTargetId *string `json:"agentTargetId,omitempty"`
-	Count         int     `json:"count"`
-	SectionKey    string  `json:"sectionKey"`
-	WorkspaceId   string  `json:"workspaceId"`
+// WorkspaceAgentSessionSectionDeletionCandidatesResponse defines model for WorkspaceAgentSessionSectionDeletionCandidatesResponse.
+type WorkspaceAgentSessionSectionDeletionCandidatesResponse struct {
+	AgentTargetId *string  `json:"agentTargetId,omitempty"`
+	ExcludePinned bool     `json:"excludePinned"`
+	SectionKey    string   `json:"sectionKey"`
+	SessionIds    []string `json:"sessionIds"`
+	WorkspaceId   string   `json:"workspaceId"`
 }
 
 // WorkspaceAgentSessionSectionKind defines model for WorkspaceAgentSessionSectionKind.
@@ -4791,14 +4804,6 @@ type ListWorkspaceAgentGeneratedFilesParams struct {
 	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// DeleteWorkspaceAgentSessionSectionParams defines parameters for DeleteWorkspaceAgentSessionSection.
-type DeleteWorkspaceAgentSessionSectionParams struct {
-	SectionKey string `form:"sectionKey" json:"sectionKey"`
-
-	// AgentTargetId Optional agent target filter applied before deletion.
-	AgentTargetId *string `form:"agentTargetId,omitempty" json:"agentTargetId,omitempty"`
-}
-
 // ListWorkspaceAgentSessionSectionsParams defines parameters for ListWorkspaceAgentSessionSections.
 type ListWorkspaceAgentSessionSectionsParams struct {
 	LimitPerSection *int `form:"limitPerSection,omitempty" json:"limitPerSection,omitempty"`
@@ -4807,19 +4812,22 @@ type ListWorkspaceAgentSessionSectionsParams struct {
 	AgentTargetId *string `form:"agentTargetId,omitempty" json:"agentTargetId,omitempty"`
 }
 
-// CountWorkspaceAgentSessionSectionParams defines parameters for CountWorkspaceAgentSessionSection.
-type CountWorkspaceAgentSessionSectionParams struct {
+// ListWorkspaceAgentSessionSectionDeletionCandidatesParams defines parameters for ListWorkspaceAgentSessionSectionDeletionCandidates.
+type ListWorkspaceAgentSessionSectionDeletionCandidatesParams struct {
 	SectionKey string `form:"sectionKey" json:"sectionKey"`
 
-	// AgentTargetId Optional agent target filter applied before counting.
+	// AgentTargetId Optional agent target filter applied before selecting candidates.
 	AgentTargetId *string `form:"agentTargetId,omitempty" json:"agentTargetId,omitempty"`
+
+	// ExcludePinned Exclude pinned sessions from the deletion candidate snapshot.
+	ExcludePinned *bool `form:"excludePinned,omitempty" json:"excludePinned,omitempty"`
 }
 
 // ListWorkspaceAgentSessionSectionPageParams defines parameters for ListWorkspaceAgentSessionSectionPage.
 type ListWorkspaceAgentSessionSectionPageParams struct {
 	SectionKey string `form:"sectionKey" json:"sectionKey"`
 
-	// Cursor Cursor for the next older page, encoded as updatedAtUnixMs|agentSessionId.
+	// Cursor Cursor for the next older page, encoded as conversationSortTimeUnixMs|agentSessionId.
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -4839,8 +4847,10 @@ type ListWorkspaceAgentPinnedSessionPageParams struct {
 
 // ListWorkspaceAgentSessionsParams defines parameters for ListWorkspaceAgentSessions.
 type ListWorkspaceAgentSessionsParams struct {
-	SearchQuery *string `form:"searchQuery,omitempty" json:"searchQuery,omitempty"`
-	Limit       *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	AgentTargetId *string `form:"agentTargetId,omitempty" json:"agentTargetId,omitempty"`
+	SearchQuery   *string `form:"searchQuery,omitempty" json:"searchQuery,omitempty"`
+	Cursor        *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit         *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListWorkspaceAgentSessionMessagesParams defines parameters for ListWorkspaceAgentSessionMessages.
@@ -4968,6 +4978,9 @@ type UpdateWorkspaceJSONRequestBody = UpdateWorkspaceRequest
 
 // CreateWorkspaceAgentSessionJSONRequestBody defines body for CreateWorkspaceAgentSession for application/json ContentType.
 type CreateWorkspaceAgentSessionJSONRequestBody = CreateWorkspaceAgentSessionRequest
+
+// DeleteWorkspaceAgentSessionsBatchJSONRequestBody defines body for DeleteWorkspaceAgentSessionsBatch for application/json ContentType.
+type DeleteWorkspaceAgentSessionsBatchJSONRequestBody = DeleteWorkspaceAgentSessionsBatchRequest
 
 // ImportWorkspaceExternalAgentSessionsJSONRequestBody defines body for ImportWorkspaceExternalAgentSessions for application/json ContentType.
 type ImportWorkspaceExternalAgentSessionsJSONRequestBody = ImportExternalAgentSessionsRequest

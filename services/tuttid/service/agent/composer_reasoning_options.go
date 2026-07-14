@@ -5,7 +5,6 @@ import (
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
-	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
 )
 
 type composerModelReasoningProfile struct {
@@ -71,16 +70,6 @@ func composerReasoningConfigFromOptions(
 	}
 }
 
-func reasoningEffortOptions(provider string, selected string) []map[string]string {
-	return composerReasoningOptionValuesToRuntimeOptions(
-		composerReasoningOptionValues(
-			provider,
-			selected,
-			preferencesbiz.DefaultDesktopLocale,
-		),
-	)
-}
-
 func reasoningEffortValuesForProvider(provider string) []string {
 	if !composerProfileKnown(provider) {
 		return nil
@@ -90,6 +79,15 @@ func reasoningEffortValuesForProvider(provider string) []string {
 		return nil
 	}
 	return append([]string(nil), profile.ReasoningEffortValues...)
+}
+
+// composerProviderUsesModelReasoningCatalog identifies providers whose model
+// catalog is authoritative for reasoning values, including strict catalogs
+// that intentionally expose no provider-level fallback options.
+func composerProviderUsesModelReasoningCatalog(provider string) bool {
+	kind := composerProfileFor(provider).ReasoningEffortOptions
+	return kind == providerregistry.ReasoningEffortOptionsModelCatalog ||
+		kind == providerregistry.ReasoningEffortOptionsStrictModelCatalog
 }
 
 func composerReasoningOptionValues(provider string, selected string, locale string) []ComposerConfigOptionValue {

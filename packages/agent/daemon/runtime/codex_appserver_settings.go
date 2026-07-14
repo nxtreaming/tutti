@@ -23,51 +23,6 @@ func (a *CodexAppServerAdapter) ApplyPermissionMode(_ context.Context, session S
 	return nil
 }
 
-func (a *CodexAppServerAdapter) ApplySessionSettings(
-	_ context.Context,
-	session Session,
-	patch SessionSettingsPatch,
-) error {
-	// Model and reasoning effort are applied as per-turn overrides on the next
-	// turn/start; no live RPC is required. Mirror the values into the config
-	// option state so pickers stay in sync.
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	appSession := a.sessions[strings.TrimSpace(session.AgentSessionID)]
-	if appSession == nil {
-		return nil
-	}
-	appSession.ensureInitialized()
-	if patch.Model != nil {
-		if model := strings.TrimSpace(*patch.Model); model != "" {
-			appSession.configOptions["model"] = model
-			updateConfigOptionDescriptorValue(appSession.configOptionDescriptors, "model", model)
-		}
-	}
-	if patch.ReasoningEffort != nil {
-		if reasoning := codexACPReasoningEffortValue(*patch.ReasoningEffort); reasoning != "" {
-			appSession.configOptions["reasoning_effort"] = reasoning
-			updateConfigOptionDescriptorValue(appSession.configOptionDescriptors, "reasoning_effort", reasoning)
-		}
-	}
-	if patch.Speed != nil {
-		// Speed (service_tier) is applied as a config override on the next
-		// thread/start; mirror it into the picker state so the dropdown stays
-		// in sync. "standard" clears the override.
-		if speed := strings.TrimSpace(*patch.Speed); speed != "" {
-			appSession.configOptions["service_tier"] = speed
-			updateConfigOptionDescriptorValue(appSession.configOptionDescriptors, "service_tier", speed)
-		}
-	}
-	return nil
-}
-
-func (*CodexAppServerAdapter) RequiresNewSessionForSettings(Session, SessionSettingsPatch) bool {
-	// The app-server supports per-turn model/effort overrides, so settings
-	// changes never require recreating the session.
-	return false
-}
-
 func (a *CodexAppServerAdapter) SessionState(session Session) SessionStateSnapshot {
 	snapshot := SessionStateSnapshot{
 		RoomID:            session.RoomID,
@@ -131,12 +86,11 @@ func (a *CodexAppServerAdapter) SessionState(session Session) SessionStateSnapsh
 	codexCapabilities = appendBrowserUseCapability(codexCapabilities, session.Env)
 	codexCapabilities = appendComputerUseCapability(codexCapabilities, session.Env)
 	snapshot.RuntimeContext["capabilities"] = codexCapabilities
-	snapshot.Settings = sessionSettingsWithACPConfig(
+	snapshot.Settings = codexAppServerSessionSettingsWithConfig(
 		session.Settings,
 		session.Provider,
 		session.PermissionModeID,
 		state.configOptions,
-		true,
 	)
 	if snapshot.Settings != nil {
 		snapshot.RuntimeContext["model"] = snapshot.Settings.Model

@@ -158,6 +158,7 @@ type codexAppServerSession struct {
 	account                map[string]any
 	rateLimits             map[string]any
 	goal                   map[string]any
+	models                 []map[string]any
 	startupModelsReady     bool
 	startupRateLimitsReady bool
 	// lifecycleSeq numbers the adapter's TurnLifecycle snapshots (ADR 0008):

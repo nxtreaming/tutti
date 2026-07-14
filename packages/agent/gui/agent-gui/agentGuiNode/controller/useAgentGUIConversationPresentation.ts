@@ -9,6 +9,7 @@ import {
 } from "../../../agentTargets";
 import type { AgentGUINodeData, AgentGUIAgentTarget } from "../../../types";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
+import { resolveAgentComposerDraftScopeKey } from "../model/agentComposerDraftScope";
 import {
   applyAgentGUIConversationProjects,
   resolveAgentGUIConversationProject,
@@ -35,7 +36,7 @@ interface UseAgentGUIConversationPresentationInput {
   data: AgentGUINodeData;
   dataRef: CurrentValue<AgentGUINodeData>;
   defaultAgentTargetId: string | null;
-  draftBySessionId: Record<string, AgentComposerDraft>;
+  draftByScopeKey: Record<string, AgentComposerDraft>;
   hasUnconfirmedSubmit: boolean;
   isCreatingConversation: boolean;
   isNoProjectPath?: (input: { path: string }) => boolean;
@@ -57,11 +58,18 @@ export function useAgentGUIConversationPresentation(
   input: UseAgentGUIConversationPresentationInput
 ) {
   const activeConversation = useMemo(() => {
-    const resolved = resolveConversationSummaryById(
+    const resolvedConversation = resolveConversationSummaryById(
       input.conversations,
       input.activeConversationId,
       input.transientConversation
     );
+    const resolved = resolvedConversation
+      ? (applyAgentGUIConversationProjects(
+          [resolvedConversation],
+          input.userProjects,
+          { isNoProjectPath: input.isNoProjectPath }
+        )[0] ?? resolvedConversation)
+      : null;
     if (resolved) {
       const activityDisplayStatus = input.activityDisplayStatuses.get(
         resolved.id
@@ -95,8 +103,10 @@ export function useAgentGUIConversationPresentation(
       input.isSubmitting ||
       input.isCreatingConversation ||
       Object.prototype.hasOwnProperty.call(
-        input.draftBySessionId,
-        input.activeConversationId
+        input.draftByScopeKey,
+        resolveAgentComposerDraftScopeKey({
+          agentSessionId: input.activeConversationId
+        })
       )
         ? ("working" as const)
         : ("ready" as const);
@@ -128,7 +138,7 @@ export function useAgentGUIConversationPresentation(
     input.conversations,
     input.currentUserId,
     input.data.provider,
-    input.draftBySessionId,
+    input.draftByScopeKey,
     input.hasUnconfirmedSubmit,
     input.isCreatingConversation,
     input.isNoProjectPath,

@@ -120,6 +120,12 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateSe
 	logAgentSubmitTrace("service.create.model_validated", workspaceID, input.AgentSessionID, input.Metadata, map[string]any{
 		"model": value(input.Model),
 	})
+	input.ReasoningEffort = s.clampReasoningEffortPointerForModel(
+		ctx,
+		provider,
+		value(input.Model),
+		input.ReasoningEffort,
+	)
 	nodeStartedAt = time.Now()
 	cwd, err := s.resolveCwd(ctx, input.Cwd)
 	if err != nil {
@@ -160,20 +166,17 @@ func (s *Service) Create(ctx context.Context, workspaceID string, input CreateSe
 	session, err := func() (ProviderRuntimeSession, error) {
 		defer releaseStartup()
 		return s.controller().Start(ctx, RuntimeStartInput{
-			WorkspaceID:      workspaceID,
-			AgentSessionID:   strings.TrimSpace(input.AgentSessionID),
-			AgentTargetID:    input.AgentTargetID,
-			Provider:         provider,
-			Cwd:              prepared.Cwd,
-			Env:              prepared.Env,
-			Title:            value(input.Title),
-			PermissionModeID: value(input.PermissionModeID),
-			Model:            clampComposerModelForProvider(provider, value(input.Model)),
-			PlanMode:         clampComposerPlanModeForProvider(provider, valueBool(input.PlanMode)),
-			ReasoningEffort: normalizeReasoningEffortForProvider(
-				provider,
-				value(input.ReasoningEffort),
-			),
+			WorkspaceID:       workspaceID,
+			AgentSessionID:    strings.TrimSpace(input.AgentSessionID),
+			AgentTargetID:     input.AgentTargetID,
+			Provider:          provider,
+			Cwd:               prepared.Cwd,
+			Env:               prepared.Env,
+			Title:             value(input.Title),
+			PermissionModeID:  value(input.PermissionModeID),
+			Model:             clampComposerModelForProvider(provider, value(input.Model)),
+			PlanMode:          clampComposerPlanModeForProvider(provider, valueBool(input.PlanMode)),
+			ReasoningEffort:   value(input.ReasoningEffort),
 			BrowserUse:        input.BrowserUse,
 			ComputerUse:       input.ComputerUse,
 			ProviderTargetRef: clonePayload(input.ProviderTargetRef),
@@ -341,22 +344,19 @@ func (s *Service) prepareRuntime(ctx context.Context, workspaceID string, cwd st
 	}
 	provider := strings.TrimSpace(input.Provider)
 	prepared, err := s.RuntimePreparer.Prepare(ctx, runtimeprep.PrepareInput{
-		WorkspaceID:       workspaceID,
-		AgentSessionID:    strings.TrimSpace(input.AgentSessionID),
-		AgentTargetID:     strings.TrimSpace(input.AgentTargetID),
-		Provider:          provider,
-		Cwd:               cwd,
-		Title:             value(input.Title),
-		PermissionModeID:  value(input.PermissionModeID),
-		PlanMode:          clampComposerPlanModeForProvider(provider, valueBool(input.PlanMode)),
-		BrowserUse:        clampComposerBrowserUseForProvider(provider, input.BrowserUse),
-		ComputerUse:       clampComposerComputerUseForProvider(provider, input.ComputerUse),
-		ProviderTargetRef: clonePayload(input.ProviderTargetRef),
-		Model:             clampComposerModelForProvider(provider, value(input.Model)),
-		ReasoningEffort: normalizeReasoningEffortForProvider(
-			provider,
-			value(input.ReasoningEffort),
-		),
+		WorkspaceID:               workspaceID,
+		AgentSessionID:            strings.TrimSpace(input.AgentSessionID),
+		AgentTargetID:             strings.TrimSpace(input.AgentTargetID),
+		Provider:                  provider,
+		Cwd:                       cwd,
+		Title:                     value(input.Title),
+		PermissionModeID:          value(input.PermissionModeID),
+		PlanMode:                  clampComposerPlanModeForProvider(provider, valueBool(input.PlanMode)),
+		BrowserUse:                clampComposerBrowserUseForProvider(provider, input.BrowserUse),
+		ComputerUse:               clampComposerComputerUseForProvider(provider, input.ComputerUse),
+		ProviderTargetRef:         clonePayload(input.ProviderTargetRef),
+		Model:                     clampComposerModelForProvider(provider, value(input.Model)),
+		ReasoningEffort:           value(input.ReasoningEffort),
 		ConversationDetailMode:    input.ConversationDetailMode,
 		ExtraSkills:               sessionSkillBundlesToProviderSkillBundles(input.ExtraSkills),
 		Metadata:                  input.Metadata,
@@ -440,6 +440,15 @@ func (s *Service) LocalAttachmentPath(ctx context.Context, workspaceID string, a
 }
 
 func (s *Service) get(ctx context.Context, workspaceID string, agentSessionID string, _ bool) (Session, error) {
+	if s.SessionReader != nil {
+		deleted, err := s.SessionReader.SessionDeleted(workspaceID, agentSessionID)
+		if err != nil {
+			return Session{}, err
+		}
+		if deleted {
+			return Session{}, ErrSessionNotFound
+		}
+	}
 	session, ok := s.controller().Session(workspaceID, agentSessionID)
 	if ok {
 		resumable := s.controller().CanResume(runtimeResumeInputFromRuntimeSession(session))
@@ -568,35 +577,6 @@ func (s *Service) cleanupRuntime(ctx context.Context, workspaceID string, agentS
 		WorkspaceID:    workspaceID,
 		AgentSessionID: agentSessionID,
 	})
-}
-
-func (s *Service) UpdateSettings(ctx context.Context, workspaceID string, agentSessionID string, settings ComposerSettingsPatch) (Session, error) {
-	ensured, err := s.ensureRuntimeSessionResult(ctx, workspaceID, agentSessionID)
-	if err != nil {
-		return Session{}, err
-	}
-	if settings.ReasoningEffort != nil {
-		normalizedReasoningEffort := normalizeReasoningEffortForProvider(
-			strings.TrimSpace(ensured.Session.Provider),
-			*settings.ReasoningEffort,
-		)
-		settings.ReasoningEffort = &normalizedReasoningEffort
-	}
-	if settings.Speed != nil {
-		normalizedSpeed := normalizeSpeedForProvider(
-			strings.TrimSpace(ensured.Session.Provider),
-			*settings.Speed,
-		)
-		settings.Speed = &normalizedSpeed
-	}
-	if err := s.controller().UpdateSettings(ctx, RuntimeUpdateSettingsInput{
-		WorkspaceID:    workspaceID,
-		AgentSessionID: agentSessionID,
-		Settings:       settings,
-	}); err != nil {
-		return Session{}, normalizeRuntimeError(err)
-	}
-	return s.Get(ctx, workspaceID, agentSessionID)
 }
 
 func (s *Service) SubmitInteractive(ctx context.Context, workspaceID string, agentSessionID string, requestID string, input SubmitInteractiveInput) (Session, error) {

@@ -375,38 +375,44 @@ Turn state, loading, cancel, restore, rail projection, event updates, imports, a
 
 - Symptom:
   Switching the Agent GUI aggregation rail between All, Cursor, Codex, or Claude
-  leaves the middle list and right detail panel out of sync. A provider tab can
-  still show other providers' sessions, or the right panel keeps the previous
-  agent after the middle list already changed.
+  makes the selected row disappear, collapses a loaded page, or briefly flashes
+  missing Show more controls. Five page rows plus one selected overlay may show
+  Show more/Show less even when only six sessions exist, or a nine-session
+  section may ignore the first Show more click. Restart can reproduce the same
+  selected-row loss.
 - Quick checks:
-  Inspect `workspace_agent_sessions.agent_target_id` for legacy Cursor rows. Old
-  Cursor imports may be missing `agent_target_id` while still carrying
-  `provider=cursor`. Confirm the active `conversationFilter` in the controller
-  and the per-query `agentGuiConversationListStore` projection for the selected
-  `local:<provider>` target.
+  Inspect `workspace_agent_sessions.agent_target_id` and `rail_section_key`.
+  Confirm section requests carry the selected `agentTargetId` before pagination
+  and responses preserve `totalCount`, `hasMore`, and `nextCursor`. In the
+  renderer, distinguish daemon-owned section membership ids from engine-owned
+  session entities; activating or hydrating one session must not rewrite the
+  loaded membership page.
 - Root cause:
-  Conversation retention in `agentGuiConversationListStore` previously kept
-  every targetless session under any agent-target tab. The rail also merged
-  unfiltered store conversations into runtime sections, and filter switches did
-  not always re-project the shared list or clear an active conversation outside
-  the new filter.
+  A second React summary cache mixed entity data, section membership, active
+  selection, and visible-item limits. Effects manually patched section rows
+  from changing conversation summaries, so provider/detail reconciliation could
+  collapse pages or synthesize membership. Counting the active overlay as a
+  pageable row also corrupted Show more decisions. Bounded engine snapshots can
+  recreate the loss if omission is treated as deletion.
 - Fix:
-  Match agent-target tabs with `matchesAgentGUIConversationSummaryFilter`, using
-  `session.provider` as a fallback for legacy `local:<provider>` targets.
-  Backfill Cursor `agent_target_id` in daemon storage, re-project the list store
-  when `conversationFilter` changes, filter rail merges in `AgentGUINodeView`,
-  and open the selected target home composer when the active conversation no
-  longer matches the tab.
+  Keep page sessions in the workspace engine. Cache only ordered membership ids,
+  cursor, `hasMore`, and `totalCount` in the controller query, then join ids to
+  engine entities with a pure model projection. Keep active and pending sessions
+  as display overlays outside pagination. Preserve old scope chrome and metadata
+  atomically while a provider refetch is pending. Engine snapshots merge
+  monotonically; only explicit `session/removed` owns deletion.
 - Validation:
-  Run
-  `pnpm --dir packages/agent/gui exec vitest run --environment jsdom agent-gui/agentGuiNode/model/agentGuiConversationFilter.spec.ts contexts/workspace/presentation/renderer/agentGuiConversationList/agentGuiConversationListStore.spec.ts agent-gui/agentGuiNode/controller/useAgentGUINodeController.spec.tsx -t "opens the selected target home composer when the active conversation is outside the new rail filter"`,
-  then `cd services/tuttid && go test ./data/workspace/...`.
+  Run `pnpm --filter @tutti-os/agent-gui test`,
+  `pnpm --filter @tutti-os/agent-activity-core test`, and
+  `pnpm check:agent-activity-runtime-boundaries`. Cover Codex -> All -> Codex,
+  client restart restore, active row outside first page, five-plus-active totals,
+  nine-session Show more, slow provider refetch, and bounded snapshot omission.
 - References:
-  [agentGuiConversationFilter.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/model/agentGuiConversationFilter.ts)
-  [agentGuiConversationListStore.ts](../../../packages/agent/gui/contexts/workspace/presentation/renderer/agentGuiConversationList/agentGuiConversationListStore.ts)
-  [useAgentGUINodeController.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/controller/useAgentGUINodeController.ts)
-  [AgentGUINodeView.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/AgentGUINodeView.tsx)
-  [agent_store.go](../../../services/tuttid/data/workspace/agent_store.go)
+  [useAgentGUIConversationRailQuery.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/controller/useAgentGUIConversationRailQuery.ts)
+  [agentGuiConversationRail.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/model/agentGuiConversationRail.ts)
+  [AgentGUIConversationRailSection.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/view/AgentGUIConversationRailSection.tsx)
+  [sessionEntities.reducer.ts](../../../packages/agent/activity-core/src/engine/sessionEntities.reducer.ts)
+  [service_session_sections.go](../../../services/tuttid/service/agent/service_session_sections.go)
 
 ### Agent GUI no-project sessions appear under a user project
 
@@ -573,6 +579,45 @@ Turn state, loading, cancel, restore, rail projection, event updates, imports, a
   [controller.go](../../../packages/agent/daemon/runtime/controller.go)
   [controller_test.go](../../../packages/agent/daemon/runtime/controller_test.go)
 
+### Claude Code cancel leaves Write/tool cards stuck in progress
+
+- Symptom:
+  User stops a Claude Code turn while a tool such as Write is running. The turn
+  settles as canceled/interrupted, but the transcript still shows the tool as
+  in progress.
+- Quick checks:
+  Compare durable tool-call message status with turn outcome. If the turn is
+  interrupted/canceled and the open `tool_call` is still `running`, the Claude
+  SDK turn lifecycle did not finish dangling calls. Confirm Codex/ACP cancel of
+  the same shape closes open tools via `acpTurnNormalizer.FinishInterrupted`.
+- Root cause:
+  Claude Code SDK projected tool events without owning the shared turn event
+  lifecycle (`acpTurnNormalizer`). Cancel and sidecar `turn_canceled` settled
+  the turn without `Finish*`, so open tools never received a terminal
+  `call.failed`.
+- Fix:
+  Attach per-turn `acpTurnNormalizer` on the Claude SDK session. Track
+  `call.started/completed/failed` against that normalizer, and call
+  `FinishInterrupted` / `FinishFailed` / `FinishCompleted` as part of turn
+  terminalization (`Cancel`, sidecar `turn_*`, reader failure). Drop late tool
+  events after the turn is already settled.
+  Also: controller Cancel cancels the Exec context before `adapter.Cancel`.
+  Claude Exec unregisters its waiter on that context cancel, so Cancel must
+  finish open tools from the turn-normalizer map (not only live waiters), and
+  the Exec context-canceled path must retain CallFailed events instead of
+  replacing the whole event slice with a bare turn.canceled.
+- Validation:
+  `go test ./packages/agent/daemon/runtime -run 'TestClaudeCodeSDKAdapter(CancelFailsOpenToolCalls|CancelFailsOpenToolsAfterWaiterUnregistered|TurnCanceledFailsOpenToolCalls)'`.
+  Manually: start a long Write on Claude Code, press Stop, confirm the tool
+  card leaves "in progress". Rebuild/restart desktop so the running `tuttid`
+  binary includes the fix.
+- References:
+  [claude_sdk_turn.go](../../../packages/agent/daemon/runtime/claude_sdk_turn.go)
+  [claude_sdk_events.go](../../../packages/agent/daemon/runtime/claude_sdk_events.go)
+  [claude_sdk_execution.go](../../../packages/agent/daemon/runtime/claude_sdk_execution.go)
+  [controller_turn_exec.go](../../../packages/agent/daemon/runtime/controller_turn_exec.go)
+  [acp_turn_normalizer.go](../../../packages/agent/daemon/runtime/acp_turn_normalizer.go)
+
 ### AgentGUI freezes when session history is large
 
 - Symptom:
@@ -598,6 +643,34 @@ Turn state, loading, cancel, restore, rail projection, event updates, imports, a
 - References:
   [desktopAgentActivityAdapter.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/desktopAgentActivityAdapter.ts)
   [createDesktopAgentActivityRuntime.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/createDesktopAgentActivityRuntime.ts)
+
+### AgentGUI @ Sessions tab is empty
+
+- Symptom:
+  Opening the composer `@` palette (default Sessions tab) shows no session
+  rows, even though the workspace has agent history.
+- Quick checks:
+  In `tuttid.log`, look for `event=workspace.agent_session.api.list_completed`
+  from `GET /v1/workspaces/{workspaceID}/agent-sessions` (the Sessions-tab
+  source). Check `session_count`. Do not confuse it with
+  `workspace.agent_session.messages.api.list_*` or
+  `workspace.agent_session.section.list_failed`.
+- Root cause:
+  The Sessions tab loads through `listWorkspaceAgentSessions`. Successful calls
+  previously left no durable log, so empty palettes could not be distinguished
+  from "API never ran" or "API returned zero sessions" in exported logs.
+- Fix:
+  Successful list responses now emit
+  `workspace.agent_session.api.list_completed` with `session_count`. If the
+  event is missing, the client never hit the endpoint; if `session_count=0`,
+  the daemon truly returned an empty list.
+- Validation:
+  Click the composer `@` button, confirm a
+  `workspace.agent_session.api.list_completed` line appears with a non-zero
+  `session_count` when sessions exist.
+- References:
+  [daemon_agent_session_list.go](../../../services/tuttid/api/daemon_agent_session_list.go)
+  [desktopRichTextAtAgentContributors.ts](../../../apps/desktop/src/renderer/src/features/rich-text-at/services/internal/desktopRichTextAtAgentContributors.ts)
   [agent-gui-node.md](../../architecture/agent-gui-node.md)
 
 ### Agent diagnostics flood while a turn is streaming
@@ -701,6 +774,78 @@ Turn state, loading, cancel, restore, rail projection, event updates, imports, a
   [agentGuiConversationListStore.ts](../../../packages/agent/gui/contexts/workspace/presentation/renderer/agentGuiConversationList/agentGuiConversationListStore.ts)
   [workspaceAgentMessageCenterModel.ts](../../../packages/agent/gui/agent-message-center/workspaceAgentMessageCenterModel.ts)
   [workspaceAgentMessageCenterViewModel.ts](../../../packages/agent/gui/agent-message-center/workspaceAgentMessageCenterViewModel.ts)
+
+### Realtime agent completion does not show unread attention
+
+- Symptom:
+  A turn settles while Agent GUI is open, but its conversation row never shows
+  unread-completion attention. Historical sessions may behave correctly and
+  must not acquire attention merely because their snapshot was loaded.
+- Quick checks:
+  Trace the event path into the activity engine. A realtime `turn_update`
+  should trigger an authoritative session fetch and reduce `session/upserted`
+  before `turn/upserted`. Initial, restored, and imported history should enter
+  through `session/snapshotReceived` only. Also confirm the projected desktop
+  session carries the shared local Agent GUI user id used by read-state actions.
+- Root cause:
+  Realtime and historical data lost their provenance when both were folded into
+  a mutable controller snapshot and re-emitted as `session/snapshotReceived`.
+  The attention reducer correctly treats snapshots as non-live, so it recorded
+  the settled completion without producing unread attention; a later live
+  update with the same completion key could no longer recover the transition.
+- Fix:
+  Keep the activity engine as the single mutable owner. Feed pull/bootstrap
+  results through `session/snapshotReceived`, feed authoritative realtime
+  reconciliation through `session/upserted` followed by `turn/upserted`, and
+  use inline message events only for message deltas. Preserve the realtime
+  marker outside the fetched snapshot, and use one shared local identity for
+  session projection and read-state commands.
+- Validation:
+  Run
+  `pnpm --filter @tutti-os/desktop test -- workspaceAgentActivityService.test.ts`
+  and verify the service integration coverage proves that realtime completion
+  becomes unread while a settled historical load remains read.
+- References:
+  [workspaceAgentActivityReconcileBridge.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileBridge.ts)
+  [workspaceAgentActivityService.test.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityService.test.ts)
+  [attentionReadState.reducer.ts](../../../packages/agent/activity-core/src/engine/attentionReadState.reducer.ts)
+
+### Completed agent session stays activating and disables the composer
+
+- Symptom:
+  A new conversation visibly completes and its assistant reply is present, but
+  opening it leaves the composer disabled. Roughly one activation-expiry window
+  later, AgentGUI reports that the agent session could not be started.
+- Quick checks:
+  Correlate activation diagnostics with the authoritative session updates. If
+  the session create and turn both succeeded while the presentation remains
+  `activating` until `engine/intentExpired`, inspect which session intent
+  reached the pending-activation reducer. Also check that a failed realtime
+  session fetch does not consume the live-reconcile marker before a retry.
+- Root cause:
+  An engine migration introduced `session/upserted` for authoritative mutation
+  and realtime results, while pending activation still confirmed only from the
+  historical `session/snapshotReceived` path. The canonical session therefore
+  existed and could render, but the independent activation intent expired and
+  overrode the composer with a false failure. Consuming realtime provenance
+  before a fallible fetch can produce a related retry-only mismatch.
+- Fix:
+  Confirm activation from both authoritative session intents. Preserve the
+  semantic distinction only where it matters: historical snapshots remain
+  neutral for unread attention, while realtime reconciliation additionally
+  emits the live turn update. Move a consumed realtime marker to an in-flight
+  state and restore it after fetch failure until a live session is applied or
+  the session is deleted.
+- Validation:
+  Cover the reducer with a pending activation followed by `session/upserted`.
+  At the desktop service boundary, run a real engine activation through the
+  create result, manually expire its old deadline, and verify the presentation
+  remains active. Also fail the first realtime reconciliation, retry it, and
+  verify the settled turn still gains unread attention.
+- References:
+  [pendingIntents.reducer.ts](../../../packages/agent/activity-core/src/engine/pendingIntents.reducer.ts)
+  [workspaceAgentActivityReconcileBridge.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileBridge.ts)
+  [workspaceAgentActivityService.test.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityService.test.ts)
 
 ### AgentGUI submit clears the composer but creates no session or turn
 

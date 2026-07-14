@@ -18,14 +18,24 @@ import {
   resetAgentActivityRuntimeForTests,
   setAgentActivityRuntimeForTests,
   type AgentActivityRuntime,
+  type AgentActivityRuntimeStagePastedTextResult,
   type AgentActivityRuntimeUploadPromptContentResult
 } from "../../agentActivityRuntime";
 import type {
   AgentComposerDraft,
+  AgentComposerDraftFile,
+  AgentComposerDraftImage,
+  AgentComposerDraftLargeText,
   AgentGUIComposerSettingsVM,
   AgentGUIQueuedPromptVM
 } from "./model/agentGuiNodeTypes";
 import type { AgentHostAgentSessionCommand } from "../../shared/contracts/dto";
+import {
+  agentComposerDraftImages,
+  agentComposerDraftLargeTexts,
+  agentComposerDraftPrompt,
+  buildAgentComposerDraft
+} from "./model/agentComposerDraft";
 
 const { mockEditorFocusAtEnd, mockProjectMissingState } = vi.hoisted(() => ({
   mockEditorFocusAtEnd: vi.fn(),
@@ -50,13 +60,11 @@ const workspaceUserProjectI18n = createWorkspaceUserProjectI18nRuntime(
 
 function createDraft(
   prompt: string,
-  images: AgentComposerDraft["images"] = [],
-  files: AgentComposerDraft["files"] = [],
-  largeTexts?: AgentComposerDraft["largeTexts"]
+  images: AgentComposerDraftImage[] = [],
+  files: AgentComposerDraftFile[] = [],
+  largeTexts?: AgentComposerDraftLargeText[]
 ): AgentComposerDraft {
-  return largeTexts
-    ? { prompt, images, files, largeTexts }
-    : { prompt, images, files };
+  return buildAgentComposerDraft({ prompt, images, files, largeTexts });
 }
 
 function createFileDataTransfer(files: readonly File[]): DataTransfer {
@@ -331,15 +339,21 @@ vi.mock("./agentRichText/AgentRichTextEditor", async () => {
 
 vi.mock("./AgentComposerSettingsMenus", () => ({
   AgentProjectDropdown: ({
+    onDismissAutoFocus,
     onProjectMissingChange
   }: {
+    onDismissAutoFocus?: (event: Event) => void;
     onProjectMissingChange?: (isMissing: boolean) => void;
   }) => {
     queueMicrotask(() => {
       onProjectMissingChange?.(mockProjectMissingState.current);
     });
     return (
-      <button type="button" data-testid="agent-project-dropdown">
+      <button
+        type="button"
+        data-testid="agent-project-dropdown"
+        onClick={() => onDismissAutoFocus?.(new Event("focus"))}
+      >
         项目
       </button>
     );
@@ -3277,6 +3291,48 @@ describe("AgentComposer", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("提及上下文");
   });
 
+  it("focuses the shared home draft at the end after the project menu dismisses", () => {
+    render(
+      <AgentComposer
+        workspaceId="workspace-1"
+        currentUserId="user-1"
+        provider="codex"
+        draftContent={createDraft("keep typing here")}
+        draftScopeKey="home"
+        availableCommands={[] satisfies readonly AgentHostAgentSessionCommand[]}
+        disabled={false}
+        submitDisabled={false}
+        placeholder="placeholder"
+        composerSettings={createComposerSettings({
+          selectedProjectPath: "/workspace/a"
+        })}
+        queuedPrompts={[]}
+        drainingQueuedPromptId={null}
+        canQueueWhileBusy={false}
+        showStopButton={false}
+        activePrompt={null}
+        isInterrupting={false}
+        isSendingTurn={false}
+        isSubmittingPrompt={false}
+        labels={createLabels()}
+        workspaceUserProjectI18n={workspaceUserProjectI18n}
+        layoutMode="hero"
+        onDraftContentChange={vi.fn()}
+        onSettingsChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onSendQueuedPromptNext={vi.fn()}
+        onRemoveQueuedPrompt={vi.fn()}
+        onEditQueuedPrompt={vi.fn()}
+        onInterruptCurrentTurn={vi.fn()}
+        onSubmitInteractivePrompt={vi.fn()}
+      />
+    );
+
+    mockEditorFocusAtEnd.mockClear();
+    fireEvent.click(screen.getByTestId("agent-project-dropdown"));
+    expect(mockEditorFocusAtEnd).toHaveBeenCalled();
+  });
+
   it("hides the project row for locked dock composers in existing conversations", () => {
     const { container } = render(
       <AgentComposer
@@ -3817,7 +3873,9 @@ describe("AgentComposer", () => {
         )
       )
     );
-    expect(draftContent.prompt).not.toContain("/Users/local/Downloads");
+    expect(agentComposerDraftPrompt(draftContent)).not.toContain(
+      "/Users/local/Downloads"
+    );
   });
 
   it("does not accept dropped host files when prompt file uploads are unsupported", async () => {
@@ -3961,14 +4019,16 @@ describe("AgentComposer", () => {
 
     await waitFor(() =>
       expect(onDraftContentChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          prompt:
-            "[@report.pdf](/var/cache/tsh/local-assets/room-1/report.pdf) "
-        })
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "text",
+            text: "[@report.pdf](/var/cache/tsh/local-assets/room-1/report.pdf) "
+          })
+        ])
       )
     );
     await waitFor(() =>
-      expect(draftContent.images).toEqual([
+      expect(agentComposerDraftImages(draftContent)).toEqual([
         expect.objectContaining({
           name: "panel.png",
           mimeType: "image/png",
@@ -4127,9 +4187,7 @@ describe("AgentComposer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("falls back to inline text when the runtime cannot land pasted text", () => {
-    // Runtime without uploadPromptContent (e.g. web): the large paste must not
-    // be lost — it is re-inserted inline instead of becoming an un-landable chip.
+  it("keeps pasted large text out of the prompt when staging is unsupported", () => {
     setAgentActivityRuntimeForTests({} as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("hello");
@@ -4170,19 +4228,18 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
 
-    expect(draftContent.prompt).toBe(
-      "hello\nfirst pasted line\nsecond pasted line"
-    );
-    expect(draftContent.largeTexts ?? []).toEqual([]);
-    expect(
-      screen.queryByTestId("agent-gui-composer-large-text-draft")
-    ).not.toBeInTheDocument();
+    expect(agentComposerDraftPrompt(draftContent)).toBe("hello");
+    expect(agentComposerDraftLargeTexts(draftContent)[0]).toMatchObject({
+      text: "first pasted line\nsecond pasted line",
+      uploading: false,
+      uploadError: expect.any(String)
+    });
   });
 
   it("does not upload pasted large text when attachment upload is disabled", () => {
-    const uploadPromptContent = vi.fn();
+    const stagePastedText = vi.fn();
     setAgentActivityRuntimeForTests({
-      uploadPromptContent
+      stagePastedText
     } as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("hello");
@@ -4224,24 +4281,26 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
 
-    expect(uploadPromptContent).not.toHaveBeenCalled();
-    expect(draftContent.prompt).toBe(
-      "hello\nfirst pasted line\nsecond pasted line"
-    );
-    expect(draftContent.largeTexts ?? []).toEqual([]);
+    expect(stagePastedText).not.toHaveBeenCalled();
+    expect(agentComposerDraftPrompt(draftContent)).toBe("hello");
+    expect(agentComposerDraftLargeTexts(draftContent)[0]).toMatchObject({
+      text: "first pasted line\nsecond pasted line",
+      uploading: false,
+      uploadError: expect.any(String)
+    });
   });
 
   it("lands pasted large text as a file and submits a pasted-text file block", async () => {
-    type UploadResult = AgentActivityRuntimeUploadPromptContentResult;
+    type UploadResult = AgentActivityRuntimeStagePastedTextResult;
     let resolveUpload: (result: UploadResult) => void = () => undefined;
-    const uploadPromptContent = vi.fn(
+    const stagePastedText = vi.fn(
       () =>
         new Promise<UploadResult>((resolve) => {
           resolveUpload = resolve;
         })
     );
     setAgentActivityRuntimeForTests({
-      uploadPromptContent
+      stagePastedText
     } as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("");
@@ -4284,23 +4343,19 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
 
-    // Phase 1: uploads the pasted text as UTF-8 base64 in a file block.
-    expect(uploadPromptContent).toHaveBeenCalledWith({
+    // Phase 1: stages raw pasted text through the dedicated host contract.
+    expect(stagePastedText).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
-      content: [
-        {
-          type: "file",
-          data: "Zmlyc3QgcGFzdGVkIGxpbmUKc2Vjb25kIHBhc3RlZCBsaW5l",
-          mimeType: "text/plain",
-          name: "pasted-text.txt"
-        }
-      ]
+      text: "first pasted line\nsecond pasted line",
+      name: "pasted-text.txt"
     });
-    expect(draftContent.largeTexts?.[0]).toMatchObject({
+    expect(agentComposerDraftLargeTexts(draftContent)?.[0]).toMatchObject({
       text: "first pasted line\nsecond pasted line",
       uploading: true
     });
-    expect(draftContent.largeTexts?.[0]?.id).toEqual(expect.any(String));
+    expect(agentComposerDraftLargeTexts(draftContent)?.[0]?.id).toEqual(
+      expect.any(String)
+    );
 
     // Phase 2: uploading → spinner shown, submit blocked.
     rerender(renderComposer());
@@ -4317,17 +4372,12 @@ describe("AgentComposer", () => {
 
     // Phase 3: upload resolves → path filled, uploading cleared.
     resolveUpload({
-      content: [
-        {
-          type: "file",
-          path: "/archive/aa/deadbeef.txt",
-          name: "pasted-text.txt",
-          sizeBytes: 36
-        }
-      ]
+      path: "/archive/aa/deadbeef.txt",
+      name: "pasted-text.txt",
+      sizeBytes: 36
     });
     await waitFor(() =>
-      expect(draftContent.largeTexts?.[0]).toMatchObject({
+      expect(agentComposerDraftLargeTexts(draftContent)?.[0]).toMatchObject({
         path: "/archive/aa/deadbeef.txt",
         uploading: false
       })
@@ -4359,16 +4409,16 @@ describe("AgentComposer", () => {
   });
 
   it("restores a pasted-text chip back into the composer as inline text", async () => {
-    type UploadResult = AgentActivityRuntimeUploadPromptContentResult;
+    type UploadResult = AgentActivityRuntimeStagePastedTextResult;
     let resolveUpload: (result: UploadResult) => void = () => undefined;
-    const uploadPromptContent = vi.fn(
+    const stagePastedText = vi.fn(
       () =>
         new Promise<UploadResult>((resolve) => {
           resolveUpload = resolve;
         })
     );
     setAgentActivityRuntimeForTests({
-      uploadPromptContent
+      stagePastedText
     } as unknown as AgentActivityRuntime);
 
     let draftContent = createDraft("hello");
@@ -4410,27 +4460,24 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-large-text"));
     resolveUpload({
-      content: [
-        {
-          type: "file",
-          path: "/archive/aa/deadbeef.txt",
-          name: "pasted-text.txt",
-          sizeBytes: 36
-        }
-      ]
+      path: "/archive/aa/deadbeef.txt",
+      name: "pasted-text.txt",
+      sizeBytes: 36
     });
     await waitFor(() =>
-      expect(draftContent.largeTexts?.[0]).toMatchObject({ uploading: false })
+      expect(agentComposerDraftLargeTexts(draftContent)?.[0]).toMatchObject({
+        uploading: false
+      })
     );
     rerender(renderComposer());
 
     // "Show in text field" dissolves the chip back into the prompt.
     fireEvent.click(screen.getByRole("button", { name: "Show in text field" }));
 
-    expect(draftContent.prompt).toBe(
+    expect(agentComposerDraftPrompt(draftContent)).toBe(
       "hello\nfirst pasted line\nsecond pasted line"
     );
-    expect(draftContent.largeTexts ?? []).toEqual([]);
+    expect(agentComposerDraftLargeTexts(draftContent) ?? []).toEqual([]);
   });
 
   it("uploads pasted images immediately and submits the staged path", async () => {
@@ -4497,7 +4544,7 @@ describe("AgentComposer", () => {
         }
       ]
     });
-    expect(draftContent.images[0]).toMatchObject({
+    expect(agentComposerDraftImages(draftContent)[0]).toMatchObject({
       data: "aW1hZ2U=",
       uploading: true
     });
@@ -4518,7 +4565,7 @@ describe("AgentComposer", () => {
       ]
     });
     await waitFor(() =>
-      expect(draftContent.images[0]).toMatchObject({
+      expect(agentComposerDraftImages(draftContent)[0]).toMatchObject({
         path: "/var/cache/tsh/local-assets/workspace-1/screen.png",
         uploading: false
       })
@@ -4620,14 +4667,16 @@ describe("AgentComposer", () => {
       ]
     });
     await waitFor(() =>
-      expect(draftContent.images[0]).toMatchObject({
+      expect(agentComposerDraftImages(draftContent)[0]).toMatchObject({
         url: "https://objects.example.test/signed/screen.png",
         previewUrl: "data:image/png;base64,aW1hZ2U=",
         uploading: false
       })
     );
-    expect(draftContent.images[0]?.data).toBeUndefined();
-    expect(draftContent.images[0]?.uploadError).toBeUndefined();
+    expect(agentComposerDraftImages(draftContent)[0]?.data).toBeUndefined();
+    expect(
+      agentComposerDraftImages(draftContent)[0]?.uploadError
+    ).toBeUndefined();
     expect(reportDiagnostic).toHaveBeenCalledWith(
       expect.objectContaining({
         event: "agent.gui.composer.image_upload.requested",
@@ -4657,6 +4706,97 @@ describe("AgentComposer", () => {
         name: "screen.png"
       }
     ]);
+  });
+
+  it("finishes image uploads in the draft scope where they started", async () => {
+    type UploadResult = AgentActivityRuntimeUploadPromptContentResult;
+    let resolveUpload: (result: UploadResult) => void = () => undefined;
+    const uploadPromptContent = vi.fn(
+      () =>
+        new Promise<UploadResult>((resolve) => {
+          resolveUpload = resolve;
+        })
+    );
+    setAgentActivityRuntimeForTests({
+      uploadPromptContent
+    } as unknown as AgentActivityRuntime);
+
+    const projectA = "project:/workspace/a";
+    const projectB = "project:/workspace/b";
+    let currentScopeKey = projectA;
+    const drafts: Record<string, AgentComposerDraft> = {
+      [projectA]: createDraft("project a"),
+      [projectB]: createDraft("project b")
+    };
+    const onDraftContentChange = vi.fn(
+      (nextDraft: AgentComposerDraft, sourceScopeKey?: string) => {
+        drafts[sourceScopeKey ?? currentScopeKey] = nextDraft;
+      }
+    );
+    const renderComposer = () => (
+      <AgentComposer
+        workspaceId="workspace-1"
+        currentUserId="user-1"
+        provider="codex"
+        draftContent={drafts[currentScopeKey]!}
+        draftScopeKey={currentScopeKey}
+        availableCommands={[] satisfies readonly AgentHostAgentSessionCommand[]}
+        disabled={false}
+        submitDisabled={false}
+        placeholder="placeholder"
+        composerSettings={createComposerSettings()}
+        queuedPrompts={[]}
+        drainingQueuedPromptId={null}
+        canQueueWhileBusy={false}
+        showStopButton={false}
+        activePrompt={null}
+        isInterrupting={false}
+        isSendingTurn={false}
+        isSubmittingPrompt={false}
+        labels={createLabels()}
+        workspaceUserProjectI18n={workspaceUserProjectI18n}
+        onDraftContentChange={onDraftContentChange}
+        onSettingsChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onSendQueuedPromptNext={vi.fn()}
+        onRemoveQueuedPrompt={vi.fn()}
+        onEditQueuedPrompt={vi.fn()}
+        onInterruptCurrentTurn={vi.fn()}
+        onSubmitInteractivePrompt={vi.fn()}
+      />
+    );
+    const { rerender } = render(renderComposer());
+
+    fireEvent.click(screen.getByTestId("mock-paste-image"));
+    rerender(renderComposer());
+    expect(agentComposerDraftImages(drafts[projectA]!)[0]).toMatchObject({
+      uploading: true
+    });
+
+    currentScopeKey = projectB;
+    rerender(renderComposer());
+    resolveUpload({
+      content: [
+        {
+          type: "image",
+          mimeType: "image/png",
+          path: "/var/cache/tsh/local-assets/workspace-1/screen.png",
+          name: "screen.png"
+        }
+      ]
+    });
+
+    await waitFor(() =>
+      expect(agentComposerDraftImages(drafts[projectA]!)[0]).toMatchObject({
+        uploading: false,
+        path: "/var/cache/tsh/local-assets/workspace-1/screen.png"
+      })
+    );
+    expect(drafts[projectB]).toEqual(createDraft("project b"));
+    expect(onDraftContentChange).toHaveBeenLastCalledWith(
+      drafts[projectA],
+      projectA
+    );
   });
 
   it("uses the development console diagnostic sink even when the upload runtime has a reporter", async () => {
@@ -4716,7 +4856,7 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByTestId("mock-paste-image"));
     await waitFor(() =>
-      expect(draftContent.images[0]).toMatchObject({
+      expect(agentComposerDraftImages(draftContent)[0]).toMatchObject({
         url: "https://objects.example.test/signed/screen.png",
         uploading: false
       })
@@ -4800,7 +4940,7 @@ describe("AgentComposer", () => {
     fireEvent.click(screen.getByTestId("mock-paste-image"));
 
     await waitFor(() =>
-      expect(draftContent.images[0]).toMatchObject({
+      expect(agentComposerDraftImages(draftContent)[0]).toMatchObject({
         uploading: false,
         uploadError:
           "Prompt image upload completed without usable image reference."
@@ -4903,11 +5043,11 @@ describe("AgentComposer", () => {
       ]
     });
     await waitFor(() =>
-      expect(draftContent.prompt).toBe(
+      expect(agentComposerDraftPrompt(draftContent)).toBe(
         "看下这张图[@首页 (1).jpg](/var/cache/tsh/local-assets/workspace-1/user-1/home.jpg) "
       )
     );
-    expect(draftContent.prompt).not.toContain(
+    expect(agentComposerDraftPrompt(draftContent)).not.toContain(
       "f37ec5e4-bbf2-49a2-90a9-d2b9d42e9b91"
     );
     rerender(renderComposer());
@@ -4978,11 +5118,11 @@ describe("AgentComposer", () => {
     fireEvent.click(await screen.findByTestId("mock-open-references"));
 
     await waitFor(() =>
-      expect(draftContent.prompt).toBe(
+      expect(agentComposerDraftPrompt(draftContent)).toBe(
         "[@制作一个1000字小说](mention://workspace-reference/topic-1?groupId=issue-1&source=task&workspaceId=workspace-1) "
       )
     );
-    expect(draftContent.prompt).not.toMatch(/^@/);
+    expect(agentComposerDraftPrompt(draftContent)).not.toMatch(/^@/);
   });
 
   it("keeps the active @ trigger after canceling references from a mention row", async () => {
@@ -5033,7 +5173,7 @@ describe("AgentComposer", () => {
     await waitFor(() =>
       expect(onRequestWorkspaceReferences).toHaveBeenCalled()
     );
-    expect(draftContent.prompt).toBe("@");
+    expect(agentComposerDraftPrompt(draftContent)).toBe("@");
     expect(screen.getByTestId("mock-open-references")).toBeInTheDocument();
   });
 
@@ -5081,7 +5221,7 @@ describe("AgentComposer", () => {
       key: "Escape"
     });
 
-    expect(draftContent.prompt).toBe("@");
+    expect(agentComposerDraftPrompt(draftContent)).toBe("@");
     expect(onDraftContentChange).not.toHaveBeenCalled();
   });
 
@@ -5134,7 +5274,7 @@ describe("AgentComposer", () => {
     // typed "@doesnotexist12345" text stays untouched.
     fireEvent.keyDown(textbox, { key: "Enter" });
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(draftContent.prompt).toBe("@doesnotexist12345");
+    expect(agentComposerDraftPrompt(draftContent)).toBe("@doesnotexist12345");
 
     // With the search cancelled, the next Enter behaves as if there were no
     // active @ context and sends the message normally.
@@ -5182,7 +5322,9 @@ describe("AgentComposer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "提及上下文" }));
 
-    await waitFor(() => expect(draftContent.prompt).toBe("@"));
+    await waitFor(() =>
+      expect(agentComposerDraftPrompt(draftContent)).toBe("@")
+    );
   });
 
   it("renders controlled text and image draft content", () => {

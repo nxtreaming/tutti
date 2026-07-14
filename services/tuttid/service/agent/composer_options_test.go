@@ -242,6 +242,29 @@ func TestComposerModelReasoningOptionsRuntimeContextPreservesCatalogOptions(t *t
 	}
 }
 
+func TestNormalizeObservedComposerSettingsUsesProviderReasoningPolicy(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		provider string
+		selected string
+		want     string
+	}{
+		{provider: "codex", selected: "none", want: "none"},
+		{provider: "tutti-agent", selected: "minimal", want: "minimal"},
+		{provider: "opencode", selected: "none", want: "none"},
+	} {
+		t.Run(tc.provider, func(t *testing.T) {
+			got := normalizeComposerSettingsPointerForProvider(
+				tc.provider,
+				&ComposerSettings{ReasoningEffort: tc.selected},
+			)
+			if got == nil || got.ReasoningEffort != tc.want {
+				t.Fatalf("normalized settings = %#v, want reasoning %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResolveAdvertisedReasoningEffortPreservesAuthoritativeMinimalDefault(t *testing.T) {
 	advertised := []AgentModelReasoningEffortOption{{Value: "minimal"}}
 	if got := resolveAdvertisedReasoningEffort("codex", "", "minimal", advertised); got != "minimal" {

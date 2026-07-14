@@ -46,6 +46,7 @@ func (s *Service) ensureRuntimeSessionResult(
 	// Imported local CLI transcripts can resume in place or recreate a provider
 	// session. Provider data exports explicitly opt out because their web UUID is
 	// not a provider runtime session id.
+	persisted = s.clampPersistedSessionReasoningEffortForResume(ctx, persisted)
 	imported := strings.TrimSpace(persisted.Origin) == WorkspaceAgentSessionOriginImported
 	if imported && !externalImportResumeSupported(persisted.InternalRuntimeContext) {
 		return ensuredRuntimeSession{}, ErrSessionNotFound

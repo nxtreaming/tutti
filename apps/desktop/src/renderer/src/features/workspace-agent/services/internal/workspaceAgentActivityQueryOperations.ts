@@ -32,14 +32,16 @@ export class WorkspaceAgentActivityQueryOperations {
     const response = await this.tuttidClient.listWorkspaceAgentSessions(
       workspaceId,
       {
+        agentTargetId: input.agentTargetId?.trim() || undefined,
+        cursor: input.cursor?.trim() || undefined,
         limit: input.limit,
         searchQuery: input.searchQuery?.trim() || undefined
       },
       { signal: input.signal }
     );
     return {
-      hasMore: false,
-      nextCursor: undefined,
+      hasMore: response.hasMore,
+      nextCursor: response.nextCursor,
       sessions: response.sessions.map((session) =>
         agentActivitySessionFromTuttidSession(workspaceId, session)
       ),
@@ -59,14 +61,15 @@ export class WorkspaceAgentActivityQueryOperations {
       },
       { signal: input.signal }
     );
-    const pinned = response.pinned ?? { hasMore: false, sessions: [] };
+    const pinned = response.pinned;
     return {
       pinned: {
         hasMore: pinned.hasMore,
         nextCursor: pinned.nextCursor,
         sessions: pinned.sessions.map((session) =>
           agentActivitySessionFromTuttidSession(workspaceId, session)
-        )
+        ),
+        totalCount: pinned.totalCount
       },
       sections: response.sections.map((section) => ({
         hasMore: section.hasMore,
@@ -76,6 +79,7 @@ export class WorkspaceAgentActivityQueryOperations {
         sessions: section.sessions.map((session) =>
           agentActivitySessionFromTuttidSession(workspaceId, session)
         ),
+        totalCount: section.totalCount,
         userProject: section.userProject
       })),
       workspaceId: response.workspaceId
@@ -103,7 +107,8 @@ export class WorkspaceAgentActivityQueryOperations {
       nextCursor: response.page.nextCursor,
       sessions: response.page.sessions.map((session) =>
         agentActivitySessionFromTuttidSession(workspaceId, session)
-      )
+      ),
+      totalCount: response.page.totalCount
     };
   }
 
@@ -132,25 +137,33 @@ export class WorkspaceAgentActivityQueryOperations {
       sessions: response.section.sessions.map((session) =>
         agentActivitySessionFromTuttidSession(workspaceId, session)
       ),
+      totalCount: response.section.totalCount,
       userProject: response.section.userProject
     };
   }
 
-  async countSessionSection(
-    input: Parameters<IWorkspaceAgentActivityService["countSessionSection"]>[0]
-  ): ReturnType<IWorkspaceAgentActivityService["countSessionSection"]> {
-    const response = await this.tuttidClient.countWorkspaceAgentSessionSection(
-      normalizeWorkspaceId(input.workspaceId),
-      {
-        agentTargetId: input.agentTargetId?.trim() || undefined,
-        sectionKey: input.sectionKey
-      },
-      { signal: input.signal }
-    );
+  async listSessionSectionDeletionCandidates(
+    input: Parameters<
+      IWorkspaceAgentActivityService["listSessionSectionDeletionCandidates"]
+    >[0]
+  ): ReturnType<
+    IWorkspaceAgentActivityService["listSessionSectionDeletionCandidates"]
+  > {
+    const response =
+      await this.tuttidClient.listWorkspaceAgentSessionSectionDeletionCandidates(
+        normalizeWorkspaceId(input.workspaceId),
+        {
+          agentTargetId: input.agentTargetId?.trim() || undefined,
+          excludePinned: input.excludePinned,
+          sectionKey: input.sectionKey
+        },
+        { signal: input.signal }
+      );
     return {
       agentTargetId: response.agentTargetId,
-      count: response.count,
+      excludePinned: response.excludePinned,
       sectionKey: response.sectionKey,
+      sessionIds: response.sessionIds,
       workspaceId: response.workspaceId
     };
   }

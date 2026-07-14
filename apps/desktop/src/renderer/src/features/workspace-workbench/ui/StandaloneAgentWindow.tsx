@@ -24,7 +24,6 @@ import {
   type AgentGuiWorkbenchConversationRailToggleDetail,
   type AgentGuiWorkbenchNewConversationDetail
 } from "@tutti-os/agent-gui/workbench/contribution";
-import { resolveAgentGuiSessionProviderIconUrl } from "@tutti-os/agent-gui/agentGuiSessionProviderIconUrls";
 import type {
   WorkbenchContribution,
   WorkbenchHostHandle,
@@ -35,7 +34,6 @@ import { createDesktopAgentGUIWorkbenchHostInput } from "@renderer/features/work
 import { IAgentsService } from "@renderer/features/workspace-agent/services/agentsService.interface.ts";
 import type { IAgentProviderStatusService as AgentProviderStatusService } from "@renderer/features/workspace-agent/services/agentProviderStatusService.interface.ts";
 import type { IWorkspaceAgentActivityService as WorkspaceAgentActivityService } from "@renderer/features/workspace-agent/services/workspaceAgentActivityService.interface.ts";
-import { resolveDesktopAgentGUIProviderForAgentTarget } from "@renderer/features/workspace-agent/ui/desktopAgentGUIWorkbenchStateHelpers.ts";
 import type { DesktopAgentGUIPrefillPromptRequest } from "@renderer/features/workspace-agent/services/desktopAgentGUIPrefillPromptActivation.ts";
 import { isDesktopAgentGUIProvider } from "@renderer/features/workspace-agent/desktopAgentGUINodeState.ts";
 import {
@@ -54,7 +52,6 @@ import type {
 } from "@preload/types";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import type { TuttiExternalFileOpenInput } from "@tutti-os/workspace-external-core/contracts";
-import type { WorkspaceFileActivationTarget } from "@tutti-os/workspace-file-manager/services";
 import type { IReporterService } from "@renderer/features/analytics";
 import type { IDesktopRichTextAtService } from "@renderer/features/rich-text-at";
 import type { IWorkspaceUserProjectService } from "@renderer/features/workspace-user-project";
@@ -74,6 +71,7 @@ import { useWorkspaceSettingsService } from "./useWorkspaceSettingsService";
 import type { WorkspaceWorkbenchCapabilitySettingsTarget } from "../services/workspaceWorkbenchHostService.interface";
 import { resolveDesktopWindowIntent } from "@shared/contracts/windowIntent.ts";
 import { useStandaloneAgentLaunchRouting } from "./useStandaloneAgentLaunchRouting.ts";
+import { resolveStandaloneAgentHeaderIdentity } from "./standaloneAgentHeaderIdentity.ts";
 
 const LazyWorkspaceAccountMenu = lazy(() =>
   import("./WorkspaceAccountMenu").then(({ WorkspaceAccountMenu }) => ({
@@ -304,22 +302,17 @@ export function StandaloneAgentWindow({
   const [fileOpenRequest, setFileOpenRequest] =
     useState<StandaloneAgentFileOpenRequest | null>(null);
   const fileOpenRequestSequenceRef = useRef(0);
-  const openFileInSidebar = useCallback(
-    (file: string | WorkspaceFileActivationTarget): boolean => {
-      const normalizedPath =
-        typeof file === "string" ? file.trim() : file.path.trim();
-      if (!normalizedPath) {
-        return false;
-      }
-      setFileOpenRequest({
-        path: normalizedPath,
-        requestID: `standalone-agent-file-${++fileOpenRequestSequenceRef.current}`,
-        ...(typeof file === "string" ? {} : { target: file })
-      });
-      return true;
-    },
-    []
-  );
+  const openFileInSidebar = useCallback((file: string): boolean => {
+    const normalizedPath = file.trim();
+    if (!normalizedPath) {
+      return false;
+    }
+    setFileOpenRequest({
+      path: normalizedPath,
+      requestID: `standalone-agent-file-${++fileOpenRequestSequenceRef.current}`
+    });
+    return true;
+  }, []);
   const openWorkspaceAppExternalFile = useCallback(
     async (input: TuttiExternalFileOpenInput) => {
       if (!openFileInSidebar(input.path)) {
@@ -331,7 +324,10 @@ export function StandaloneAgentWindow({
   useEffect(() => {
     workspaceFileManagerService.setCanvasFilePreviewLauncher(
       workspaceId,
-      (target) => openFileInSidebar(target)
+      async (target) => {
+        await desktopApi.host.files.openFile(workspaceId, target.path);
+        return true;
+      }
     );
     workspaceFileManagerService.setPreviewUnsupportedFallbackNotificationEnabled(
       workspaceId,
@@ -343,7 +339,7 @@ export function StandaloneAgentWindow({
         null
       );
     };
-  }, [openFileInSidebar, workspaceFileManagerService, workspaceId]);
+  }, [desktopApi.host.files, workspaceFileManagerService, workspaceId]);
   useEffect(() => {
     workspaceAppCenterService.setWorkspaceAppLauncher(
       async ({ appId, workspaceId: targetWorkspaceId }) => {
@@ -431,26 +427,19 @@ export function StandaloneAgentWindow({
     [launchProvider, workspaceId]
   );
   const activeAgentTargetId = nodeState.agentTargetId?.trim() || null;
-  const headerProvider = resolveDesktopAgentGUIProviderForAgentTarget(
-    activeAgentTargetId,
+  const {
+    agentTitle: headerAgentTitle,
+    conversationIconFallbackUrl: headerConversationIconFallbackUrl,
+    conversationIconUrl: headerConversationIconUrl,
+    conversationTitle: headerConversationTitle,
+    provider: headerProvider
+  } = resolveStandaloneAgentHeaderIdentity({
+    agentTargetId: activeAgentTargetId,
     agents,
-    readStandaloneNodeProvider(nodeState, launchProvider)
-  );
-  const headerAgentTarget = activeAgentTargetId
-    ? (agents.find((target) => target.agentTargetId === activeAgentTargetId) ??
-      null)
-    : null;
-  const headerConversationIconFallbackUrl =
-    resolveAgentGuiSessionProviderIconUrl(headerProvider);
-  const headerConversationIconUrl =
-    headerAgentTarget?.iconUrl ?? headerConversationIconFallbackUrl;
-  const headerConversationTitle =
-    activitySnapshot.sessions
-      .find(
-        (session) =>
-          session.agentSessionId === nodeState.lastActiveAgentSessionId
-      )
-      ?.title?.trim() || null;
+    fallbackProvider: readStandaloneNodeProvider(nodeState, launchProvider),
+    lastActiveAgentSessionId: nodeState.lastActiveAgentSessionId,
+    sessions: activitySnapshot.sessions
+  });
   const headerConversationRailWidthPx =
     typeof nodeState.conversationRailWidthPx === "number" &&
     Number.isFinite(nodeState.conversationRailWidthPx)
@@ -663,6 +652,7 @@ export function StandaloneAgentWindow({
         }
         renderHeader={(toolActions) => (
           <AgentGuiWorkbenchHeader
+            agentTitle={headerAgentTitle}
             copy={{
               collapseConversationRail: i18n.t(
                 "workspace.agentGui.collapseConversationRail"
@@ -695,8 +685,7 @@ export function StandaloneAgentWindow({
             primaryAccessory={<AppUpdateStatus presentation="standalone" />}
             secondaryAccessory={isContentLoading ? null : toolActions}
             showConversationRailToggle={!isContentLoading}
-            showAppTitle
-            title={i18n.t("workspace.agentGui.fallbackAgentLabel")}
+            showAppTitle={false}
             windowActions={{
               close: () => {
                 void toolWorkbench.requestWindowClose();
