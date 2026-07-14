@@ -541,13 +541,14 @@ test("standalone Agent browser tool uses the BrowserNode event lifecycle for its
     isLoading: false,
     isOccluded: false,
     lifecycle: "active",
-    nodeId: "browser:standalone-agent-tool:one",
+    nodeId: "browser:standalone-agent-tool:one:tab:1",
     title: "Tutti",
     type: "state",
     url: "https://tutti.app/"
   });
   assert.equal(
-    feature.runtimeStore.getNodeState("browser:standalone-agent-tool:one").url,
+    feature.runtimeStore.getNodeState("browser:standalone-agent-tool:one:tab:1")
+      .url,
     "https://tutti.app/"
   );
   assert.equal(
