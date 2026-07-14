@@ -2070,6 +2070,7 @@ describe("AgentGUINode", () => {
       updatedAtUnixMs: 1
     };
     mockViewModel = createViewModel({
+      availability: "not_found",
       conversations: [conversation],
       activeConversation: conversation,
       activeConversationId: "session-1"
@@ -2092,6 +2093,55 @@ describe("AgentGUINode", () => {
     );
   });
 
+  it("hides hydrated transcript rows after authoritative not found", () => {
+    const conversation = {
+      id: "session-1",
+      provider: "codex" as const,
+      title: "Session 1",
+      status: "ready" as const,
+      cwd: "/workspace",
+      updatedAtUnixMs: 1
+    };
+    mockViewModel = createViewModel({
+      availability: "not_found",
+      conversations: [conversation],
+      activeConversation: conversation,
+      activeConversationId: "session-1",
+      conversationDetail: detailViewModel()
+    });
+
+    renderAgentGUINode();
+
+    expect(
+      screen.getByTestId("agent-gui-unavailable-chat-empty")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Please inspect this")).not.toBeInTheDocument();
+    expect(screen.queryByText("I will check it.")).not.toBeInTheDocument();
+  });
+
+  it("treats a ready conversation with no rows as valid empty detail", () => {
+    const conversation = {
+      id: "session-1",
+      provider: "codex" as const,
+      title: "Session 1",
+      status: "ready" as const,
+      cwd: "/workspace",
+      updatedAtUnixMs: 1
+    };
+    mockViewModel = createViewModel({
+      availability: "ready",
+      conversations: [conversation],
+      activeConversation: conversation,
+      activeConversationId: "session-1"
+    });
+
+    renderAgentGUINode();
+
+    expect(
+      screen.queryByTestId("agent-gui-unavailable-chat-empty")
+    ).not.toBeInTheDocument();
+  });
+
   it("shows the timeline skeleton instead of unavailable empty while active conversation messages are loading", () => {
     const conversation = {
       id: "session-1",
@@ -2102,6 +2152,7 @@ describe("AgentGUINode", () => {
       updatedAtUnixMs: 1
     };
     mockViewModel = createViewModel({
+      availability: "loading",
       conversations: [conversation],
       activeConversation: conversation,
       activeConversationId: "session-1",
@@ -7436,6 +7487,7 @@ function createViewModel(
     availableSkills: [],
     draftPrompt,
     draftContent,
+    availability: "ready",
     isLoadingConversations: false,
     isLoadingMessages: false,
     isLoadingOlderMessages: false,
