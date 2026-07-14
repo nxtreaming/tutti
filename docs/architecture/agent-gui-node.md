@@ -322,12 +322,15 @@ active tab strip and its add menu for files, terminal, browser, apps, and
 messages.
 Opening a tool mounts it as a tab and selecting another tab only changes the
 visible projection; this state is not durable AgentGUI session data.
-The Files tool tab remains the file-navigation surface. Opening a previewable
-file from it adds a sibling file-preview tab keyed by the file path, keeps the
-Files tab mounted, and focuses an existing matching preview tab instead of
-duplicating it. File-preview tabs reuse the workspace file-preview contribution
-for loading, rendering, editing, and saving; the standalone shell owns only the
-UI-local tab descriptor and active-tab projection.
+The Files tool tab remains the file-navigation surface. Double-clicking a file
+from a standalone Agent window delegates to the desktop host's system-default
+file opener, matching Finder double-click behavior instead of mounting a second
+preview implementation in the tool tabs. Directories continue to navigate
+inside the Files tool. Its Open With submenu likewise omits Tutti's internal
+file-viewer and in-app-browser actions while keeping system applications,
+default-browser handling, and the system application picker. The regular
+workspace window keeps its existing workbench file-preview contribution and
+the full Open With menu.
 Unified empty-home readiness is a host-projected, agent-scoped gate,
 not a durable session rule. Desktop may subscribe to its
 `agentProviderStatusService`, merge runtime status into `/agents` availability,

@@ -24,16 +24,19 @@ const standaloneAgentToolSidebarPanelSource = readFileSync(
   new URL("./StandaloneAgentToolSidebarPanel.tsx", import.meta.url),
   "utf8"
 );
+const workspaceFileManagerPaneSource = readFileSync(
+  new URL(
+    "../../workspace-file-manager/ui/WorkspaceFileManagerPane.tsx",
+    import.meta.url
+  ),
+  "utf8"
+);
 const standaloneAgentBrowserToolPanelSource = readFileSync(
   new URL("./StandaloneAgentBrowserToolPanel.tsx", import.meta.url),
   "utf8"
 );
 const standaloneAgentTerminalPanelSource = readFileSync(
   new URL("./StandaloneAgentTerminalPanel.tsx", import.meta.url),
-  "utf8"
-);
-const standaloneAgentFilePreviewPanelSource = readFileSync(
-  new URL("./StandaloneAgentFilePreviewPanel.tsx", import.meta.url),
   "utf8"
 );
 const standaloneAgentToolSidebarToolbarSource = readFileSync(
@@ -306,11 +309,26 @@ test("standalone Agent right sidebar reserves layout space and reveals requested
   );
   assert.match(
     standaloneAgentToolSidebarSource,
-    /dispatch\(\{ panel: "files", tabId: filesTabId, type: "open-panel" \}\)[\s\S]*?createStandaloneAgentFilePreviewTab\(fileOpenRequest\.target\)/
+    /fileOpenRequestTabIdRef\.current = filesTabId;[\s\S]*?dispatch\(\{ panel: "files", tabId: filesTabId, type: "open-panel" \}\)/
   );
   assert.match(
     standaloneAgentToolSidebarPanelSource,
     /<LazyWorkspaceFileManagerPane[\s\S]*?revealIntent=\{fileOpenRequest\}[\s\S]*?showPreviewPanel=\{false\}/
+  );
+});
+
+test("standalone Agent hides internal open-with actions without changing the OS default", () => {
+  assert.match(
+    standaloneAgentToolSidebarPanelSource,
+    /<LazyWorkspaceFileManagerPane[\s\S]*?showInternalOpenWithActions=\{false\}/
+  );
+  assert.match(
+    workspaceFileManagerPaneSource,
+    /showInternalOpenWithActions = true/
+  );
+  assert.match(
+    workspaceFileManagerPaneSource,
+    /<WorkspaceFileManager[\s\S]*?showInternalOpenWithActions=\{showInternalOpenWithActions\}/
   );
 });
 
@@ -403,25 +421,6 @@ test("standalone Agent toolbar exposes task management in the unified panel", ()
   assert.match(
     standaloneAgentIssueManagerToolPanelSource,
     /source\.subscribe\?\.\(updateState\)/
-  );
-});
-
-test("standalone Agent file tabs reuse the workspace file preview contribution", () => {
-  assert.match(
-    standaloneAgentToolSidebarPanelSource,
-    /isStandaloneAgentFilePreviewTab\(tab\)[\s\S]*?<LazyStandaloneAgentFilePreviewPanel[\s\S]*?target=\{tab\.filePreview\}/
-  );
-  assert.match(
-    standaloneAgentFilePreviewPanelSource,
-    /candidate\.id === "workspace-file-preview"[\s\S]*?candidate\.typeId === typeId/
-  );
-  assert.match(
-    standaloneAgentFilePreviewPanelSource,
-    /resolved\.renderBody\(context\)/
-  );
-  assert.match(
-    standaloneAgentFilePreviewPanelSource,
-    /requestWorkspaceFilePreviewSave\(nodeId\)/
   );
 });
 

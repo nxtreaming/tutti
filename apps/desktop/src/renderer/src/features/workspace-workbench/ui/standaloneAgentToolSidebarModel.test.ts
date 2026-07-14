@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   clampStandaloneAgentToolPanelWidth,
-  createStandaloneAgentFilePreviewTab,
   createStandaloneAgentToolSidebarState,
   formatStandaloneAgentToolReminderCount,
   isStandaloneAgentToolGroupActive,
@@ -13,16 +12,6 @@ import {
   resolveStandaloneAgentToolPanelMaxWidth,
   standaloneAgentToolPanelDefaultWidthById
 } from "./standaloneAgentToolSidebarModel.ts";
-
-function textFile(path: string) {
-  return {
-    fileKind: "text" as const,
-    mtimeMs: null,
-    name: path.split("/").pop() ?? "file.txt",
-    path,
-    sizeBytes: null
-  };
-}
 
 test("standalone agent tool sidebar opens, swaps, and hides one active tab at a time", () => {
   const initial = createStandaloneAgentToolSidebarState();
@@ -152,69 +141,6 @@ test("standalone agent tool sidebar activates and closes individual duplicate ta
   assert.deepEqual(firstFilesClosed.mountedTabs, [
     { id: "files:2", panel: "files" }
   ]);
-});
-
-test("standalone agent file opens keep the manager tab and add reusable file tabs", () => {
-  const filesOpen = reduceStandaloneAgentToolSidebarState(
-    createStandaloneAgentToolSidebarState(),
-    { panel: "files", tabId: "files:1", type: "open-panel" }
-  );
-  const notesTarget = textFile("/workspace/notes.md");
-  const notesTab = createStandaloneAgentFilePreviewTab(notesTarget);
-  const notesOpen = reduceStandaloneAgentToolSidebarState(filesOpen, {
-    tab: notesTab,
-    type: "open-file"
-  });
-  const specTab = createStandaloneAgentFilePreviewTab(
-    textFile("/workspace/spec.md")
-  );
-  const specOpen = reduceStandaloneAgentToolSidebarState(notesOpen, {
-    tab: specTab,
-    type: "open-file"
-  });
-  const notesReopened = reduceStandaloneAgentToolSidebarState(specOpen, {
-    tab: createStandaloneAgentFilePreviewTab({
-      ...notesTarget,
-      mtimeMs: 42,
-      sizeBytes: 128
-    }),
-    type: "open-file"
-  });
-  const filesReopened = reduceStandaloneAgentToolSidebarState(notesReopened, {
-    panel: "files",
-    tabId: "ignored-new-files-tab",
-    type: "open-panel"
-  });
-
-  assert.equal(notesOpen.activeTabId, notesTab.id);
-  assert.equal(specOpen.activeTabId, specTab.id);
-  assert.equal(notesReopened.activeTabId, notesTab.id);
-  assert.equal(filesReopened.activeTabId, "files:1");
-  assert.equal(notesReopened.mountedTabs.length, 3);
-  assert.deepEqual(notesReopened.mountedTabs[0], {
-    id: "files:1",
-    panel: "files"
-  });
-  assert.deepEqual(notesReopened.mountedTabs[1], {
-    filePreview: { ...notesTarget, mtimeMs: 42, sizeBytes: 128 },
-    id: notesTab.id,
-    panel: "files"
-  });
-});
-
-test("standalone agent file preview tab identity is stable per path", () => {
-  const first = createStandaloneAgentFilePreviewTab(
-    textFile("/workspace/docs/guide.md")
-  );
-  const renamedMetadata = createStandaloneAgentFilePreviewTab({
-    ...textFile("/workspace/docs/guide.md"),
-    mtimeMs: 10,
-    name: "Guide.md",
-    sizeBytes: 99
-  });
-
-  assert.equal(first.id, renamedMetadata.id);
-  assert.match(first.id, /^file-preview:path:[0-9a-f]{16}$/);
 });
 
 test("standalone agent tool sidebar reports browser and terminal as one active group", () => {

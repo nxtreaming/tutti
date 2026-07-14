@@ -53,7 +53,6 @@ import type {
 } from "@preload/types";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import type { TuttiExternalFileOpenInput } from "@tutti-os/workspace-external-core/contracts";
-import type { WorkspaceFileActivationTarget } from "@tutti-os/workspace-file-manager/services";
 import type { IReporterService } from "@renderer/features/analytics";
 import type { IDesktopRichTextAtService } from "@renderer/features/rich-text-at";
 import type { IWorkspaceUserProjectService } from "@renderer/features/workspace-user-project";
@@ -303,22 +302,17 @@ export function StandaloneAgentWindow({
   const [fileOpenRequest, setFileOpenRequest] =
     useState<StandaloneAgentFileOpenRequest | null>(null);
   const fileOpenRequestSequenceRef = useRef(0);
-  const openFileInSidebar = useCallback(
-    (file: string | WorkspaceFileActivationTarget): boolean => {
-      const normalizedPath =
-        typeof file === "string" ? file.trim() : file.path.trim();
-      if (!normalizedPath) {
-        return false;
-      }
-      setFileOpenRequest({
-        path: normalizedPath,
-        requestID: `standalone-agent-file-${++fileOpenRequestSequenceRef.current}`,
-        ...(typeof file === "string" ? {} : { target: file })
-      });
-      return true;
-    },
-    []
-  );
+  const openFileInSidebar = useCallback((file: string): boolean => {
+    const normalizedPath = file.trim();
+    if (!normalizedPath) {
+      return false;
+    }
+    setFileOpenRequest({
+      path: normalizedPath,
+      requestID: `standalone-agent-file-${++fileOpenRequestSequenceRef.current}`
+    });
+    return true;
+  }, []);
   const openWorkspaceAppExternalFile = useCallback(
     async (input: TuttiExternalFileOpenInput) => {
       if (!openFileInSidebar(input.path)) {
@@ -330,7 +324,10 @@ export function StandaloneAgentWindow({
   useEffect(() => {
     workspaceFileManagerService.setCanvasFilePreviewLauncher(
       workspaceId,
-      (target) => openFileInSidebar(target)
+      async (target) => {
+        await desktopApi.host.files.openFile(workspaceId, target.path);
+        return true;
+      }
     );
     workspaceFileManagerService.setPreviewUnsupportedFallbackNotificationEnabled(
       workspaceId,
@@ -342,7 +339,7 @@ export function StandaloneAgentWindow({
         null
       );
     };
-  }, [openFileInSidebar, workspaceFileManagerService, workspaceId]);
+  }, [desktopApi.host.files, workspaceFileManagerService, workspaceId]);
   useEffect(() => {
     workspaceAppCenterService.setWorkspaceAppLauncher(
       async ({ appId, workspaceId: targetWorkspaceId }) => {
