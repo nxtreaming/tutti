@@ -1867,6 +1867,7 @@ paths:
         - name: searchQuery
           in: query
           required: false
+          description: Case-insensitive, whitespace-tokenized search over the session title only.
           schema:
             type: string
         - name: cursor

@@ -922,7 +922,7 @@ test("desktop rich text @ service uses task icon fallback for issue manager app 
   assert.ok(provider);
   const items = await provider.query({
     context: {},
-    keyword: "tasks",
+    keyword: "task",
     maxResults: 5,
     trigger: "@"
   });
@@ -1178,7 +1178,7 @@ test("desktop rich text @ service uses mention candidate description for workspa
   assert.ok(provider);
   const items = await provider.query({
     context: {},
-    keyword: "recurring",
+    keyword: "automation",
     maxResults: 5,
     trigger: "@"
   });
@@ -1198,7 +1198,7 @@ test("desktop rich text @ service uses mention candidate description for workspa
   );
 });
 
-test("desktop rich text @ service searches workspace app command metadata from mention candidates", async () => {
+test("desktop rich text @ service only matches workspace app display names", async () => {
   const service = new DesktopRichTextAtService({
     tuttidClient: {
       async listWorkspaceAppMentionCandidates(workspaceId: string) {
@@ -1206,14 +1206,14 @@ test("desktop rich text @ service searches workspace app command metadata from m
           workspaceId,
           apps: [
             createWorkspaceAppMentionCandidate({
-              appId: "automation",
+              appId: "scheduler-core",
               commandCount: 1,
               commandDescriptions: ["List automation definitions."],
               commandPaths: ["automation list"],
               commandSummaries: ["List automations"],
-              description: "Manage automations.",
+              description: "Review recurring schedules.",
               displayName: "Automation",
-              scopes: ["automation"]
+              scopes: ["schedule"]
             })
           ]
         };
@@ -1228,20 +1228,24 @@ test("desktop rich text @ service searches workspace app command metadata from m
     workspaceId: "workspace-1"
   });
   assert.ok(provider);
+  for (const keyword of ["scheduler", "recurring", "automations", "schedule"]) {
+    const items = await provider.query({
+      context: {},
+      keyword,
+      maxResults: 5,
+      trigger: "@"
+    });
+    assert.deepEqual(items, []);
+  }
+
   const items = await provider.query({
     context: {},
-    keyword: "automations",
+    keyword: "automation",
     maxResults: 5,
     trigger: "@"
   });
-
-  const item = items[0] as
-    | { description: string; displayName: string }
-    | undefined;
-  assert.ok(item);
-  assert.equal(item.displayName, "Automation");
-  assert.equal(item.description, "Manage automations.");
-  assert.equal(provider.getItemSubtitle?.(item), "Manage automations.");
+  assert.equal(items.length, 1);
+  assert.equal((items[0] as { displayName: string }).displayName, "Automation");
 });
 
 test("desktop rich text @ service emits enriched app + session meta when enrichment deps supplied", async () => {

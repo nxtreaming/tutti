@@ -37,12 +37,7 @@ func matchesSessionSearch(session Session, rawQuery string) bool {
 	if query == "" {
 		return true
 	}
-	haystack := strings.ToLower(strings.Join([]string{
-		session.ID,
-		session.Provider,
-		value(session.Title),
-		session.Cwd,
-	}, "\n"))
+	haystack := strings.ToLower(value(session.Title))
 	for _, token := range strings.Fields(query) {
 		if !strings.Contains(haystack, token) {
 			return false

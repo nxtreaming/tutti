@@ -4808,9 +4808,11 @@ type ListWorkspaceAgentPinnedSessionPageParams struct {
 // ListWorkspaceAgentSessionsParams defines parameters for ListWorkspaceAgentSessions.
 type ListWorkspaceAgentSessionsParams struct {
 	AgentTargetId *string `form:"agentTargetId,omitempty" json:"agentTargetId,omitempty"`
-	SearchQuery   *string `form:"searchQuery,omitempty" json:"searchQuery,omitempty"`
-	Cursor        *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit         *int    `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// SearchQuery Case-insensitive, whitespace-tokenized search over the session title only.
+	SearchQuery *string `form:"searchQuery,omitempty" json:"searchQuery,omitempty"`
+	Cursor      *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit       *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListWorkspaceAgentSessionMessagesParams defines parameters for ListWorkspaceAgentSessionMessages.

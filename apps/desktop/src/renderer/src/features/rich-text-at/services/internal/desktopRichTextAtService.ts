@@ -413,18 +413,7 @@ function workspaceAppMatchesKeyword(
   if (!keyword) {
     return true;
   }
-  const haystack = [
-    item.appId,
-    item.displayName,
-    item.description,
-    ...item.scopes,
-    ...item.commandPaths,
-    ...item.commandSummaries,
-    ...item.commandDescriptions
-  ]
-    .join("\n")
-    .toLowerCase();
-  return haystack.includes(keyword);
+  return item.displayName.toLowerCase().includes(keyword);
 }
 
 function findWorkspaceAppMentionLocalization(

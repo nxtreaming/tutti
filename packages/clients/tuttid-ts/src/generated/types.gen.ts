@@ -5520,6 +5520,9 @@ export type ListWorkspaceAgentSessionsData = {
   };
   query?: {
     agentTargetId?: string;
+    /**
+     * Case-insensitive, whitespace-tokenized search over the session title only.
+     */
     searchQuery?: string;
     cursor?: string;
     limit?: number;

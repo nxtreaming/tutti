@@ -1723,6 +1723,9 @@ User-visible rules:
   backend, target-scoped, cursor-paged query across all visible sessions; its
   results are engine entities joined through ID-only query state. These queries
   may hide a session from the rail, but must not delete or unactivate it.
+- Conversation search matches only the user-visible session title. Session ids,
+  providers, and working directories are routing or runtime metadata and must
+  not produce title-search results.
 - Conversation target filters are also list-query concerns. The All rail filter
   applies no `agentTargetId` constraint; provider target rail filters such as
   Codex and Claude Code match sessions by `session.agentTargetId`, not by
@@ -2639,6 +2642,10 @@ the Apps tab queries only `workspace-app`; first-party launch targets appear in
 a separate Agents tab that queries only `agent-target`. Do not use the Apps tab
 as an agent fallback, because that recreates the old pseudo workspace-app
 contract.
+Workspace-app search in the Apps tab matches only the localized display name.
+App ids, descriptions, scopes, and CLI command metadata may enrich presentation
+or routing, but they must not produce search results that the visible app name
+cannot explain.
 
 Quick check:
 
