@@ -38,7 +38,7 @@ import {
   TooltipTrigger,
   cn
 } from "@tutti-os/ui-system";
-import { AddLinedIcon } from "@tutti-os/ui-system/icons";
+import { AddLinedIcon, WarningLinedIcon } from "@tutti-os/ui-system/icons";
 import {
   WorkspaceFilePreviewSurface,
   type WorkspaceFilePreviewSurfaceState
@@ -523,6 +523,8 @@ export function ReferenceSourcePicker({
                         <Feedback>
                           <Spinner size={16} />
                         </Feedback>
+                      ) : view.contentError ? (
+                        <ContentError copy={copy} />
                       ) : view.isQuery ? (
                         // 查询态(关键词或筛选):扁平结果
                         view.searchResults.length === 0 ? (
@@ -973,6 +975,8 @@ export function ReferenceSourceContentPane({
               <Feedback>
                 <Spinner size={16} />
               </Feedback>
+            ) : view.contentError ? (
+              <ContentError copy={copy} />
             ) : view.isQuery ? (
               view.searchResults.length === 0 ? (
                 <Feedback>{copy.t("referencePicker.emptySearch")}</Feedback>
@@ -1737,6 +1741,24 @@ function Feedback({ children }: { children: ReactNode }): JSX.Element {
     <div className="grid min-h-0 flex-1 place-items-center px-4 py-8 text-center text-[13px] text-[var(--text-secondary)]">
       {children}
     </div>
+  );
+}
+
+function ContentError({
+  copy
+}: {
+  copy: WorkspaceFileReferenceCopy;
+}): JSX.Element {
+  return (
+    <Feedback>
+      <div
+        className="flex max-w-sm flex-col items-center gap-2 text-[var(--state-danger)]"
+        role="alert"
+      >
+        <WarningLinedIcon className="size-5" />
+        <span>{copy.t("referencePicker.loadError")}</span>
+      </div>
+    </Feedback>
   );
 }
 
