@@ -280,7 +280,10 @@ export class AgentGuiHeroCarouselScene {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.requestRender();
+    // setSize clears the drawing buffer. Render synchronously so a window
+    // resize never exposes that cleared frame while the next animation frame
+    // is pending during interactive window dragging.
+    this.renderer.render(this.scene, this.camera);
   }
 
   // Agent index of the tile slot the wheel is heading to.
