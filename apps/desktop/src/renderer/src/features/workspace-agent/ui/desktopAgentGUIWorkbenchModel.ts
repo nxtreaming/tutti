@@ -66,6 +66,7 @@ export interface DesktopAgentGUIWorkbenchBodyProps {
   >;
   runtimeApi?: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">;
   trackAgentProviderChatReady?: (input: { provider: string }) => Promise<void>;
+  onEngagementEvent?: AgentGUIProps["hostActions"]["onEngagementEvent"];
   trackWorkspaceFileReferences?: AgentGUIProps["workspace"]["onFileReferencesAdded"];
   workspaceFileReferenceAdapter: NonNullable<
     AgentGUIProps["workspace"]["fileReferenceAdapter"]
@@ -153,6 +154,7 @@ export function areDesktopAgentGUIWorkbenchBodyPropsEqual(
     previous.contextMentionProviders === next.contextMentionProviders &&
     previous.runtimeApi === next.runtimeApi &&
     previous.trackAgentProviderChatReady === next.trackAgentProviderChatReady &&
+    previous.onEngagementEvent === next.onEngagementEvent &&
     previous.trackWorkspaceFileReferences ===
       next.trackWorkspaceFileReferences &&
     previous.workspaceFileReferenceAdapter ===

@@ -52,7 +52,10 @@ import {
   writePlainTextToClipboard
 } from "./agentRichTextEditorSupport";
 export { isAgentRichTextLargeTextPaste } from "./agentRichTextEditorSupport";
-import { useAgentRichTextEditorHandle } from "./useAgentRichTextEditorHandle";
+import {
+  AGENT_RICH_TEXT_SKIP_USER_CONTENT_EVENT_META,
+  useAgentRichTextEditorHandle
+} from "./useAgentRichTextEditorHandle";
 import { AgentRichTextEditorSurface } from "./AgentRichTextEditorSurface";
 import { handleAgentRichTextKeyDownCapture } from "./agentRichTextKeyboard";
 
@@ -72,6 +75,8 @@ export const AgentRichTextEditor = forwardRef<
     removeMentionLabel,
     className,
     onChange,
+    onFocus,
+    onUserContentChange,
     onSubmit,
     onSubmitGuidance,
     availableCapabilities = [],
@@ -96,6 +101,9 @@ export const AgentRichTextEditor = forwardRef<
   const lastEmittedPromptRef = useRef<string | null>(value);
   const editorRef = useRef<Editor | null>(null);
   const onChangeRef = useRef(onChange);
+  const onFocusRef = useRef(onFocus);
+  const onUserContentChangeRef = useRef(onUserContentChange);
+  const pendingFocusMethodRef = useRef<"pointer" | "programmatic" | null>(null);
   const onSubmitRef = useRef(onSubmit);
   const onSubmitGuidanceRef = useRef(onSubmitGuidance);
   const onKeyDownForPaletteRef = useRef(onKeyDownForPalette);
@@ -137,9 +145,7 @@ export const AgentRichTextEditor = forwardRef<
     suppressPastedAtSuggestionRef.current =
       text.includes("@") && !text.endsWith("@");
     if (suppressPastedAtSuggestionRef.current) {
-      window.setTimeout(() => {
-        suppressPastedAtSuggestionRef.current = false;
-      }, 0);
+      releasePastedAtSuggestionSuppression(suppressPastedAtSuggestionRef);
     }
     currentEditor
       .chain()
@@ -257,6 +263,8 @@ export const AgentRichTextEditor = forwardRef<
   );
 
   onChangeRef.current = onChange;
+  onFocusRef.current = onFocus;
+  onUserContentChangeRef.current = onUserContentChange;
   onSubmitRef.current = onSubmit;
   onSubmitGuidanceRef.current = onSubmitGuidance;
   onKeyDownForPaletteRef.current = onKeyDownForPalette;
@@ -466,9 +474,7 @@ export const AgentRichTextEditor = forwardRef<
           suppressPastedAtSuggestionRef.current =
             text.includes("@") && !text.endsWith("@");
           if (suppressPastedAtSuggestionRef.current) {
-            window.setTimeout(() => {
-              suppressPastedAtSuggestionRef.current = false;
-            }, 0);
+            releasePastedAtSuggestionSuppression(suppressPastedAtSuggestionRef);
           }
           currentEditor.commands.insertContent(
             plainTextToAgentRichTextInlineContent(text, {
@@ -644,7 +650,7 @@ export const AgentRichTextEditor = forwardRef<
         }
       }
     },
-    onUpdate: ({ editor: nextEditor }) => {
+    onUpdate: ({ editor: nextEditor, transaction }) => {
       editorRef.current = nextEditor;
       scheduleSelectionScroll(nextEditor);
       const nextPrompt = editorToPromptText(nextEditor);
@@ -652,7 +658,26 @@ export const AgentRichTextEditor = forwardRef<
         return;
       }
       lastEmittedPromptRef.current = nextPrompt;
+      if (
+        transaction.getMeta(AGENT_RICH_TEXT_SKIP_USER_CONTENT_EVENT_META) !==
+        true
+      ) {
+        onUserContentChangeRef.current?.(nextPrompt);
+      }
       onChangeRef.current(nextPrompt);
+    },
+    onFocus: ({ editor: nextEditor }) => {
+      const pendingMethod = pendingFocusMethodRef.current;
+      const focusMethod =
+        pendingMethod ??
+        (nextEditor.view.dom.matches(":focus-visible")
+          ? "keyboard"
+          : "programmatic");
+      pendingFocusMethodRef.current = null;
+      onFocusRef.current?.(focusMethod);
+    },
+    onBlur: () => {
+      pendingFocusMethodRef.current = null;
     },
     onCreate: ({ editor: nextEditor }) => {
       editorRef.current = nextEditor;
@@ -672,10 +697,6 @@ export const AgentRichTextEditor = forwardRef<
       submitOnEnter
     });
   };
-  useEffect(() => {
-    editorRef.current = editor;
-  }, [editor]);
-
   useEffect(
     () => () => {
       if (
@@ -713,6 +734,9 @@ export const AgentRichTextEditor = forwardRef<
     availableCapabilitiesRef,
     availableSkillsRef,
     editorRef,
+    onBeforeProgrammaticFocus: () => {
+      pendingFocusMethodRef.current = "programmatic";
+    },
     ref
   });
 
@@ -757,9 +781,19 @@ export const AgentRichTextEditor = forwardRef<
       disabled={disabled}
       editor={editor}
       handleKeyDownCapture={handleKeyDownCapture}
+      handlePointerDownCapture={() => {
+        pendingFocusMethodRef.current = "pointer";
+      }}
       pasteClipboardText={pasteClipboardText}
       placeholder={placeholder}
       t={t}
     />
   );
 });
+
+function releasePastedAtSuggestionSuppression(ref: { current: boolean }): void {
+  // timing: keep suppression through the synchronous editor insertion only.
+  window.setTimeout(() => {
+    ref.current = false;
+  }, 0);
+}

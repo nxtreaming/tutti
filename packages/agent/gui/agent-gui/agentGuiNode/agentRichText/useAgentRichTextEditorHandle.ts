@@ -16,10 +16,14 @@ import {
   isPromptVisualLineStart
 } from "./agentRichTextEditorSupport";
 
+export const AGENT_RICH_TEXT_SKIP_USER_CONTENT_EVENT_META =
+  "agentRichTextSkipUserContentEvent";
+
 export function useAgentRichTextEditorHandle(input: {
   availableCapabilitiesRef: RefObject<readonly AgentCapabilityTokenOption[]>;
   availableSkillsRef: RefObject<readonly AgentGUIProviderSkillOption[]>;
   editorRef: RefObject<Editor | null>;
+  onBeforeProgrammaticFocus?: () => void;
   ref: ForwardedRef<AgentRichTextEditorHandle>;
 }): void {
   useImperativeHandle(
@@ -30,6 +34,7 @@ export function useAgentRichTextEditorHandle(input: {
         if (!currentEditor || currentEditor.isDestroyed) {
           return;
         }
+        if (!currentEditor.isFocused) input.onBeforeProgrammaticFocus?.();
         currentEditor
           .chain()
           .focus()
@@ -43,6 +48,7 @@ export function useAgentRichTextEditorHandle(input: {
           return;
         }
         const end = currentEditor.state.doc.content.size;
+        if (!currentEditor.isFocused) input.onBeforeProgrammaticFocus?.();
         currentEditor.chain().focus().setTextSelection(end).run();
       },
       getPromptTextBeforeSelection() {
@@ -71,13 +77,20 @@ export function useAgentRichTextEditorHandle(input: {
         )
           ? "@"
           : " @";
-        currentEditor.chain().focus().insertContent(triggerText).run();
+        if (!currentEditor.isFocused) input.onBeforeProgrammaticFocus?.();
+        currentEditor
+          .chain()
+          .focus()
+          .setMeta(AGENT_RICH_TEXT_SKIP_USER_CONTENT_EVENT_META, true)
+          .insertContent(triggerText)
+          .run();
       },
       insertWorkspaceReferences(items) {
         const currentEditor = input.editorRef.current;
         if (!currentEditor || currentEditor.isDestroyed || items.length === 0) {
           return;
         }
+        if (!currentEditor.isFocused) input.onBeforeProgrammaticFocus?.();
         currentEditor
           .chain()
           .focus()
@@ -96,6 +109,7 @@ export function useAgentRichTextEditorHandle(input: {
         if (!currentEditor || currentEditor.isDestroyed || items.length === 0) {
           return;
         }
+        if (!currentEditor.isFocused) input.onBeforeProgrammaticFocus?.();
         currentEditor
           .chain()
           .focus()
@@ -116,6 +130,7 @@ export function useAgentRichTextEditorHandle(input: {
         }
         const to = currentEditor.state.selection.from;
         const from = Math.max(1, to - length);
+        if (!currentEditor.isFocused) input.onBeforeProgrammaticFocus?.();
         currentEditor
           .chain()
           .focus()
