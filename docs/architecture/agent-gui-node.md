@@ -905,7 +905,12 @@ Claude SDK sidecars must not treat Edit/Write input text as authoritative patch
 data. They should collect the `PostToolUse` `tool_response.structuredPatch`
 hunks, convert them into file-level `changes[].diff` payloads, and only use
 input-derived file metadata for optimistic display before the tool response
-arrives.
+arrives. Provider diff metadata must be canonicalized at this adapter boundary
+before it becomes durable activity data. In particular, unified-diff control
+markers such as `\ No newline at end of file` must use Git's exact syntax;
+provider display formatting must not flow unchanged into executable
+`patchBatches`. AgentGUI also canonicalizes this marker while reading older
+persisted activity so pre-fix sessions remain reversible.
 
 Provider adapters that receive successful write/edit/apply_patch tool calls
 without a native turn-level diff event must still normalize the executed tool
@@ -1019,8 +1024,12 @@ repository by resolving from the nearest existing parent directory.
 The Git mutation belongs in `services/tuttid`, not `apps/desktop` or
 `@tutti-os/agent-gui`. The daemon creates a temporary `tutti-apply-*`
 directory, writes `patch.diff`, optionally copies the Git index into that
-directory for non-atomic unstaged `--3way` operations, executes `git apply` or
-`git apply -R`, and removes the temporary directory on every exit path.
+directory for non-atomic unstaged `--3way` operations, runs `git apply --check`
+with the same target, reverse, binary, directory, and temporary-index options,
+then executes `git apply` or `git apply -R` only after preflight succeeds. A
+syntax failure returns `invalid-patch`; a valid patch that no longer matches the
+worktree returns `patch-does-not-apply`. The daemon removes the temporary
+directory on every exit path.
 When reversing an added-file patch, the daemon has one narrow fallback for
 less-structured summary diffs: if Git rejects the patch, the target is still
 untracked, and the current file content only differs from the patch by trailing
@@ -1038,7 +1047,10 @@ AgentGUI shared components should not call the sonner `toast.error` entrypoint
 directly except as a last-resort fallback when no host toast capability exists.
 The summary card does not keep an inline failure row or durable error state
 because the source of truth remains the recorded diff plus the current worktree
-state.
+state. The desktop and daemon record the same `agent-git-patch` diagnostic
+family with JSON payloads, including the action, result, error code, paths, and
+Git stderr. Diagnostics record a diff hash and byte count rather than raw file
+content.
 
 Codex invalidates Git query caches after this operation. Tutti currently has no
 equivalent renderer Git cache group. The AgentGUI row emits a lightweight
