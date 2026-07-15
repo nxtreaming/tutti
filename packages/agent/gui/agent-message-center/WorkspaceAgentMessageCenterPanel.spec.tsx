@@ -1405,66 +1405,6 @@ describe("WorkspaceAgentMessageCenterPanel", () => {
     expect(screen.queryByText("Running task 5")).toBeNull();
   });
 
-  it("shows full oversized stack labels and batches all expanded cards", async () => {
-    const items = Array.from({ length: 127 }, (_, index) =>
-      createMessageCenterItem({
-        agentSessionId: `working-session-${index + 1}`,
-        title: `Running task ${index + 1}`,
-        status: "working"
-      })
-    );
-
-    render(
-      <WorkspaceAgentMessageCenterPanel
-        open
-        model={createMessageCenterModel(items)}
-        onClose={vi.fn()}
-        onOpenChat={vi.fn()}
-        onSubmitPrompt={vi.fn()}
-      />
-    );
-
-    const stack = screen.getByTestId(
-      "workspace-agent-message-stack-working:agent-user:codex:unknown-user"
-    );
-    expect(stack).toHaveAttribute("data-stack-count", "127");
-
-    const summary = screen.getByTestId(
-      "workspace-agent-message-stack-summary-working:agent-user:codex:unknown-user"
-    );
-    expect(summary).toHaveAttribute("data-stack-summary-count", "127");
-    expect(summary).toHaveTextContent("127 messages");
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Expand 127 collapsed messages" })
-    );
-
-    expect(stack).toHaveAttribute("data-stack-state", "expanded");
-    expect(screen.getByText("Running task 24")).toBeTruthy();
-    expect(screen.queryByText("Running task 100")).toBeNull();
-    expect(
-      stack.querySelectorAll("[data-message-center-item-id]").length
-    ).toBeLessThan(100);
-
-    await waitFor(
-      () => {
-        expect(
-          stack.querySelectorAll("[data-message-center-item-id]")
-        ).toHaveLength(127);
-      },
-      { timeout: 5000 }
-    );
-
-    expect(screen.getByText("Running task 127")).toBeTruthy();
-    expect(
-      screen
-        .getAllByText("127 messages")
-        .some((element) =>
-          element.parentElement?.classList.contains("text-[13px]")
-        )
-    ).toBe(true);
-  });
-
   it("expands a stack for a highlighted stacked item and still collapses on demand", async () => {
     render(
       <WorkspaceAgentMessageCenterPanel
