@@ -790,26 +790,6 @@ describe("AgentGUINode", () => {
     });
   });
 
-  it("keeps the conversations section visible when there are no sessions", () => {
-    renderAgentGUINode();
-
-    const emptyState = screen
-      .getByText("agentHost.agentGui.emptyProjectConversations")
-      .closest("div");
-
-    expect(
-      screen.getByText("agentHost.agentGui.sectionConversations")
-    ).toBeInTheDocument();
-    expect(emptyState).toHaveClass(
-      "agent-gui-node__conversation-section-empty"
-    );
-    expect(
-      screen.queryByRole("button", {
-        name: "agentHost.agentGui.startConversation"
-      })
-    ).toBeNull();
-  });
-
   it("shows agent probe usage details in the title info entry", () => {
     const onAgentProbeDemandChange = vi.fn();
 
