@@ -4241,7 +4241,7 @@ aside.workspace-agents-status-panel
   .tsh-agent-object-token__main {
   padding: 0 6px;
   border-radius: 6px;
-  background: var(--tutti-purple-bg);
+  background: transparent;
 }
 
 [data-agent-mention-kind="skill"].tsh-agent-object-token--entity.ProseMirror-selectednode
@@ -4340,7 +4340,7 @@ aside.workspace-agents-status-panel
   border-radius: 4px;
   font-size: 13px;
   line-height: 24px;
-  transform: translateY(1px);
+  transform: translateY(-2px);
 }
 
 .agent-gui-node__composer-textarea
@@ -7210,41 +7210,6 @@ button.agent-gui-node__conversation-section-toggle:hover
   outline: none;
 }
 
-.agent-gui-node__provider-setup-notice {
-  position: absolute;
-  top: 56px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
-  box-sizing: border-box;
-  width: max-content;
-  max-width: min(calc(100% - (var(--agent-gui-detail-padding-x) * 2)), 420px);
-  margin: 0;
-  /* The pill sizes to its content (width: max-content), so the action button's
-     margin-left:auto has no free space to absorb and the message text would butt
-     directly against "Set up". Space the message and action explicitly. */
-  column-gap: 6px;
-  pointer-events: none;
-}
-
-.agent-gui-node__detail-header + .agent-gui-node__provider-setup-notice {
-  top: calc(64px + 16px);
-}
-
-.agent-gui-node__provider-setup-notice-action {
-  flex: 0 0 auto;
-  margin-left: auto;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: currentColor;
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-}
-
 .agent-gui-node__layout [data-slot="status-dot"],
 [data-testid="workspace-agent-message-center"] [data-slot="status-dot"] {
   --agent-gui-status-dot-color: var(
@@ -7983,6 +7948,8 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 
 .agent-gui-node__composer-queued-prompt-list {
   display: grid;
+  width: 100%;
+  min-width: 0;
   gap: 0;
   max-height: 36px;
   overflow: hidden;
@@ -7993,6 +7960,7 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 
 .agent-gui-node__composer-queued-prompt-panel {
   display: grid;
+  min-width: 0;
   gap: 4px;
   position: relative;
   z-index: 1;
@@ -8056,6 +8024,9 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 
 .agent-gui-node__composer-queued-prompt-row {
   display: grid;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
@@ -8068,13 +8039,16 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 
 .agent-gui-node__composer-queued-prompt-main {
   display: block;
+  width: 100%;
   min-width: 0;
 }
 
 .agent-gui-node__composer-queued-prompt-body {
   display: flex;
+  width: 100%;
   align-items: center;
   min-width: 0;
+  overflow: hidden;
   gap: 6px;
 }
 
@@ -8121,32 +8095,52 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 }
 
 .agent-gui-node__composer-queued-prompt-text {
+  position: relative;
+  width: 0;
+  max-width: 100%;
+  flex: 1 1 0;
   min-width: 0;
   margin: 0;
   color: var(--agent-gui-text-secondary, var(--text-secondary));
   font-size: 13px;
   line-height: 28px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   word-break: break-word;
   white-space: nowrap;
 }
 
+.agent-gui-node__composer-queued-prompt-text[data-overflowing="true"]::after {
+  content: "…";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(90deg, transparent, var(--background-panel) 52%);
+  color: var(--agent-gui-text-secondary, var(--text-secondary));
+  line-height: 28px;
+  text-align: right;
+  pointer-events: none;
+}
+
 .agent-gui-node__composer-queued-prompt-markdown {
   display: block;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   color: inherit;
   font-size: inherit;
   line-height: inherit;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
 .agent-gui-node__composer-queued-prompt-markdown
   [data-workspace-agent-markdown-shell="true"] {
   display: block;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -8157,7 +8151,7 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   [data-workspace-agent-markdown="true"] {
   display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -8168,7 +8162,8 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 
 .agent-gui-node__composer-queued-prompt-markdown
   [data-agent-file-mention="true"] {
-  max-width: 100%;
+  width: max-content;
+  max-width: min(100%, var(--agent-mention-max-width, 16rem));
   color: inherit;
   vertical-align: baseline;
 }
@@ -8177,20 +8172,20 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   [data-agent-file-mention="true"].tsh-agent-object-token--entity {
   color: inherit;
   top: 3px;
+  max-width: min(100%, var(--agent-mention-max-width, 16rem));
   min-height: 24px;
   padding: 2px 4px;
   border: 1px solid transparent;
   border-radius: 4px;
   line-height: 20px;
-  transition:
-    background-color 140ms ease-in-out,
-    border-color 140ms ease-in-out;
+  transition: none;
 }
 
 .agent-gui-node__composer-queued-prompt-markdown
-  [data-agent-file-mention="true"].tsh-agent-object-token--entity:hover {
+  [data-agent-file-mention="true"].tsh-agent-object-token:hover {
   border-color: transparent;
-  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  background: transparent;
+  text-decoration: none;
 }
 
 .agent-gui-node__composer-queued-prompt-markdown
@@ -8228,7 +8223,7 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 .agent-gui-node__composer-queued-prompt-panel[data-expanded="true"]
   .agent-gui-node__composer-queued-prompt-text {
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -8241,12 +8236,14 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   .agent-gui-node__composer-queued-prompt-markdown
   [data-workspace-agent-markdown="true"] {
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
 .agent-gui-node__composer-queued-prompt-actions {
   display: inline-flex;
+  justify-self: end;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
 }
@@ -8255,7 +8252,7 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   color: var(--text-secondary);
 }
 
-.agent-gui-node__composer textarea,
+.agent-gui-node__composer-prompt-input-area textarea,
 .agent-gui-node__composer-textarea {
   --agent-gui-composer-text-line-height: 24px;
   --agent-gui-composer-text-max-visible-lines: 3.5;
@@ -8282,7 +8279,9 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   -ms-overflow-style: auto;
 }
 
-.agent-gui-node__composer[data-layout="dock"] textarea,
+.agent-gui-node__composer[data-layout="dock"]
+  .agent-gui-node__composer-prompt-input-area
+  textarea,
 .agent-gui-node__composer[data-layout="dock"]
   .agent-gui-node__composer-textarea {
   display: block;
@@ -8312,7 +8311,9 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   padding-top: 0;
 }
 
-.agent-gui-node__composer[data-layout="dock"] textarea::-webkit-scrollbar,
+.agent-gui-node__composer[data-layout="dock"]
+  .agent-gui-node__composer-prompt-input-area
+  textarea::-webkit-scrollbar,
 .agent-gui-node__composer[data-layout="dock"]
   .agent-gui-node__composer-textarea::-webkit-scrollbar {
   display: block;
@@ -8320,21 +8321,21 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   height: 4px;
 }
 
-.agent-gui-node__composer textarea::-webkit-scrollbar,
+.agent-gui-node__composer-prompt-input-area textarea::-webkit-scrollbar,
 .agent-gui-node__composer-textarea::-webkit-scrollbar {
   display: block;
   width: 4px;
   height: 4px;
 }
 
-.agent-gui-node__composer textarea::-webkit-scrollbar-track,
-.agent-gui-node__composer textarea::-webkit-scrollbar-corner,
+.agent-gui-node__composer-prompt-input-area textarea::-webkit-scrollbar-track,
+.agent-gui-node__composer-prompt-input-area textarea::-webkit-scrollbar-corner,
 .agent-gui-node__composer-textarea::-webkit-scrollbar-track,
 .agent-gui-node__composer-textarea::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-.agent-gui-node__composer textarea::-webkit-scrollbar-thumb,
+.agent-gui-node__composer-prompt-input-area textarea::-webkit-scrollbar-thumb,
 .agent-gui-node__composer-textarea::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--transparency-hover);
@@ -8430,7 +8431,7 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
   white-space: nowrap;
 }
 
-.agent-gui-node__composer textarea::placeholder,
+.agent-gui-node__composer-prompt-input-area textarea::placeholder,
 .agent-gui-node__composer-textarea::placeholder {
   color: var(--agent-gui-text-tertiary);
   line-height: 24px;

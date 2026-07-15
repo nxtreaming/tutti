@@ -155,23 +155,43 @@ left separator follows the same adjacent layout rule. Closing the sidebar
 restores the pre-panel native width. This sizing remains renderer/main window
 presentation state and never enters AgentGUI or workbench snapshots.
 An Agent-only right sidebar with no mounted tool uses a compact picker width at
-60% of the Files panel default. Selecting a tool switches the reserved layout
-and requested native width to that tool's normal default. While the picker is
-visible, its sole header toggle stays right-anchored to the same window edge
-as the collapsed sidebar control, avoiding a horizontal jump when the panel
-opens.
+60% of the Files panel default. The picker lists Files, Terminal, Browser,
+Tasks, Apps, and Messages in the same tool hierarchy used by the panel header.
+Selecting a tool switches the reserved layout and requested native width to
+that tool's normal default. While the picker is visible, its sole header toggle
+stays right-anchored to the same window edge as the collapsed sidebar control,
+avoiding a horizontal jump when the panel opens.
 The renderer commits the panel shell's final layout width before issuing the
 native resize IPC on the next frame, so host latency cannot block visual
-feedback. The shell must not animate layout width; any optional entrance stays
-inside the fixed-size panel and uses only compositor-friendly transform and
-opacity. Heavy first-use tool bodies mount after that brief entrance and remain
-mounted for later opens. Native content bounds change without a parallel bounds
-animation, while reduced-motion preferences disable the inner entrance and
+feedback. The shell must not animate layout width before a heavy first-use tool
+body mounts. The lightweight empty picker and width changes for an already
+mounted tool use the same 260ms ease-in-out transition. On macOS, empty-picker
+open and close start the matching native content-bounds animation in the same
+frame; the close transition only clears its retained layout baseline after the
+panel width reaches zero, so it never triggers a second terminal window resize.
+Other optional first-use entrances stay inside the fixed-size panel and use
+only compositor-friendly transform and opacity. Heavy first-use tool bodies
+mount after that brief entrance and remain mounted for later opens. Native
+content bounds otherwise change without a parallel bounds animation, while
+reduced-motion preferences disable transitions, the inner entrance, and the
 mount delay.
 Its Apps panel renders the App Center contribution body instead of mounting a
-catalog-only copy. The shared `openAppId` view state selects which surface is
-visible in both OS and Agent-only shells, but it does not own Browser Node
-lifetime. The contribution keeps the catalog and one app-specific Browser Node
+catalog-only copy. App open, close, and open-state checks cross a feature-owned
+workspace App surface host. The OS presenter commits a prepared app by launching
+its app-specific Workbench Node and Dock entry; it does not select the app inside
+the App Center node. The Agent-only presenter instead selects the shared
+`openAppId` compatibility view state before runtime preparation so the Apps
+sidebar can show startup progress inline, and it rolls that selection back when
+preparation fails. The presenter registration is renderer-window scoped and
+is bound to the actual Workbench host and workspace lifecycle, not App Center
+snapshot or revision updates. Replacing or disposing a presenter cancels and
+rolls back its pending attempts before releasing it; disposable identity checks
+also ensure an old Shell cleanup cannot remove a newer presenter. In the
+Agent-only shell, only the latest attempt whose App is still selected may report
+successful presentation; stale completions cannot claim success for a newer or
+cleared inline selection.
+
+The Agent-only contribution keeps the catalog and one app-specific Browser Node
 for every opened app mounted for the renderer lifetime. The back action clears
 only the selection, marks every retained Browser Node hidden, and reveals the
 already-mounted catalog; reopening an app reveals the same Browser Node so its
@@ -180,10 +200,10 @@ state. Every retained app uses a stable app-specific Browser Node id and
 receives `hidden={true}` whenever it is inactive or its containing tool surface
 is minimized. Retained instances are released only when a ready App Center
 snapshot confirms that the app is no longer available or when the containing
-host is torn down. An app open request activates the Apps sidebar
-automatically. Both shells
-must start the shared App Center polling lifecycle, so app runtime events update
-the selected Browser Node from `starting` to `running` with its launch URL.
+host is torn down. An Agent-only app open request activates the Apps sidebar
+automatically. Both shells must start the shared App Center polling lifecycle,
+so app runtime events update the active app surface from `starting` to `running`
+with its launch URL.
 Both shells also mount the Workspace App external bridge and local
 workspace-scoped launch handlers for the surfaces they expose. This keeps App
 Center Agent actions and in-app Agent/session/issue reference links functional

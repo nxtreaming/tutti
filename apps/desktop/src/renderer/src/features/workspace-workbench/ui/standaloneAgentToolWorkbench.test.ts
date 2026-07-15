@@ -184,7 +184,11 @@ test("standalone Agent opens an empty right sidebar with the core tool picker", 
   );
   assert.match(
     standaloneAgentToolSidebarPickerSource,
-    /id: "files"[\s\S]*?id: "terminal"[\s\S]*?id: "browser"/
+    /id: "files"[\s\S]*?id: "terminal"[\s\S]*?id: "browser"[\s\S]*?id: "tasks"[\s\S]*?id: "apps"[\s\S]*?id: "messages"/
+  );
+  assert.match(
+    standaloneAgentToolSidebarSource,
+    /labels=\{\{[\s\S]*?apps: copy\.apps[\s\S]*?browser: copy\.browser[\s\S]*?files: copy\.files[\s\S]*?messages: copy\.messages[\s\S]*?tasks: copy\.tasks[\s\S]*?terminal: copy\.terminal/
   );
   assert.match(
     standaloneAgentToolSidebarPickerSource,
@@ -375,14 +379,18 @@ test("standalone Agent hides internal open-with actions without changing the OS 
   );
 });
 
-test("standalone Agent right sidebar avoids layout animation before mounting heavy content", () => {
-  assert.doesNotMatch(
+test("standalone Agent right sidebar reserves layout animation for empty or ready content", () => {
+  assert.match(
     standaloneAgentToolSidebarSource,
-    /transition-\[width\]|will-change-\[width\]/
+    /const shouldAnimateSidebarLayout =\s*state\.mountedTabs\.length === 0 \|\| isActivePanelContentReady/
   );
   assert.match(
     standaloneAgentToolSidebarSource,
-    /isSidebarOpen &&\s+"motion-safe:animate-in motion-safe:slide-in-from-right-3 motion-safe:duration-\[160ms\] motion-safe:ease-out motion-reduce:animate-none"/
+    /shouldAnimateSidebarLayout &&\s+"motion-safe:transition-\[width\] motion-safe:duration-\[260ms\] motion-safe:ease-in-out motion-reduce:transition-none"/
+  );
+  assert.match(
+    standaloneAgentToolSidebarSource,
+    /isSidebarOpen &&\s+!shouldAnimateSidebarLayout &&\s+"motion-safe:animate-in motion-safe:slide-in-from-right-3 motion-safe:duration-\[160ms\] motion-safe:ease-out motion-reduce:animate-none"/
   );
   assert.match(
     standaloneAgentToolSidebarSource,
@@ -394,7 +402,7 @@ test("standalone Agent right sidebar avoids layout animation before mounting hea
   );
   assert.match(
     standaloneAgentToolSidebarSource,
-    /window\.requestAnimationFrame\(\(\) => \{[\s\S]*?void resizeForPanel\(panel, preferredWidth\)/
+    /window\.requestAnimationFrame\(\(\) => \{[\s\S]*?void resizeForPanel\(panel, preferredWidth, options\)/
   );
   assert.match(
     standaloneAgentToolSidebarSource,
@@ -404,20 +412,32 @@ test("standalone Agent right sidebar avoids layout animation before mounting hea
     standaloneAgentToolSidebarSource,
     /contentReadyTabIds\.includes\(tab\.id\)[\s\S]*?motion-safe:animate-in[\s\S]*?<StandaloneAgentToolSidebarPanel/
   );
-  assert.match(
+  assert.doesNotMatch(
     standaloneAgentToolSidebarPickerSource,
-    /motion-safe:slide-in-from-right-2[\s\S]*?motion-safe:duration-\[140ms\]/
+    /animate-in|slide-in-from-right|duration-\[/
   );
 });
 
 test("standalone Agent empty sidebar uses its compact width until a tool opens", () => {
   assert.match(
     standaloneAgentToolSidebarSource,
-    /activePanelPreferredWidth: isEmptySidebar\s*\? standaloneAgentEmptyToolSidebarWidth\s*: undefined/
+    /activePanelPreferredWidth: isEmptySidebarSurface\s*\? standaloneAgentEmptyToolSidebarWidth\s*: undefined/
   );
   assert.match(
     standaloneAgentToolSidebarSource,
-    /scheduleResizeForPanel\("files", standaloneAgentEmptyToolSidebarWidth\)/
+    /scheduleResizeForPanel\("files", standaloneAgentEmptyToolSidebarWidth, \{[\s\S]*?animateWindow: !reducedMotion/
+  );
+  assert.match(
+    standaloneAgentToolSidebarSource,
+    /setIsEmptySidebarClosing\(true\)[\s\S]*?scheduleResizeForPanel\(null, undefined, \{[\s\S]*?animateWindow: true,[\s\S]*?preserveBaseline: true/
+  );
+  assert.match(
+    standaloneAgentToolSidebarSource,
+    /event\.propertyName !== "width"[\s\S]*?resetWindowResizeBaseline\(\)[\s\S]*?onTransitionEnd=\{handleSidebarTransitionEnd\}/
+  );
+  assert.match(
+    standaloneAgentToolSidebarSource,
+    /!isSidebarOpen && !isEmptySidebarClosing && "invisible"/
   );
   assert.match(
     standaloneAgentToolSidebarPickerSource,

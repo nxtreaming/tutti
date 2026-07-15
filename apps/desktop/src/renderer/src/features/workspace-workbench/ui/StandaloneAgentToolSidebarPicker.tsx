@@ -1,27 +1,27 @@
 import type { ReactNode } from "react";
 import {
   Button,
+  ChatIcon,
   FolderIcon,
+  NavApplicationsLinedIcon,
+  TaskIcon,
   TerminalLinedIcon,
   WebIcon
 } from "@tutti-os/ui-system";
 import type { StandaloneAgentToolPanelId } from "./standaloneAgentToolSidebarModel.ts";
 
 interface StandaloneAgentToolSidebarPickerProps {
-  labels: {
-    browser: string;
-    files: string;
-    terminal: string;
-  };
-  onSelect: (
-    panel: Extract<StandaloneAgentToolPanelId, "files" | "terminal" | "browser">
-  ) => void;
+  labels: Record<StandaloneAgentToolPanelId, string>;
+  onSelect: (panel: StandaloneAgentToolPanelId) => void;
 }
 
 const pickerItems = [
   { icon: FolderIcon, id: "files" },
   { icon: TerminalLinedIcon, id: "terminal" },
-  { icon: WebIcon, id: "browser" }
+  { icon: WebIcon, id: "browser" },
+  { icon: TaskIcon, id: "tasks" },
+  { icon: NavApplicationsLinedIcon, id: "apps" },
+  { icon: ChatIcon, id: "messages" }
 ] as const;
 
 export function StandaloneAgentToolSidebarPicker({
@@ -30,7 +30,7 @@ export function StandaloneAgentToolSidebarPicker({
 }: StandaloneAgentToolSidebarPickerProps): ReactNode {
   return (
     <div
-      className="flex h-full min-h-0 items-center justify-center overflow-auto px-6 py-10 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-[140ms] motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none"
+      className="flex h-full min-h-0 items-center justify-center overflow-auto px-6 py-10"
       data-standalone-agent-tool-sidebar-picker="true"
     >
       <div className="flex w-full max-w-[340px] flex-col gap-2">

@@ -227,46 +227,15 @@ describe("agent GUI workbench contribution copy", () => {
     });
   });
 
-  it("matches unified dock nodes across provider-specific and historical agent GUI identities", () => {
+  it("uses canonical dock affinity without fallback node matchers", () => {
     const [entry] = buildAgentGuiDockEntries({
       agentDirectory: createTestAgentDirectory([]),
       defaultProvider: "codex",
       providerAvailability: {}
     });
 
-    expect(
-      entry?.matchNode?.({
-        data: {
-          instanceId: "agent-gui:codex:panel:test-1",
-          typeId: agentGuiWorkbenchTypeId
-        }
-      } as never)
-    ).toBe(true);
-    expect(
-      entry?.matchNode?.({
-        data: {
-          instanceId: "agent-gui:claude-code:session:session-1",
-          typeId: agentGuiWorkbenchTypeId
-        }
-      } as never)
-    ).toBe(true);
-    expect(
-      entry?.matchNode?.({
-        data: {
-          dockEntryId: "agent-gui",
-          instanceId: "agent-gui",
-          typeId: agentGuiWorkbenchTypeId
-        }
-      } as never)
-    ).toBe(true);
-    expect(
-      entry?.matchNode?.({
-        data: {
-          instanceId: "agent-gui:removed-provider:panel:test-1",
-          typeId: agentGuiWorkbenchTypeId
-        }
-      } as never)
-    ).toBe(false);
+    expect(entry?.id).toBe(agentGuiWorkbenchUnifiedDockEntryId());
+    expect(entry?.matchNode).toBeUndefined();
   });
 
   it("keeps unified launch payload provider priority when opening a session", () => {
@@ -1245,7 +1214,7 @@ describe("agent GUI workbench contribution copy", () => {
 
     const node = {
       data: {
-        dockEntryId: agentGuiWorkbenchTypeId,
+        dockEntryId: agentGuiWorkbenchUnifiedDockEntryId(),
         instanceId: "agent-gui:codex:panel:test-1",
         typeId: agentGuiWorkbenchTypeId
       },
@@ -1253,7 +1222,7 @@ describe("agent GUI workbench contribution copy", () => {
       title: "Codex"
     };
 
-    expect(dockEntry?.matchNode?.(node as never)).toBe(true);
+    expect(dockEntry?.matchNode).toBeUndefined();
     expect(
       dockEntry?.providePopupItemPreview?.({
         externalNodeState: {
@@ -1915,13 +1884,27 @@ describe("agent GUI workbench contribution copy", () => {
     const css = readFileSync(resolve("app/renderer/agentactivity.css"), "utf8");
 
     expect(css).toMatch(
-      /\.agent-gui-node__composer\[data-layout="dock"\]\s+textarea,\s*\.agent-gui-node__composer\[data-layout="dock"\]\s+\.agent-gui-node__composer-textarea\s*{[^}]*padding-top:\s*12px;/s
+      /\.agent-gui-node__composer\[data-layout="dock"\]\s+\.agent-gui-node__composer-prompt-input-area\s+textarea,\s*\.agent-gui-node__composer\[data-layout="dock"\]\s+\.agent-gui-node__composer-textarea\s*{[^}]*padding-top:\s*12px;/s
     );
     expect(css).toMatch(
       /\.agent-gui-node__composer-textarea\s+p:not\(\.agent-rich-text-placeholder-node\):not\(:empty\)\s*{[^}]*top:\s*0;/s
     );
     expect(css).toMatch(
       /\.agent-gui-node__composer-textarea\s+p:not\(\.agent-rich-text-placeholder-node\):not\(:empty\)\s+\.agent-rich-text-mention-node\s*{[^}]*transform:\s*translateY\(-2px\);/s
+    );
+  });
+
+  it("keeps slash mention fields aligned and transparent by default", () => {
+    const css = readFileSync(resolve("app/renderer/agentactivity.css"), "utf8");
+
+    expect(css).toMatch(
+      /\[data-agent-mention-kind="skill"\]\.tsh-agent-object-token--entity\s+\.tsh-agent-object-token__main,\s*\[data-agent-mention-kind="capability"\]\.tsh-agent-object-token--entity\s+\.tsh-agent-object-token__main\s*{[^}]*background:\s*transparent;/s
+    );
+    expect(css).toMatch(
+      /\.agent-gui-node__composer-textarea\s+\[data-agent-mention-kind="skill"\]\.tsh-agent-object-token--entity\s+\.tsh-agent-object-token__main,\s*\.agent-gui-node__composer-textarea\s+\[data-agent-mention-kind="capability"\]\.tsh-agent-object-token--entity\s+\.tsh-agent-object-token__main\s*{[^}]*transform:\s*translateY\(-2px\);/s
+    );
+    expect(css).toMatch(
+      /\.agent-gui-node__composer-textarea\s+\[data-agent-file-mention="true"\]\.tsh-agent-object-token:hover\s*{[^}]*background:\s*color-mix\(in srgb, currentColor 16%, transparent\);/s
     );
   });
 
@@ -1976,6 +1959,20 @@ describe("agent GUI workbench contribution copy", () => {
     );
     expect(css).toMatch(
       /@media\s*\(max-height:\s*639px\)\s*\{\s*\.agent-gui-node__empty-hero-carousel-layer\s*\{[^}]*--agent-gui-hero-carousel-scale:\s*0\.64;[^}]*top:\s*calc\(\s*var\(--agent-gui-hero-carousel-slot-top,\s*calc\(50%\s*-\s*210px\)\)\s*-\s*16px\s*\);/s
+    );
+  });
+
+  it("scopes composer textarea resets to the primary prompt input", () => {
+    const css = readFileSync(resolve("app/renderer/agentactivity.css"), "utf8");
+
+    expect(css).not.toMatch(
+      /\.agent-gui-node__composer(?:\[data-layout="dock"\])?\s+textarea/
+    );
+    expect(css).toMatch(
+      /\.agent-gui-node__composer-prompt-input-area\s+textarea,\s*\.agent-gui-node__composer-textarea\s*\{[^}]*border:\s*0;/s
+    );
+    expect(css).toMatch(
+      /\.agent-gui-conversation__interactive-prompt-textarea\s*\{[^}]*border:\s*1px solid var\(--line-2\);/s
     );
   });
 });

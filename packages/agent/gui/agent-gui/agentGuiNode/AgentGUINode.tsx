@@ -2,7 +2,10 @@ import { memo, useCallback, useEffect, useMemo } from "react";
 import { createWorkspaceUserProjectI18nRuntime } from "@tutti-os/workspace-user-project/i18n";
 import { createWorkspaceFileManagerI18nRuntime } from "@tutti-os/workspace-file-manager";
 import { useReferenceProvenanceFilterCatalog } from "@tutti-os/workspace-file-reference/react";
-import type { WorkspaceFileReference } from "@tutti-os/workspace-file-reference/contracts";
+import type {
+  ReferenceProvenanceCatalog,
+  WorkspaceFileReference
+} from "@tutti-os/workspace-file-reference/contracts";
 import { useTranslation } from "../../i18n/index";
 import type { AgentProvider } from "../../contexts/settings/domain/agentSettings";
 import type { WorkspaceLinkAction } from "../../actions/workspaceLinkActions";
@@ -22,10 +25,6 @@ import {
   findWorkspaceAgentProbeForDockProvider
 } from "../workspaceDesktop/view/desktopDockAgentProbeTooltipModel";
 import { AgentProbeInfoPopover } from "../workspaceDesktop/view/AgentProbeInfoPopover";
-import {
-  getAgentHostManagedToolchainAgentByName,
-  resolveAgentHostManagedToolchainAgentAction
-} from "../../shared/utils/managedToolchainAgents";
 import styles from "./AgentGUINode.styles";
 import {
   AGENT_GUI_COLLAPSED_MIN_WIDTH_PX,
@@ -37,6 +36,7 @@ import {
   resolveAgentGUIConversationRailMaxWidthPx,
   shouldAutoCollapseAgentGUIConversationRail
 } from "./model/agentGuiRailLayout";
+import { resolveAgentGUIReferenceProvenanceFilterCatalog } from "./model/agentReferenceProvenanceCatalog";
 import type { AgentGUINodeProps } from "./AgentGUINode.types";
 import { areAgentGUINodePropsEqual } from "./AgentGUINode.types";
 import {
@@ -51,6 +51,11 @@ import {
 export type { AgentGUINodeProps } from "./AgentGUINode.types";
 
 const EMPTY_SLASH_STATUS_QUOTAS = [] as const;
+const DISABLED_REFERENCE_PROVENANCE_CATALOG: ReferenceProvenanceCatalog = {
+  enabledDimensions: [],
+  agentOptions: [],
+  memberOptions: []
+};
 
 export const AgentGUINode = memo(function AgentGUINode({
   identity,
@@ -93,6 +98,7 @@ export const AgentGUINode = memo(function AgentGUINode({
   const railAutoCollapseWidthPx =
     conversationRailAutoCollapseWidthPx ?? undefined;
   const {
+    composerAppend: composerAppendRequest = null,
     composerFocusSequence: composerFocusRequestSequence = null,
     newConversationSequence: newConversationRequestSequence = null,
     openSession: openSessionRequest = null,
@@ -112,34 +118,26 @@ export const AgentGUINode = memo(function AgentGUINode({
     providerReadinessGates = null,
     defaultAgentTargetId = null,
     providerAuthAccountLabels,
-    managedAgentsState,
     contextMentionProviders,
     workspaceAppIcons,
     disabledHomeSuggestions,
+    referenceProvenanceFilterCatalog: injectedReferenceProvenanceFilterCatalog,
     referenceProvenanceFilterEnabled = false
   } = hostCapabilities;
-  const referenceProvenanceFilterBinding = useReferenceProvenanceFilterCatalog({
-    enabledDimensions: referenceProvenanceFilterEnabled ? ["agent"] : [],
-    agentOptions: referenceProvenanceFilterEnabled
-      ? (agentTargets ?? []).flatMap((target) => {
-          const agentTargetId = target.agentTargetId?.trim();
-          return agentTargetId
-            ? [
-                {
-                  disabled: target.disabled,
-                  iconUrl: target.iconUrl,
-                  id: agentTargetId,
-                  label: target.label
-                }
-              ]
-            : [];
-        })
-      : [],
-    memberOptions: []
-  });
-  const referenceProvenanceFilter = referenceProvenanceFilterEnabled
-    ? referenceProvenanceFilterBinding
-    : null;
+  const referenceProvenanceFilterCatalog =
+    resolveAgentGUIReferenceProvenanceFilterCatalog({
+      agentTargets,
+      injectedCatalog: injectedReferenceProvenanceFilterCatalog,
+      legacyAgentFilterEnabled: referenceProvenanceFilterEnabled
+    });
+  const referenceProvenanceFilterBinding = useReferenceProvenanceFilterCatalog(
+    referenceProvenanceFilterCatalog ?? DISABLED_REFERENCE_PROVENANCE_CATALOG
+  );
+  const referenceProvenanceFilter =
+    referenceProvenanceFilterBinding.snapshot.catalog.enabledDimensions.length >
+    0
+      ? referenceProvenanceFilterBinding
+      : null;
   const {
     onLinkAction,
     onHandoffConversation,
@@ -297,6 +295,7 @@ export const AgentGUINode = memo(function AgentGUINode({
     workspacePath,
     avoidGroupingEdits: agentSettings.avoidGroupingEdits,
     data: state,
+    composerAppendRequest,
     openSessionRequest,
     prefillPromptRequest,
     agentTargets,
@@ -337,10 +336,6 @@ export const AgentGUINode = memo(function AgentGUINode({
   const fallbackAgentTitle = t("sidebar.fallbackAgentLabel");
   const activeProvider =
     viewModel.rail.activeConversation?.provider ?? state.provider;
-  const activeReadinessProvider =
-    viewModel.rail.activeConversationId !== null
-      ? activeProvider
-      : viewModel.rail.selectedAgentTarget.provider;
   const selectedAgentTargetLabel =
     viewModel.rail.selectedAgentTarget?.label ??
     resolveAgentGUIProviderDisplayLabel(state.provider, fallbackAgentTitle);
@@ -384,23 +379,6 @@ export const AgentGUINode = memo(function AgentGUINode({
         : null,
     [railStatusProvider, workspaceAgentProbes?.snapshot]
   );
-  const isActiveAgentProviderReady = useMemo(() => {
-    const managedAgent = getAgentHostManagedToolchainAgentByName(
-      activeReadinessProvider
-    );
-    if (!managedAgent) {
-      return true;
-    }
-    if (!managedAgentsState) {
-      return true;
-    }
-    return (
-      resolveAgentHostManagedToolchainAgentAction(
-        managedAgent,
-        managedAgentsState
-      ) === "installed"
-    );
-  }, [activeReadinessProvider, managedAgentsState]);
   const canonicalSlashStatusQuotas =
     viewModel.detail.usage?.quotas ?? EMPTY_SLASH_STATUS_QUOTAS;
   const slashStatusQuotaSource =
@@ -640,7 +618,6 @@ export const AgentGUINode = memo(function AgentGUINode({
             onEngagementEvent={onEngagementEvent}
             composerFocusRequestSequence={composerFocusRequestSequence}
             newConversationRequestSequence={newConversationRequestSequence}
-            isAgentProviderReady={isActiveAgentProviderReady}
             slashStatusLimits={slashStatusLimits}
             slashStatusLimitsLoading={
               workspaceAgentProbes?.isLoadingUsage ?? false
