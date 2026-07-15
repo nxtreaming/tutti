@@ -294,7 +294,11 @@ When a model catalog advertises model-specific reasoning profiles, the composer
 must derive the reasoning options from the currently presented model and
 re-resolve an unsupported prior effort to that model's advertised default.
 Do not render the provider-level reasoning list when a profile exists for the
-selected model.
+selected model. The presence of any non-empty model profile keeps the reasoning
+dimension available across model switches even when the initially selected
+model has no options. An advertised empty profile for the selected model is
+authoritative: hide the reasoning control and do not reinsert a stale selected
+or draft effort as a synthetic option.
 Reasoning values are an extensible provider vocabulary. Known shared values may
 use AgentGUI's canonical labels, while unrecognized values must preserve the
 localized option label supplied by the composer-options contract instead of
@@ -933,7 +937,12 @@ Claude SDK sidecars must not treat Edit/Write input text as authoritative patch
 data. They should collect the `PostToolUse` `tool_response.structuredPatch`
 hunks, convert them into file-level `changes[].diff` payloads, and only use
 input-derived file metadata for optimistic display before the tool response
-arrives.
+arrives. Provider diff metadata must be canonicalized at this adapter boundary
+before it becomes durable activity data. In particular, unified-diff control
+markers such as `\ No newline at end of file` must use Git's exact syntax;
+provider display formatting must not flow unchanged into executable
+`patchBatches`. AgentGUI also canonicalizes this marker while reading older
+persisted activity so pre-fix sessions remain reversible.
 
 Provider adapters that receive successful write/edit/apply_patch tool calls
 without a native turn-level diff event must still normalize the executed tool
@@ -1047,8 +1056,12 @@ repository by resolving from the nearest existing parent directory.
 The Git mutation belongs in `services/tuttid`, not `apps/desktop` or
 `@tutti-os/agent-gui`. The daemon creates a temporary `tutti-apply-*`
 directory, writes `patch.diff`, optionally copies the Git index into that
-directory for non-atomic unstaged `--3way` operations, executes `git apply` or
-`git apply -R`, and removes the temporary directory on every exit path.
+directory for non-atomic unstaged `--3way` operations, runs `git apply --check`
+with the same target, reverse, binary, directory, and temporary-index options,
+then executes `git apply` or `git apply -R` only after preflight succeeds. A
+syntax failure returns `invalid-patch`; a valid patch that no longer matches the
+worktree returns `patch-does-not-apply`. The daemon removes the temporary
+directory on every exit path.
 When reversing an added-file patch, the daemon has one narrow fallback for
 less-structured summary diffs: if Git rejects the patch, the target is still
 untracked, and the current file content only differs from the patch by trailing
@@ -1066,7 +1079,10 @@ AgentGUI shared components should not call the sonner `toast.error` entrypoint
 directly except as a last-resort fallback when no host toast capability exists.
 The summary card does not keep an inline failure row or durable error state
 because the source of truth remains the recorded diff plus the current worktree
-state.
+state. The desktop and daemon record the same `agent-git-patch` diagnostic
+family with JSON payloads, including the action, result, error code, paths, and
+Git stderr. Diagnostics record a diff hash and byte count rather than raw file
+content.
 
 Codex invalidates Git query caches after this operation. Tutti currently has no
 equivalent renderer Git cache group. The AgentGUI row emits a lightweight
@@ -2642,6 +2658,15 @@ trigger text through `AgentRichTextEditor` at the current selection and let the
 Tiptap suggestion plugin publish `AgentRichTextEditor` suggestion state. Do not
 open the mention palette as a separate UI-only state path; the trigger range
 still owns command replacement, keyboard handling, and panel anchoring.
+
+Line-start mention chips may use an editor-only zero-width caret anchor so the
+caret can move to both sides of an atomic Tiptap node. That anchor is not prompt
+content and is removed during prompt serialization. Its lifecycle therefore
+belongs to the rich-text document layer: deleting the last adjacent line-start
+mention with Backspace or Delete must remove the mention and anchor in the same
+transaction. If another adjacent mention remains at line start, retain the
+anchor for that node. Never leave an anchor-only document whose serialized
+prompt is empty while its editor DOM is not.
 
 Pasting text that contains an `@` must not be treated as active mention input
 unless the paste leaves the caret immediately after the `@` trigger. A bare
