@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Button, LoadingIcon, WebScrapeIcon, cn } from "@tutti-os/ui-system";
+import {
+  Button,
+  LoadingIcon,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  WebScrapeIcon,
+  cn
+} from "@tutti-os/ui-system";
 import type { AgentComposerDraftFile } from "@tutti-os/agent-gui";
 import type { DesktopHostFilesApi } from "@preload/types";
 import type { BrowserNodeWebviewTag } from "@tutti-os/browser-node/react";
@@ -111,27 +119,31 @@ export function BrowserElementContextAction({
 
   const label = state === "selecting" ? copy.cancel : copy.select;
   return (
-    <Button
-      aria-label={label}
-      aria-pressed={state === "selecting"}
-      className={cn(
-        "nodrag shrink-0 rounded-md",
-        state === "selecting" &&
-          "bg-[var(--transparency-block)] text-[var(--text-primary)]"
-      )}
-      disabled={state === "archiving"}
-      size="icon-sm"
-      title={label}
-      type="button"
-      variant="chrome"
-      onClick={() => void startSelection()}
-    >
-      {state === "archiving" ? (
-        <LoadingIcon className="size-[15px] animate-spin" />
-      ) : (
-        <WebScrapeIcon className="size-[15px]" />
-      )}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-label={label}
+          aria-pressed={state === "selecting"}
+          className={cn(
+            "nodrag shrink-0 rounded-md",
+            state === "selecting" &&
+              "bg-[var(--transparency-block)] text-[var(--text-primary)]"
+          )}
+          disabled={state === "archiving"}
+          size="icon-sm"
+          type="button"
+          variant="chrome"
+          onClick={() => void startSelection()}
+        >
+          {state === "archiving" ? (
+            <LoadingIcon className="size-[15px] animate-spin" />
+          ) : (
+            <WebScrapeIcon className="size-[15px]" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

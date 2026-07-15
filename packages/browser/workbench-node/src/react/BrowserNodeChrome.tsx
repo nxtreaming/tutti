@@ -9,6 +9,9 @@ import {
   LaunchIcon,
   LoadingIcon,
   RefreshIcon,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   WebIcon,
   cn
 } from "@tutti-os/ui-system";
@@ -408,18 +411,22 @@ function BrowserNodeHeaderButton({
   onClick: () => void;
 }): JSX.Element {
   return (
-    <Button
-      aria-label={label}
-      className="rounded-md"
-      disabled={disabled}
-      size="icon-sm"
-      title={label}
-      type="button"
-      variant="chrome"
-      onClick={onClick}
-    >
-      {children}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          aria-label={label}
+          className="rounded-md"
+          disabled={disabled}
+          size="icon-sm"
+          type="button"
+          variant="chrome"
+          onClick={onClick}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
