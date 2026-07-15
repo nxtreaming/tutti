@@ -193,9 +193,9 @@ describe("ConversationMeta", () => {
     );
 
     const spinner = screen.getByTestId("agent-gui-conversation-spinner");
-    expect(spinner.querySelectorAll('circle[stroke-width="2"]')).toHaveLength(
-      2
-    );
+    expect(
+      spinner.querySelectorAll('circle[stroke-width="2.25"]')
+    ).toHaveLength(2);
   });
 
   it("displays the same sort time used by conversation ordering", () => {
