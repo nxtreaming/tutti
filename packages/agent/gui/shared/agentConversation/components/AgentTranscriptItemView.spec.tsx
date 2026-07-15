@@ -645,6 +645,8 @@ describe("AgentTranscriptItemView render stability", () => {
           systemNotice: {
             noticeKind: "system_notice",
             severity: null,
+            command: "compact",
+            commandStatus: "completed",
             title: "Context compacted.",
             detail: "",
             retryable: null
@@ -681,6 +683,8 @@ describe("AgentTranscriptItemView render stability", () => {
             systemNotice: {
               noticeKind: "system_notice",
               severity: null,
+              command: "compact",
+              commandStatus: "running",
               title: "Compacting context.",
               detail: "",
               retryable: null
@@ -706,8 +710,8 @@ describe("AgentTranscriptItemView render stability", () => {
     }
   });
 
-  it("renders interrupted compaction notices as a static divider", () => {
-    const { getByRole } = render(
+  it("renders interrupted compaction notices with a wrapping detail below the divider", () => {
+    const { getByRole, getByText } = render(
       <AgentMessageBlock
         workspaceRoot="/workspace/demo"
         basePath="/workspace/demo"
@@ -737,6 +741,42 @@ describe("AgentTranscriptItemView render stability", () => {
       "agentHost.agentGui.contextCompactionInterrupted"
     );
     expect(notice.textContent).toContain("Not enough messages to compact.");
+    const detail = getByText("Not enough messages to compact.");
+    expect(detail.className).toContain("break-words");
+    expect(detail.className).not.toContain("whitespace-nowrap");
+  });
+
+  it("does not let a legacy title override canonical compact status", () => {
+    const { getByText, queryByText } = render(
+      <AgentMessageBlock
+        workspaceRoot="/workspace/demo"
+        basePath="/workspace/demo"
+        row={assistantMessageRow({
+          kind: "message-content",
+          id: "assistant-notice-conflicting-compaction",
+          turnId: "turn-1",
+          body: "Context compacted.",
+          occurredAtUnixMs: 1,
+          systemNotice: {
+            noticeKind: "system_notice",
+            severity: null,
+            command: "compact",
+            commandStatus: "failed",
+            title: "Context compacted.",
+            detail: "",
+            retryable: null
+          }
+        })}
+        thinkingLabel="Thought process"
+      />
+    );
+
+    expect(
+      getByText("agentHost.agentGui.contextCompactionInterrupted")
+    ).toBeTruthy();
+    expect(
+      queryByText("agentHost.agentGui.contextCompactionCompleted")
+    ).toBeNull();
   });
 
   it("renders plan-tagged assistant messages as a dedicated plan card", () => {

@@ -173,17 +173,44 @@ func (a *ClaudeCodeSDKAdapter) finishClaudeSDKTurnLifecycle(
 	}
 	a.mu.Lock()
 	normalizer := adapterSession.takeClaudeSDKTurnNormalizerLocked(turnID)
+	compact, hasActiveCompact := adapterSession.compactMessages[turnID]
+	if hasActiveCompact && compact.active {
+		compact.active = false
+		adapterSession.compactMessages[turnID] = compact
+	} else {
+		hasActiveCompact = false
+	}
 	a.mu.Unlock()
+	events := make([]activityshared.Event, 0, 2)
+	if hasActiveCompact {
+		streamState := messageStreamStateFailed
+		noticeStatus := "failed"
+		switch kind {
+		case claudeSDKTurnFinishCompleted:
+			streamState = messageStreamStateCompleted
+			noticeStatus = "completed"
+		case claudeSDKTurnFinishInterrupted:
+			noticeStatus = "canceled"
+		}
+		events = append(events, claudeSDKCompactMessageEvent(
+			session,
+			turnID,
+			compact.messageID,
+			streamState,
+			noticeStatus,
+			"",
+		))
+	}
 	if normalizer == nil {
-		return nil
+		return events
 	}
 	switch kind {
 	case claudeSDKTurnFinishCompleted:
-		return normalizer.FinishCompleted(session, turnID)
+		return append(events, normalizer.FinishCompleted(session, turnID)...)
 	case claudeSDKTurnFinishFailed:
-		return normalizer.FinishFailed(session, turnID)
+		return append(events, normalizer.FinishFailed(session, turnID)...)
 	default:
-		return normalizer.FinishInterrupted(session, turnID, firstNonEmpty(strings.TrimSpace(reason), "interrupted"))
+		return append(events, normalizer.FinishInterrupted(session, turnID, firstNonEmpty(strings.TrimSpace(reason), "interrupted"))...)
 	}
 }
 
@@ -199,11 +226,20 @@ func (a *ClaudeCodeSDKAdapter) finishAllClaudeSDKTurnLifecycles(
 		return nil
 	}
 	a.mu.Lock()
-	turnIDs := make([]string, 0, len(adapterSession.turnNormalizers))
+	turnIDSet := make(map[string]struct{}, len(adapterSession.turnNormalizers)+len(adapterSession.compactMessages))
 	for turnID := range adapterSession.turnNormalizers {
-		turnIDs = append(turnIDs, turnID)
+		turnIDSet[turnID] = struct{}{}
+	}
+	for turnID, compact := range adapterSession.compactMessages {
+		if compact.active {
+			turnIDSet[turnID] = struct{}{}
+		}
 	}
 	a.mu.Unlock()
+	turnIDs := make([]string, 0, len(turnIDSet))
+	for turnID := range turnIDSet {
+		turnIDs = append(turnIDs, turnID)
+	}
 	if len(turnIDs) == 0 {
 		return nil
 	}

@@ -43,7 +43,7 @@ type claudeSDKAdapterSession struct {
 	backgroundAgents  map[string]claudeSDKBackgroundAgent
 	assistantMessages map[string]string
 	thinkingMessages  map[string]string
-	compactMessages   map[string]string
+	compactMessages   map[string]claudeSDKCompactMessage
 	pendingRequests   map[string]*pendingInteractiveRequest
 	pendingResponses  map[string]chan claudeSDKSidecarEvent
 	turns             map[string]*claudeSDKTurnWaiter
@@ -78,6 +78,11 @@ type claudeSDKAdapterSession struct {
 	// that has not settled yet; until it does, other turns settling must not
 	// be read as goal completion. Guarded by the adapter mutex.
 	goalArmTurnID string
+}
+
+type claudeSDKCompactMessage struct {
+	messageID string
+	active    bool
 }
 
 type claudeSDKBackgroundAgent struct {

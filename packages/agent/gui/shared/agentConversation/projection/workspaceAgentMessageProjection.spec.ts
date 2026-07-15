@@ -607,6 +607,57 @@ describe("projectWorkspaceAgentMessagesToConversationVM", () => {
     );
   });
 
+  it("preserves matching assistant guidance after canceled compaction", () => {
+    const conversation = projectWorkspaceAgentMessagesToConversationVM({
+      activity: activity(),
+      session: session(),
+      workspaceRoot: "/workspace/demo",
+      messages: [
+        message({
+          messageId: "compact-canceled",
+          version: 1,
+          status: "canceled",
+          semantics: {
+            noticeCommand: "compact",
+            noticeCommandStatus: "canceled"
+          },
+          payload: {
+            kind: "agent_system_notice",
+            noticeKind: "system_notice",
+            title: "Context compaction interrupted.",
+            detail: "Try again after adding more context.",
+            text: "Context compaction interrupted."
+          }
+        }),
+        message({
+          messageId: "assistant-guidance",
+          version: 2,
+          payload: { text: "Try again after adding more context." }
+        })
+      ]
+    });
+
+    const assistantRows = conversation.rows.filter(
+      (
+        row
+      ): row is Extract<
+        (typeof conversation.rows)[number],
+        { kind: "message" }
+      > => row.kind === "message" && row.speaker === "assistant"
+    );
+
+    expect(assistantRows).toHaveLength(2);
+    expect(assistantRows[0]?.messages[0]?.systemNotice).toEqual(
+      expect.objectContaining({
+        command: "compact",
+        commandStatus: "canceled"
+      })
+    );
+    expect(assistantRows[1]?.messages[0]?.body).toBe(
+      "Try again after adding more context."
+    );
+  });
+
   it("normalizes persisted Codex compaction notices before presentation", () => {
     const conversation = projectWorkspaceAgentMessagesToConversationVM({
       activity: activity(),

@@ -583,24 +583,42 @@ func claudeSDKCallBodyKey(eventType string) string {
 	}
 }
 
-func (s *claudeSDKAdapterSession) compactMessageEvent(session Session, turnID string, streamState string, detail string) activityshared.Event {
-	if s.compactMessages == nil {
-		s.compactMessages = make(map[string]string)
+func (a *ClaudeCodeSDKAdapter) compactMessageEvent(
+	adapterSession *claudeSDKAdapterSession,
+	session Session,
+	turnID string,
+	streamState string,
+	noticeStatus string,
+	detail string,
+) activityshared.Event {
+	a.mu.Lock()
+	compact := adapterSession.compactMessages[turnID]
+	if compact.messageID == "" {
+		compact.messageID = "claude-sdk:compact:" + turnID
 	}
-	messageID := s.compactMessages[turnID]
-	if messageID == "" {
-		messageID = "claude-sdk:compact:" + turnID
-		s.compactMessages[turnID] = messageID
+	compact.active = noticeStatus == "running"
+	if adapterSession.compactMessages == nil {
+		adapterSession.compactMessages = make(map[string]claudeSDKCompactMessage)
 	}
+	adapterSession.compactMessages[turnID] = compact
+	a.mu.Unlock()
+	return claudeSDKCompactMessageEvent(session, turnID, compact.messageID, streamState, noticeStatus, detail)
+}
+
+func claudeSDKCompactMessageEvent(
+	session Session,
+	turnID string,
+	messageID string,
+	streamState string,
+	noticeStatus string,
+	detail string,
+) activityshared.Event {
 	title := appServerCompactingContextTitle
-	noticeStatus := "running"
-	if streamState == messageStreamStateCompleted {
+	if noticeStatus == "completed" {
 		title = appServerContextCompactedTitle
-		noticeStatus = "completed"
 	}
-	if streamState == messageStreamStateFailed {
+	if noticeStatus == "failed" || noticeStatus == "canceled" {
 		title = appServerCompactionInterruptedTitle
-		noticeStatus = "failed"
 	}
 	metadata := map[string]any{
 		"adapter":             claudeSDKSidecarAdapterName,

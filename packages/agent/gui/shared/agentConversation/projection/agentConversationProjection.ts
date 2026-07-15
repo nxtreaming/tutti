@@ -121,8 +121,7 @@ function isSingleCompactFailureNoticeRow(
   const notice = row.messages[0]?.systemNotice;
   return (
     notice?.command === "compact" &&
-    (notice.commandStatus === "failed" ||
-      notice.commandStatus === "canceled") &&
+    notice.commandStatus === "failed" &&
     Boolean(notice.detail?.trim())
   );
 }
