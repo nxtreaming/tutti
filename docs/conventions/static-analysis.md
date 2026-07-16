@@ -37,6 +37,11 @@ Validation runners that spawn nested pnpm commands should read the root
 let runner-spawned lanes resolve a bare `pnpm` from `PATH`, because local
 package-manager shims can differ from the repository pin.
 
+Repository naming checks scan tracked and untracked files, but must skip paths
+that resolve to directories. Workspace dependency installation may leave
+untracked package-level `node_modules` directory links, and those paths are not
+source content.
+
 Tests and checks that create temporary Git repositories must also isolate
 repository-local Git environment variables before invoking Git. In particular,
 remove inherited `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, index/object
