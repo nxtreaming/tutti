@@ -144,6 +144,7 @@ describe("AgentTranscriptView", () => {
         <AgentTranscriptView conversation={conversation} labels={labels} />
       );
 
+      expect(document.querySelector(".agent-gui-transcript-turn")).toBeTruthy();
       expect(screen.getByText("Total 2m 7s")).toBeTruthy();
       expect(
         screen.getAllByText(

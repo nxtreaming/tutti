@@ -120,6 +120,71 @@ describe("AgentTurnWorkSection", () => {
       vi.useRealTimers();
     }
   });
+
+  it("renders interleaved turn rows in their original chronology", () => {
+    const expandedStore: AgentTurnDisclosureStore = {
+      expandedOverrides: { "session-1:turn-1": true },
+      setExpandedOverride: () => {}
+    };
+    const { container } = render(
+      <AgentTurnWorkSection
+        group={interleavedTurnGroup()}
+        sessionId="session-1"
+        turn={canonicalTurn({
+          phase: "settled",
+          outcome: "completed",
+          settledAtUnixMs: 15_000
+        })}
+        isActiveTurn={false}
+        disclosureStore={expandedStore}
+        renderRow={(row) => (
+          <div key={row.id} data-test-row-id={row.id}>
+            {row.kind === "message" ? row.messages[0]?.body : row.id}
+          </div>
+        )}
+      />
+    );
+
+    expect(
+      [...container.querySelectorAll("[data-test-row-id]")].map(
+        (element) => element.textContent
+      )
+    ).toEqual([
+      "First request",
+      "Earlier answer",
+      "Follow-up",
+      "tools",
+      "Final answer"
+    ]);
+  });
+
+  it("owns one turn-level spacing container including revealed work", () => {
+    const expandedStore: AgentTurnDisclosureStore = {
+      expandedOverrides: { "session-1:turn-1": true },
+      setExpandedOverride: () => {}
+    };
+    const { container } = render(
+      <AgentTurnWorkSection
+        group={interleavedTurnGroup()}
+        sessionId="session-1"
+        turn={canonicalTurn({
+          phase: "settled",
+          outcome: "completed",
+          settledAtUnixMs: 15_000
+        })}
+        isActiveTurn={false}
+        disclosureStore={expandedStore}
+        renderRow={(row) => <div key={row.id}>{row.id}</div>}
+      />
+    );
+
+    expect(
+      container.querySelector("[data-agent-turn-work-section]")
+    ).toHaveClass("grid", "gap-4");
+    expect(
+      container.querySelector(".agent-collapsible-reveal__inner")
+    ).toHaveClass("grid", "gap-4");
+  });
 });
 
 function canonicalTurn(
@@ -159,5 +224,53 @@ function turnGroup(): AgentTranscriptTurnGroup {
     key: "turn-1",
     turnId: "turn-1",
     rows: [{ row, rowIndex: 0 }]
+  };
+}
+
+function interleavedTurnGroup(): AgentTranscriptTurnGroup {
+  const messageRow = (
+    id: string,
+    speaker: "user" | "assistant",
+    body: string,
+    isTurnFinalText = false
+  ): AgentTranscriptRowVM => ({
+    kind: "message",
+    id,
+    turnId: "turn-1",
+    speaker,
+    messages: [
+      {
+        kind: "message-content",
+        id: `${id}:message`,
+        turnId: "turn-1",
+        body,
+        presentationKind: "content",
+        copyText: isTurnFinalText ? body : null,
+        ...(isTurnFinalText ? { isTurnFinalText: true as const } : {}),
+        occurredAtUnixMs: 5_000
+      }
+    ],
+    thinking: [],
+    occurredAtUnixMs: 5_000
+  });
+  const rows: AgentTranscriptRowVM[] = [
+    messageRow("user-1", "user", "First request"),
+    messageRow("assistant-1", "assistant", "Earlier answer"),
+    messageRow("user-2", "user", "Follow-up"),
+    {
+      kind: "tool-group",
+      id: "tools",
+      turnId: "turn-1",
+      grouped: true,
+      calls: [],
+      entries: [],
+      occurredAtUnixMs: 8_000
+    },
+    messageRow("assistant-2", "assistant", "Final answer", true)
+  ];
+  return {
+    key: "turn-1",
+    turnId: "turn-1",
+    rows: rows.map((row, rowIndex) => ({ row, rowIndex }))
   };
 }

@@ -121,6 +121,46 @@ describe("agentTurnWorkSectionModel", () => {
     expect(model.finalRows[0]?.row.kind).toBe("message");
   });
 
+  it("preserves interleaved user and assistant chronology in ordered sections", () => {
+    const model = buildAgentTurnWorkSectionModel(
+      turnGroup([
+        userRow(),
+        assistantRow({
+          id: "assistant-1",
+          messages: [message("Earlier answer", null)]
+        }),
+        userRow({
+          id: "user-2",
+          messages: [message("Follow-up", null)],
+          occurredAtUnixMs: 9_000
+        }),
+        toolRow(),
+        assistantRow({
+          id: "assistant-2",
+          messages: [message("Final answer", "Final answer", true)]
+        })
+      ]),
+      canonicalTurn({
+        phase: "settled",
+        outcome: "completed",
+        settledAtUnixMs: 15_000
+      })
+    );
+
+    expect(model.leadingRows.map(({ row }) => row.id)).toEqual(["user-row"]);
+    expect(
+      model.sections.map((section) => ({
+        kind: section.kind,
+        rowIds: section.rows.map(({ row }) => row.id)
+      }))
+    ).toEqual([
+      { kind: "work", rowIds: ["assistant-1"] },
+      { kind: "visible", rowIds: ["user-2"] },
+      { kind: "work", rowIds: ["tools"] },
+      { kind: "visible", rowIds: ["assistant-2"] }
+    ]);
+  });
+
   it("fails open when no visible final text is explicitly marked", () => {
     const copyOnly = buildAgentTurnWorkSectionModel(
       turnGroup([
@@ -243,7 +283,9 @@ function turnGroup(rows: AgentTranscriptRowVM[]): AgentTranscriptTurnGroup {
   };
 }
 
-function userRow(): AgentTranscriptRowVM {
+function userRow(
+  overrides: Partial<Extract<AgentTranscriptRowVM, { kind: "message" }>> = {}
+): AgentTranscriptRowVM {
   return {
     kind: "message",
     id: "user-row",
@@ -251,7 +293,8 @@ function userRow(): AgentTranscriptRowVM {
     speaker: "user",
     messages: [message("Please fix it", null)],
     thinking: [],
-    occurredAtUnixMs: 5_000
+    occurredAtUnixMs: 5_000,
+    ...overrides
   };
 }
 

@@ -756,6 +756,69 @@ describe("projectAgentConversationVM", () => {
     expect(assistantRows[0]?.messages[0]?.systemNotice).toBeNull();
   });
 
+  it("keeps processing when normalized rows cannot host canonical live timing", () => {
+    const baseDetail = detailViewModel();
+    const activeTurn = {
+      agentSessionId: "session-1",
+      turnId: "turn-1",
+      phase: "running" as const,
+      origin: "user_prompt" as const,
+      startedAtUnixMs: 1,
+      updatedAtUnixMs: 10
+    };
+    const runtimeWarning =
+      "Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill, but some descriptions are shorter.";
+
+    const conversation = projectAgentConversationVM(
+      detailViewModel({
+        session: {
+          ...baseDetail.session,
+          activeTurnId: "turn-1",
+          activeTurn,
+          latestTurn: activeTurn
+        },
+        sessionTurns: [activeTurn],
+        turns: [
+          {
+            id: "turn-1",
+            userMessage: null,
+            userMessages: [],
+            agentMessages: [],
+            toolCalls: [],
+            toolCallCount: 0,
+            hasFailedToolCall: false,
+            agentItems: [
+              {
+                kind: "message",
+                message: {
+                  id: "assistant-warning-1",
+                  body: runtimeWarning,
+                  systemNotice: {
+                    noticeKind: "warning",
+                    severity: "warning",
+                    source: "runtime",
+                    title: runtimeWarning,
+                    detail: runtimeWarning,
+                    retryable: null
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        showProcessingIndicator: true
+      })
+    );
+
+    expect(conversation.rows).toEqual([
+      expect.objectContaining({
+        kind: "processing",
+        id: "processing:turn-1",
+        turnId: "turn-1"
+      })
+    ]);
+  });
+
   it("drops Codex model metadata fallback runtime warning notices", () => {
     const metadataWarning =
       "Model metadata for `minimax/minimax-m2.5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.";
