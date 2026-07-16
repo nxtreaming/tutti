@@ -1,18 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolvePinnedPnpmCommand } from "./pinned-pnpm-command.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(scriptDirectory, "../..");
-const packageJson = JSON.parse(
-  readFileSync(join(workspaceRoot, "package.json"), "utf8")
-);
-const packageManager = String(packageJson.packageManager ?? "");
-const match = /^pnpm@(.+)$/u.exec(packageManager);
-if (!match) {
-  throw new Error(`unsupported packageManager value: ${packageManager}`);
-}
+const [pnpmExecutable, ...pnpmArguments] = resolvePinnedPnpmCommand({
+  workspaceRoot
+});
 
 execFileSync(
   process.execPath,
@@ -33,9 +28,9 @@ execFileSync(
 );
 
 execFileSync(
-  process.platform === "win32" ? "corepack.cmd" : "corepack",
+  pnpmExecutable,
   [
-    `pnpm@${match[1]}`,
+    ...pnpmArguments,
     "--filter",
     "@tutti-os/agent-gui",
     "exec",

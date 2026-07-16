@@ -17,10 +17,11 @@ import {
   resolveGoValidationTargets
 } from "./run-check-changed-targets.mjs";
 import { formatFailureExcerpt } from "./run-validation-lanes.mjs";
+import { resolvePinnedPnpmCommand } from "./pinned-pnpm-command.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = join(scriptDirectory, "..", "..");
-const pnpmCommand = resolvePnpmCommand();
+const pnpmCommand = resolvePinnedPnpmCommand({ workspaceRoot });
 const pnpmShellCommand = formatCommand(pnpmCommand);
 const maxParallel = Number.parseInt(readOption("--max-parallel") ?? "4", 10);
 const tailLines = readPositiveIntegerOption("--tail-lines", 80);
@@ -460,25 +461,6 @@ function resolveDefaultBaseRef() {
     }
   }
   return "HEAD";
-}
-
-function resolvePnpmCommand() {
-  const fallback = [process.platform === "win32" ? "pnpm.cmd" : "pnpm"];
-  try {
-    const packageJson = JSON.parse(
-      readFileSync(join(workspaceRoot, "package.json"), "utf8")
-    );
-    const match = /^pnpm@(.+)$/u.exec(String(packageJson.packageManager ?? ""));
-    if (!match) {
-      return fallback;
-    }
-    return [
-      process.platform === "win32" ? "corepack.cmd" : "corepack",
-      `pnpm@${match[1]}`
-    ];
-  } catch {
-    return fallback;
-  }
 }
 
 function readOption(name) {
