@@ -23,6 +23,7 @@ import {
   type AgentMentionLifecycleDiagnosticLog
 } from "./AgentMentionSearchContracts";
 import { presentAgentGeneratedFileMentionItems } from "./agentMentionAgentGeneratedFilesPresentation";
+import type { ReferenceProvenanceCatalog } from "@tutti-os/workspace-file-reference/contracts";
 import {
   buildEmptyGroup,
   compactText,
@@ -42,6 +43,7 @@ export function buildAgentMentionGroups(input: {
   issueTopicGroups: readonly AgentMentionIssueTopicGroup[] | null;
   rawGroups: AgentMentionRawGroups;
   totalCounts: AgentMentionTotalCounts;
+  provenanceCatalog: ReferenceProvenanceCatalog | null;
 }): AgentMentionGroup[] {
   if (input.currentFilter === "issue" && input.issueTopicGroups !== null) {
     return input.issueTopicGroups.map((group) => ({
@@ -53,6 +55,10 @@ export function buildAgentMentionGroups(input: {
       hasMore: group.nextPageToken !== null,
       expandStatus: group.loadMoreStatus
     }));
+  }
+  const provenanceGroups = buildSessionProvenanceGroups(input);
+  if (provenanceGroups) {
+    return provenanceGroups;
   }
   const orderedGroupIds = groupIdsForFilter(input.currentFilter);
   return orderedGroupIds
@@ -148,14 +154,60 @@ export function issueTopicPaginationChanges(
   });
 }
 
+function buildSessionProvenanceGroups(input: {
+  currentFilter: AgentMentionFilterId;
+  expandedCounts: Partial<Record<AgentMentionGroupId, number>>;
+  provenanceCatalog: ReferenceProvenanceCatalog | null;
+  rawGroups: AgentMentionRawGroups;
+}): AgentMentionGroup[] | null {
+  if (
+    input.currentFilter !== "session" ||
+    !input.provenanceCatalog?.enabledDimensions.includes("agent")
+  ) {
+    return null;
+  }
+  const sessionItems = input.rawGroups.sessions.filter(
+    (item) => item.kind === "session"
+  );
+  return input.provenanceCatalog.agentOptions.flatMap((option) => {
+    const items = sessionItems.filter(
+      (item) => item.kind === "session" && item.agentTargetId === option.id
+    );
+    if (items.length === 0) {
+      return [];
+    }
+    const groupId = agentProvenanceMentionGroupId(option.id);
+    const pageSize = mentionGroupPageSize(input.currentFilter, groupId);
+    const visibleCount = Math.min(
+      items.length,
+      input.expandedCounts[groupId] ?? pageSize
+    );
+    return [
+      {
+        id: groupId,
+        label: option.label,
+        items: items.slice(0, visibleCount),
+        totalCount: items.length,
+        visibleCount,
+        hasMore: items.length > visibleCount
+      }
+    ];
+  });
+}
+
+export function agentProvenanceMentionGroupId(
+  agentTargetId: string
+): `agent:${string}` {
+  return `agent:${encodeURIComponent(agentTargetId)}`;
+}
+
 export function emptyAgentMentionRawGroups(): AgentMentionRawGroups {
   return {
     apps: [],
     agents: [],
     opened_files: [],
     agent_generated_files: [],
-    my_sessions: [],
-    collab_sessions: [],
+    sessions: [],
     issues: []
   };
 }
@@ -168,8 +220,7 @@ export function cloneAgentMentionRawGroups(
     agents: [...rawGroups.agents],
     opened_files: [...rawGroups.opened_files],
     agent_generated_files: [...rawGroups.agent_generated_files],
-    my_sessions: [...rawGroups.my_sessions],
-    collab_sessions: [...rawGroups.collab_sessions],
+    sessions: [...rawGroups.sessions],
     issues: [...rawGroups.issues]
   };
 }
@@ -182,8 +233,12 @@ export function totalCountsFromRawGroups(
     agents: rawGroups.agents.length,
     opened_files: rawGroups.opened_files.length,
     agent_generated_files: rawGroups.agent_generated_files.length,
-    my_sessions: rawGroups.my_sessions.length,
-    collab_sessions: rawGroups.collab_sessions.length,
+    my_sessions: rawGroups.sessions.filter(
+      (item) => item.kind === "session" && item.scope === "my_sessions"
+    ).length,
+    collab_sessions: rawGroups.sessions.filter(
+      (item) => item.kind === "session" && item.scope === "collab_sessions"
+    ).length,
     issues: rawGroups.issues.length
   };
 }
@@ -251,20 +306,10 @@ export function logAgentMentionLifecycleDiagnostic(
   }
 }
 
-export function normalizeSessionMentionItemsForMySessions(input: {
-  currentUserId: string;
+export function normalizeSessionMentionItems(input: {
   items: readonly AgentContextMentionItem[];
 }): AgentContextMentionItem[] {
-  return input.items
-    .filter((item) => item.kind === "session")
-    .filter((item) =>
-      input.currentUserId ? item.scope === "my_sessions" : true
-    )
-    .map((item) =>
-      item.scope === "my_sessions"
-        ? item
-        : { ...item, scope: "my_sessions" as const }
-    );
+  return input.items.filter((item) => item.kind === "session");
 }
 
 export function providerItemToAgentMentionItem(input: {
@@ -419,6 +464,7 @@ export function providerItemToAgentMentionItem(input: {
         presentation.agentIconUrl?.trim() ||
         presentation.iconUrl?.trim() ||
         undefined,
+      ...(scope.agentTargetId ? { agentTargetId: scope.agentTargetId } : {}),
       status: presentation.status?.trim() || undefined,
       inputPreview: description || undefined,
       summaryPreview

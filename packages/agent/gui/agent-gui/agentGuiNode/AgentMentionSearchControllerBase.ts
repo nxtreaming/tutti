@@ -55,7 +55,10 @@ import {
   queryAgentMentionProviderGroups,
   queryAgentMentionProviderItems
 } from "./AgentMentionSearchIndex";
-import type { ReferenceProvenanceFilter } from "@tutti-os/workspace-file-reference/contracts";
+import type {
+  ReferenceProvenanceCatalog,
+  ReferenceProvenanceFilter
+} from "@tutti-os/workspace-file-reference/contracts";
 import { referenceProvenanceFilterCacheKey } from "@tutti-os/workspace-file-reference/core";
 import {
   agentGuiScheduler,
@@ -95,6 +98,7 @@ export class AgentMentionSearchControllerBase {
   protected currentQuery = "";
   protected currentSessionCwd = "";
   protected currentProvenanceFilter: ReferenceProvenanceFilter | null = null;
+  protected currentProvenanceCatalog: ReferenceProvenanceCatalog | null = null;
   protected currentFileSearchLimit: number;
   protected currentIssueSearchLimit: number;
   protected agentGeneratedBrowsePath: string | null = null;
@@ -607,6 +611,9 @@ export class AgentMentionSearchControllerBase {
   }
 
   protected resetExpandedCounts(): void {
+    for (const groupId of Object.keys(this.expandedCounts)) {
+      delete this.expandedCounts[groupId as AgentMentionGroupId];
+    }
     for (const groupId of [
       "files",
       "opened_files",
@@ -670,7 +677,8 @@ export class AgentMentionSearchControllerBase {
       expandedCounts: this.expandedCounts,
       rawGroups: this.rawGroups,
       totalCounts: this.totalCounts,
-      issueTopicGroups: this.issueTopicGroups
+      issueTopicGroups: this.issueTopicGroups,
+      provenanceCatalog: this.currentProvenanceCatalog
     });
   }
 
