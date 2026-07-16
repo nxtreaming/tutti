@@ -4813,8 +4813,6 @@ components:
         - minimizeAnimation
         - sleepPreventionMode
         - showAppDeveloperSources
-        - enableCursorAgent
-        - enableOpenCodeAgent
         - themeSource
         - updateChannel
         - updatePolicy
@@ -4839,10 +4837,6 @@ components:
           $ref: "#/components/schemas/DesktopDockIconStyle"
         dockPlacement:
           $ref: "#/components/schemas/DesktopDockPlacement"
-        enableCursorAgent:
-          type: boolean
-        enableOpenCodeAgent:
-          type: boolean
         fileDefaultOpenersByExtension:
           $ref: "#/components/schemas/DesktopFileDefaultOpenersByExtension"
         featureFlags:
@@ -5013,15 +5007,9 @@ components:
       additionalProperties: false
       required:
         - defaultAgentProvider
-        - enableCursorAgent
-        - enableOpenCodeAgent
       properties:
         defaultAgentProvider:
           $ref: "#/components/schemas/DesktopDefaultAgentProvider"
-        enableCursorAgent:
-          type: boolean
-        enableOpenCodeAgent:
-          type: boolean
     PutDesktopPreferencesRequest:
       type: object
       additionalProperties: false

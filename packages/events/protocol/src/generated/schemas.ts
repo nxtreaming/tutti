@@ -22,8 +22,6 @@ export const preferencesDesktopPreferencesSchema = {
     "minimizeAnimation",
     "sleepPreventionMode",
     "showAppDeveloperSources",
-    "enableCursorAgent",
-    "enableOpenCodeAgent",
     "themeSource",
     "updateChannel",
     "updatePolicy"
@@ -300,12 +298,6 @@ export const preferencesDesktopPreferencesSchema = {
       enum: ["never", "whileAgentRunning", "always"]
     },
     showAppDeveloperSources: {
-      type: "boolean"
-    },
-    enableCursorAgent: {
-      type: "boolean"
-    },
-    enableOpenCodeAgent: {
       type: "boolean"
     },
     themeSource: {
@@ -1341,8 +1333,6 @@ export const preferencesDesktopUpdateRequestedPayloadSchema = {
         "minimizeAnimation",
         "sleepPreventionMode",
         "showAppDeveloperSources",
-        "enableCursorAgent",
-        "enableOpenCodeAgent",
         "themeSource",
         "updateChannel",
         "updatePolicy"
@@ -1619,12 +1609,6 @@ export const preferencesDesktopUpdateRequestedPayloadSchema = {
           enum: ["never", "whileAgentRunning", "always"]
         },
         showAppDeveloperSources: {
-          type: "boolean"
-        },
-        enableCursorAgent: {
-          type: "boolean"
-        },
-        enableOpenCodeAgent: {
           type: "boolean"
         },
         themeSource: {
@@ -1708,8 +1692,6 @@ export const preferencesDesktopUpdatedPayloadSchema = {
         "minimizeAnimation",
         "sleepPreventionMode",
         "showAppDeveloperSources",
-        "enableCursorAgent",
-        "enableOpenCodeAgent",
         "themeSource",
         "updateChannel",
         "updatePolicy"
@@ -1986,12 +1968,6 @@ export const preferencesDesktopUpdatedPayloadSchema = {
           enum: ["never", "whileAgentRunning", "always"]
         },
         showAppDeveloperSources: {
-          type: "boolean"
-        },
-        enableCursorAgent: {
-          type: "boolean"
-        },
-        enableOpenCodeAgent: {
           type: "boolean"
         },
         themeSource: {

@@ -1441,7 +1441,10 @@ by `GET /v1/workspaces/{workspaceID}/agent-session-sections` and
 `GET /v1/workspaces/{workspaceID}/agent-session-sections/page`. Project
 sections come from current `userProjects` and use the stable
 `project:/canonical/path` `sectionKey`; the Chats section uses
-`conversations`. The daemon pages sessions by `rail_section_key`, so AgentGUI
+`conversations`. This inventory is the durable registered-project list; rail
+loading must not probe project paths or implicitly remove unavailable folders.
+Path availability and explicit removal belong to the user-project domain. The
+daemon pages sessions by `rail_section_key`, so AgentGUI
 must render returned section props and use backend `hasMore`/`nextCursor`
 rather than cwd grouping, root filters, excluded project paths, or local
 Show more heuristics. Page responses upsert their session entities into the
@@ -2973,11 +2976,12 @@ An agent may represent shared, local, remote, or other host-owned launch
 mechanisms, but those meanings stay outside AgentGUI.
 
 Desktop workbench feeds the renderer `AgentsService` `/agents` snapshot into
-AgentGUI. Product feature gates may filter that array before rendering; a
-loaded empty result remains empty. Availability states that should stay visible
-must remain in the array with the matching non-ready status instead of becoming
-synthetic provider placeholders. OpenCode remains gated by the
-`enableOpenCodeAgent` developer preference. Tutti Agent visibility is owned by
+AgentGUI. Cursor and OpenCode are regular built-in Agent Targets and remain
+visible without desktop experiment preferences. Product feature gates may
+filter other targets before rendering; a loaded empty result remains empty.
+Availability states that should stay visible must remain in the array with the
+matching non-ready status instead of becoming synthetic provider placeholders.
+Tutti Agent visibility is owned by
 the daemon's `local:tutti-agent` Agent Target: disabled daemon targets stay in
 the presentation snapshot for history and settings, but are omitted from the
 new-session `agents` projection before the directory reaches AgentGUI.

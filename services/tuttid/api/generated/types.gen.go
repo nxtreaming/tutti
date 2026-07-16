@@ -3050,8 +3050,6 @@ type DesktopPreferences struct {
 	DefaultAgentProvider                        DesktopDefaultAgentProvider                        `json:"defaultAgentProvider"`
 	DockIconStyle                               DesktopDockIconStyle                               `json:"dockIconStyle"`
 	DockPlacement                               DesktopDockPlacement                               `json:"dockPlacement"`
-	EnableCursorAgent                           bool                                               `json:"enableCursorAgent"`
-	EnableOpenCodeAgent                         bool                                               `json:"enableOpenCodeAgent"`
 	FeatureFlags                                DesktopFeatureFlags                                `json:"featureFlags"`
 	FileDefaultOpenersByExtension               DesktopFileDefaultOpenersByExtension               `json:"fileDefaultOpenersByExtension"`
 	Locale                                      DesktopLocale                                      `json:"locale"`
@@ -4319,8 +4317,6 @@ type WorkspaceApp struct {
 // WorkspaceAppAgentPreferencesResponse defines model for WorkspaceAppAgentPreferencesResponse.
 type WorkspaceAppAgentPreferencesResponse struct {
 	DefaultAgentProvider DesktopDefaultAgentProvider `json:"defaultAgentProvider"`
-	EnableCursorAgent    bool                        `json:"enableCursorAgent"`
-	EnableOpenCodeAgent  bool                        `json:"enableOpenCodeAgent"`
 }
 
 // WorkspaceAppAuthor defines model for WorkspaceAppAuthor.
