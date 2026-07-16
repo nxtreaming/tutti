@@ -11,8 +11,12 @@ import {
 describe("agentTurnWorkSectionModel", () => {
   it("uses canonical turn timestamps for live and settled elapsed time", () => {
     expect(
-      resolveAgentTurnTiming(canonicalTurn({ phase: "running" }), 66_999)
-    ).toEqual({ kind: "live", elapsedSeconds: 61 });
+      resolveAgentTurnTiming(canonicalTurn({ phase: "running" }), true)
+    ).toEqual({ kind: "live", startedAtUnixMs: 5_000 });
+
+    expect(
+      resolveAgentTurnTiming(canonicalTurn({ phase: "running" }), false)
+    ).toBeNull();
 
     expect(
       resolveAgentTurnTiming(
@@ -21,20 +25,20 @@ describe("agentTurnWorkSectionModel", () => {
           outcome: "completed",
           settledAtUnixMs: 127_999
         }),
-        999_999
+        false
       )
     ).toEqual({ kind: "settled", elapsedSeconds: 122 });
 
     expect(
       resolveAgentTurnTiming(
         canonicalTurn({ startedAtUnixMs: Number.NaN }),
-        66_999
+        true
       )
     ).toBeNull();
     expect(
       resolveAgentTurnTiming(
         canonicalTurn({ phase: "settled", settledAtUnixMs: 4_999 }),
-        66_999
+        false
       )
     ).toBeNull();
   });

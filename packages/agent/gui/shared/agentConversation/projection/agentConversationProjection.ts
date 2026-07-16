@@ -432,25 +432,42 @@ function projectMessageCopyText(
 
     let changed = false;
     const messages = row.messages.map((message) => {
+      const isTurnFinalText =
+        row.speaker === "assistant" &&
+        assistantCopyTargetKeys.has(messageCopyTargetKey(row, message));
       const copyText =
         row.speaker === "user"
           ? copyTextForUserMessage(message)
-          : assistantCopyTargetKeys.has(messageCopyTargetKey(row, message))
+          : isTurnFinalText
             ? message.body
             : null;
-      if ((message.copyText ?? null) === copyText) {
+      if (
+        (message.copyText ?? null) === copyText &&
+        message.isTurnFinalText === (isTurnFinalText ? true : undefined)
+      ) {
         return message;
       }
       changed = true;
+      const nextMessage = isTurnFinalText
+        ? { ...message, isTurnFinalText: true as const }
+        : omitTurnFinalText(message);
       if (copyText) {
-        return { ...message, copyText };
+        return { ...nextMessage, copyText };
       }
-      const { copyText: _copyText, ...withoutCopyText } = message;
+      const { copyText: _copyText, ...withoutCopyText } = nextMessage;
       return withoutCopyText;
     });
 
     return changed ? { ...row, messages } : row;
   });
+}
+
+function omitTurnFinalText(
+  message: AgentMessageContentVM
+): AgentMessageContentVM {
+  const { isTurnFinalText: _isTurnFinalText, ...withoutTurnFinalText } =
+    message;
+  return withoutTurnFinalText;
 }
 
 function buildAssistantCopyEligibleTurnIds(

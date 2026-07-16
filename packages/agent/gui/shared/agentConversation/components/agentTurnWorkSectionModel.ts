@@ -5,37 +5,44 @@ import type {
 } from "../contracts/agentMessageRowVM";
 import type { AgentTranscriptTurnGroup } from "./agentTranscriptModel";
 
-export type AgentTurnTiming = {
-  kind: "live" | "settled";
-  elapsedSeconds: number;
-};
+export type AgentTurnTiming =
+  | { kind: "live"; startedAtUnixMs: number }
+  | { kind: "settled"; elapsedSeconds: number };
 
 export type AgentTurnDuration =
   | { kind: "seconds"; seconds: number }
   | { kind: "minutes"; minutes: number }
   | { kind: "minutes-seconds"; minutes: number; seconds: number };
 
-type AgentTranscriptTurnRow = AgentTranscriptTurnGroup["rows"][number];
+export type AgentTurnWorkSectionRow =
+  AgentTranscriptTurnGroup["rows"][number] & {
+    renderKey?: string;
+  };
 
 export interface AgentTurnWorkSectionModel {
   timing: AgentTurnTiming | null;
-  userRows: AgentTranscriptTurnRow[];
-  workRowsBeforeFinal: AgentTranscriptTurnRow[];
-  finalRows: AgentTranscriptTurnRow[];
-  workRowsAfterFinal: AgentTranscriptTurnRow[];
+  userRows: AgentTurnWorkSectionRow[];
+  workRowsBeforeFinal: AgentTurnWorkSectionRow[];
+  finalRows: AgentTurnWorkSectionRow[];
+  workRowsAfterFinal: AgentTurnWorkSectionRow[];
   collapseEligible: boolean;
 }
 
 export function resolveAgentTurnTiming(
   turn: AgentActivityTurn | null | undefined,
-  nowUnixMs: number
+  isActiveTurn: boolean
 ): AgentTurnTiming | null {
   if (!turn || !Number.isFinite(turn.startedAtUnixMs)) {
     return null;
   }
 
-  const kind = turn.phase === "settled" ? "settled" : "live";
-  const endUnixMs = kind === "settled" ? turn.settledAtUnixMs : nowUnixMs;
+  if (turn.phase !== "settled") {
+    return isActiveTurn
+      ? { kind: "live", startedAtUnixMs: turn.startedAtUnixMs }
+      : null;
+  }
+
+  const endUnixMs = turn.settledAtUnixMs;
   if (
     !Number.isFinite(endUnixMs) ||
     (endUnixMs as number) < turn.startedAtUnixMs
@@ -44,7 +51,7 @@ export function resolveAgentTurnTiming(
   }
 
   return {
-    kind,
+    kind: "settled",
     elapsedSeconds: Math.max(
       0,
       Math.floor(((endUnixMs as number) - turn.startedAtUnixMs) / 1_000)
@@ -71,9 +78,9 @@ export function formatAgentTurnDuration(
 export function buildAgentTurnWorkSectionModel(
   group: AgentTranscriptTurnGroup,
   turn: AgentActivityTurn | null | undefined,
-  nowUnixMs = Date.now()
+  isActiveTurn = false
 ): AgentTurnWorkSectionModel {
-  const timing = resolveAgentTurnTiming(turn, nowUnixMs);
+  const timing = resolveAgentTurnTiming(turn, isActiveTurn);
   if (!timing) {
     return {
       timing: null,
@@ -85,8 +92,12 @@ export function buildAgentTurnWorkSectionModel(
     };
   }
 
-  const userRows = group.rows.filter(({ row }) => isUserMessageRow(row));
-  const agentRows = group.rows.filter(({ row }) => !isUserMessageRow(row));
+  const userRows: AgentTurnWorkSectionRow[] = group.rows.filter(({ row }) =>
+    isUserMessageRow(row)
+  );
+  const agentRows: AgentTurnWorkSectionRow[] = group.rows.filter(
+    ({ row }) => !isUserMessageRow(row)
+  );
   const finalTarget = findFinalAssistantCopyTarget(agentRows);
   if (!finalTarget) {
     return {
@@ -114,21 +125,17 @@ export function buildAgentTurnWorkSectionModel(
   if (sourceRow.thinking.length > 0 || messagesBeforeFinal.length > 0) {
     workRowsBeforeFinal.push({
       ...sourceEntry,
-      row: cloneAssistantRow(
-        sourceRow,
-        `${sourceRow.id}:turn-work-before`,
-        messagesBeforeFinal,
-        sourceRow.thinking
-      )
+      renderKey: `${sourceRow.id}:turn-work-before`,
+      row: cloneAssistantRow(sourceRow, messagesBeforeFinal, sourceRow.thinking)
     });
   }
 
-  const finalRows: AgentTranscriptTurnRow[] = [
+  const finalRows: AgentTurnWorkSectionRow[] = [
     {
       ...sourceEntry,
+      renderKey: `${sourceRow.id}:turn-final`,
       row: cloneAssistantRow(
         sourceRow,
-        `${sourceRow.id}:turn-final`,
         [sourceRow.messages[finalTarget.messageIndex]!],
         []
       )
@@ -138,12 +145,8 @@ export function buildAgentTurnWorkSectionModel(
   if (messagesAfterFinal.length > 0) {
     workRowsAfterFinal.unshift({
       ...sourceEntry,
-      row: cloneAssistantRow(
-        sourceRow,
-        `${sourceRow.id}:turn-work-after`,
-        messagesAfterFinal,
-        []
-      )
+      renderKey: `${sourceRow.id}:turn-work-after`,
+      row: cloneAssistantRow(sourceRow, messagesAfterFinal, [])
     });
   }
 
@@ -167,7 +170,7 @@ export function buildAgentTurnWorkSectionModel(
 }
 
 function findFinalAssistantCopyTarget(
-  rows: readonly AgentTranscriptTurnRow[]
+  rows: readonly AgentTurnWorkSectionRow[]
 ): { rowIndex: number; messageIndex: number } | null {
   for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
     const row = rows[rowIndex]?.row;
@@ -179,7 +182,8 @@ function findFinalAssistantCopyTarget(
       messageIndex >= 0;
       messageIndex -= 1
     ) {
-      if (row.messages[messageIndex]?.copyText?.trim()) {
+      const message = row.messages[messageIndex];
+      if (message?.isTurnFinalText && message.body.trim()) {
         return { rowIndex, messageIndex };
       }
     }
@@ -200,20 +204,18 @@ function groupContainsBlockingMessage(
 }
 
 function isUserMessageRow(
-  row: AgentTranscriptTurnRow["row"]
+  row: AgentTurnWorkSectionRow["row"]
 ): row is AgentMessageRowVM {
   return row.kind === "message" && row.speaker === "user";
 }
 
 function cloneAssistantRow(
   source: AgentMessageRowVM,
-  id: string,
   messages: AgentMessageContentVM[],
   thinking: AgentMessageRowVM["thinking"]
 ): AgentMessageRowVM {
   return {
     ...source,
-    id,
     messages,
     thinking
   };

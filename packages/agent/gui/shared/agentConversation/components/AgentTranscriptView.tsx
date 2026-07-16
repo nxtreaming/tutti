@@ -277,12 +277,14 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
 
   const renderRow = (
     row: AgentConversationVM["rows"][number],
-    rowIndex: number
+    rowIndex: number,
+    renderKey?: string
   ): JSX.Element => {
     const rowKey =
-      conversation.rows[rowIndex] === row
+      renderKey ??
+      (conversation.rows[rowIndex] === row
         ? (rowKeys[rowIndex] ?? transcriptRowKey(row))
-        : transcriptRowKey(row);
+        : transcriptRowKey(row));
     const shouldAnimateEnter =
       row.kind !== "processing" && enteringRowKeys.has(rowKey);
 
@@ -335,6 +337,10 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
         sessionId={conversation.sourceDetail.session.agentSessionId}
         turn={
           group.turnId ? (canonicalTurnById.get(group.turnId) ?? null) : null
+        }
+        isActiveTurn={
+          group.turnId !== null &&
+          group.turnId === conversation.sourceDetail.session.activeTurnId
         }
         disclosureStore={turnDisclosureStore}
         renderRow={renderRow}

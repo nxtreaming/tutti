@@ -11,17 +11,20 @@ import {
   buildAgentTurnWorkSectionModel,
   formatAgentTurnDuration,
   type AgentTurnDuration,
-  type AgentTurnTiming
+  type AgentTurnTiming,
+  type AgentTurnWorkSectionRow
 } from "./agentTurnWorkSectionModel";
 
 interface AgentTurnWorkSectionProps {
   group: AgentTranscriptTurnGroup;
   sessionId: string;
   turn: AgentActivityTurn | null;
+  isActiveTurn: boolean;
   disclosureStore: AgentTurnDisclosureStore;
   renderRow: (
     row: AgentTranscriptTurnGroup["rows"][number]["row"],
-    rowIndex: number
+    rowIndex: number,
+    renderKey?: string
   ) => JSX.Element;
 }
 
@@ -29,22 +32,14 @@ export function AgentTurnWorkSection({
   group,
   sessionId,
   turn,
+  isActiveTurn,
   disclosureStore,
   renderRow
 }: AgentTurnWorkSectionProps): JSX.Element {
   const { t } = useTranslation();
-  const liveStartUnixMs =
-    turn?.phase !== "settled" && Number.isFinite(turn?.startedAtUnixMs)
-      ? (turn?.startedAtUnixMs ?? null)
-      : null;
-  const liveElapsedSeconds = useElapsedSeconds(liveStartUnixMs);
-  const nowUnixMs =
-    liveStartUnixMs !== null && liveElapsedSeconds !== null
-      ? liveStartUnixMs + liveElapsedSeconds * 1_000
-      : (turn?.settledAtUnixMs ?? 0);
   const model = useMemo(
-    () => buildAgentTurnWorkSectionModel(group, turn, nowUnixMs),
-    [group, nowUnixMs, turn]
+    () => buildAgentTurnWorkSectionModel(group, turn, isActiveTurn),
+    [group, isActiveTurn, turn]
   );
   const disclosureKey = `${sessionId}:${group.turnId ?? group.key}`;
   const expanded = model.collapseEligible
@@ -55,7 +50,6 @@ export function AgentTurnWorkSection({
     return <>{renderRows(group.rows, renderRow)}</>;
   }
 
-  const durationLabel = translateDuration(t, model.timing);
   const toggleLabel = expanded
     ? t("agentHost.agentGui.collapseTurnWork")
     : t("agentHost.agentGui.expandTurnWork");
@@ -67,7 +61,7 @@ export function AgentTurnWorkSection({
         className="flex min-h-6 items-center gap-0.5 text-[12px] text-[var(--text-tertiary)]"
         data-agent-turn-work-header={group.turnId ?? group.key}
       >
-        <span>{durationLabel}</span>
+        <AgentTurnDurationLabel timing={model.timing} />
         {model.collapseEligible ? (
           <BareIconButton
             size="sm"
@@ -103,18 +97,35 @@ export function AgentTurnWorkSection({
 }
 
 function renderRows(
-  rows: readonly AgentTranscriptTurnGroup["rows"][number][],
+  rows: readonly AgentTurnWorkSectionRow[],
   renderRow: AgentTurnWorkSectionProps["renderRow"]
 ): ReactNode {
-  return rows.map(({ row, rowIndex }) => renderRow(row, rowIndex));
+  return rows.map(({ row, rowIndex, renderKey }) =>
+    renderRow(row, rowIndex, renderKey)
+  );
+}
+
+function AgentTurnDurationLabel({
+  timing
+}: {
+  timing: AgentTurnTiming;
+}): JSX.Element {
+  const { t } = useTranslation();
+  const liveElapsedSeconds = useElapsedSeconds(
+    timing.kind === "live" ? timing.startedAtUnixMs : null
+  );
+  const elapsedSeconds =
+    timing.kind === "live" ? (liveElapsedSeconds ?? 0) : timing.elapsedSeconds;
+  return <span>{translateDuration(t, timing.kind, elapsedSeconds)}</span>;
 }
 
 function translateDuration(
   t: ReturnType<typeof useTranslation>["t"],
-  timing: AgentTurnTiming
+  kind: AgentTurnTiming["kind"],
+  elapsedSeconds: number
 ): string {
-  const duration = formatAgentTurnDuration(timing.elapsedSeconds);
-  return timing.kind === "live"
+  const duration = formatAgentTurnDuration(elapsedSeconds);
+  return kind === "live"
     ? translateLiveDuration(t, duration)
     : translateSettledDuration(t, duration);
 }

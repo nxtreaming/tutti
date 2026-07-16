@@ -86,12 +86,19 @@ describe("AgentTranscriptView", () => {
   it("ticks canonical live turn duration once per second", () => {
     vi.useFakeTimers();
     vi.setSystemTime(50_000);
+    const turn = canonicalTurn();
+    const baseDetail = detailViewModel();
     try {
       render(
         <AgentTranscriptView
           conversation={projectAgentConversationVM(
             detailViewModel({
-              sessionTurns: [canonicalTurn()],
+              session: {
+                ...baseDetail.session,
+                activeTurnId: turn.turnId,
+                activeTurn: turn
+              },
+              sessionTurns: [turn],
               showProcessingIndicator: true
             })
           )}
