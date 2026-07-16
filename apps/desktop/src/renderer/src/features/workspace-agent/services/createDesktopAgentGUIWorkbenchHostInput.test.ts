@@ -328,6 +328,7 @@ test("desktop provenance search sends the persisted project section key and agen
     generatedFileInputs.push(input);
     return {
       entries: [{ label: "report.md", path: "/outside/project/report.md" }],
+      hasMore: false,
       workspaceId
     };
   };
@@ -376,7 +377,7 @@ test("desktop provenance search fails closed when a project has no persisted sec
   const workspaceAgentActivityService = createWorkspaceAgentActivityService([]);
   workspaceAgentActivityService.listAgentGeneratedFiles = async () => {
     generatedFileRequestCount += 1;
-    return { entries: [], workspaceId };
+    return { entries: [], hasMore: false, workspaceId };
   };
   const project = userProject("project-1", "/Users/local/repo", "Repo");
   project.sectionKey = undefined;
@@ -1658,7 +1659,7 @@ function createWorkspaceAgentActivityService(
       return { messages: [], hasMore: false, latestVersion: 0 };
     },
     async listAgentGeneratedFiles() {
-      return { entries: [], workspaceId };
+      return { entries: [], hasMore: false, workspaceId };
     },
     async listSessionsPage(input) {
       return { hasMore: false, sessions: [], workspaceId: input.workspaceId };

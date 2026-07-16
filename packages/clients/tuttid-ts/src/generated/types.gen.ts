@@ -1621,6 +1621,8 @@ export type WorkspaceAgentGeneratedFileEntry = {
 export type WorkspaceAgentGeneratedFileListResponse = {
   workspaceId: string;
   entries: Array<WorkspaceAgentGeneratedFileEntry>;
+  hasMore: boolean;
+  nextCursor?: string;
 };
 
 export type WorkspaceAgentSessionListResponse = {
@@ -6394,6 +6396,10 @@ export type ListWorkspaceAgentGeneratedFilesData = {
      * Optional agent target filters applied before generated-file limiting.
      */
     agentTargetIds?: Array<string>;
+    /**
+     * Opaque cursor for the next page within the bounded recent generated-file result.
+     */
+    cursor?: string;
     limit?: number;
   };
   url: "/v1/workspaces/{workspaceID}/agent-generated-files";

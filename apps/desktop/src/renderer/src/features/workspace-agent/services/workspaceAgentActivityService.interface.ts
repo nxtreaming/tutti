@@ -45,6 +45,7 @@ export interface WorkspaceAgentActivityListMessagesInput {
 
 export interface WorkspaceAgentActivityListGeneratedFilesInput {
   agentTargetIds?: readonly string[];
+  cursor?: string;
   limit?: number;
   query?: string;
   sectionKey: string;

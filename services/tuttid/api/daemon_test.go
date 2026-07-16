@@ -2160,8 +2160,13 @@ func TestDaemonAPIGeneratedRoutesListAgentGeneratedFiles(t *testing.T) {
 				if input.Limit != 25 {
 					t.Fatalf("limit = %d, want 25", input.Limit)
 				}
+				if input.Cursor != "v1:25" {
+					t.Fatalf("cursor = %q, want v1:25", input.Cursor)
+				}
 				return agentservice.GeneratedFileList{
 					WorkspaceID: workspaceID,
+					HasMore:     true,
+					NextCursor:  "v1:50",
 					Files: []agentservice.GeneratedFile{
 						{
 							Label: "report.md",
@@ -2177,7 +2182,7 @@ func TestDaemonAPIGeneratedRoutesListAgentGeneratedFiles(t *testing.T) {
 		t,
 		mux,
 		http.MethodGet,
-		"/v1/workspaces/ws-1/agent-generated-files?query=report&sectionKey=project%3A%2Fworkspace&agentTargetIds=local%3Acodex&agentTargetIds=local%3Aclaude-code&limit=25",
+		"/v1/workspaces/ws-1/agent-generated-files?query=report&sectionKey=project%3A%2Fworkspace&agentTargetIds=local%3Acodex&agentTargetIds=local%3Aclaude-code&cursor=v1%3A25&limit=25",
 		nil,
 	)
 	if recorder.Code != http.StatusOK {
@@ -2195,6 +2200,9 @@ func TestDaemonAPIGeneratedRoutesListAgentGeneratedFiles(t *testing.T) {
 	}
 	if response.Entries[0].Path != "/workspace/report.md" {
 		t.Fatalf("entry path = %q, want /workspace/report.md", response.Entries[0].Path)
+	}
+	if !response.HasMore || response.NextCursor == nil || *response.NextCursor != "v1:50" {
+		t.Fatalf("pagination = hasMore:%v nextCursor:%v", response.HasMore, response.NextCursor)
 	}
 }
 

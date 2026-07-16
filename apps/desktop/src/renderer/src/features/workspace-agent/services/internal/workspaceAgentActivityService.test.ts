@@ -1307,6 +1307,8 @@ test("WorkspaceAgentActivityService.listAgentGeneratedFiles delegates to tuttid 
         calls.push({ request, requestOptions, workspaceId });
         return {
           entries: [{ label: "report.md", path: "/workspace/report.md" }],
+          hasMore: true,
+          nextCursor: "v1:20",
           workspaceId
         };
       }
@@ -1318,6 +1320,7 @@ test("WorkspaceAgentActivityService.listAgentGeneratedFiles delegates to tuttid 
 
   const result = await service.listAgentGeneratedFiles({
     agentTargetIds: [" local:codex ", "local:claude-code"],
+    cursor: " v1:10 ",
     limit: 20,
     query: "report",
     sectionKey: "project:/workspace",
@@ -1328,6 +1331,7 @@ test("WorkspaceAgentActivityService.listAgentGeneratedFiles delegates to tuttid 
     {
       request: {
         agentTargetIds: ["local:codex", "local:claude-code"],
+        cursor: "v1:10",
         limit: 20,
         query: "report",
         sectionKey: "project:/workspace"
@@ -1347,7 +1351,7 @@ test("WorkspaceAgentActivityService.listAgentGeneratedFiles fails closed for an 
     tuttidClient: {
       listWorkspaceAgentGeneratedFiles: async () => {
         requestCount += 1;
-        return { entries: [], workspaceId: "ws-1" };
+        return { entries: [], hasMore: false, workspaceId: "ws-1" };
       }
     } as unknown as TuttidClient,
     runtimeApi: {
@@ -1362,7 +1366,11 @@ test("WorkspaceAgentActivityService.listAgentGeneratedFiles fails closed for an 
   });
 
   assert.equal(requestCount, 0);
-  assert.deepEqual(result, { entries: [], workspaceId: "ws-1" });
+  assert.deepEqual(result, {
+    entries: [],
+    hasMore: false,
+    workspaceId: "ws-1"
+  });
 });
 
 test("WorkspaceAgentActivityService.listSessionsPage forwards backend search pagination", async () => {

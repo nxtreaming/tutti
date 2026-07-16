@@ -5,59 +5,34 @@ import (
 	"testing"
 )
 
-func TestWorkspaceAgentTurnFilesMigrationBackfillsCanonicalTurnsIdempotently(t *testing.T) {
+func TestWorkspaceAgentGeneratedFilesRecentTurnsMigrationDropsProjectionAndCreatesIndex(t *testing.T) {
 	t.Parallel()
 
-	store := openTestStore(t, testOptions(&staticProjectPaths{paths: []string{"/workspace/project"}}))
+	store := openTestStore(t, testOptions(&staticProjectPaths{}))
 	ctx := context.Background()
-	const workspaceID = "workspace-turn-file-migration"
-	const sessionID = "session-1"
-
-	seedGeneratedFileSession(t, ctx, store, workspaceID, sessionID, testTargetIDCodex, "/workspace/project/apps/web")
-	recordGeneratedFileTurn(t, ctx, store, workspaceID, sessionID, "turn-1", 100, []any{
-		map[string]any{"path": "src/report.md", "change": "added"},
-		map[string]any{"path": "/workspace/outside.md", "change": "added"},
-	})
-
-	if _, err := store.db.ExecContext(ctx, `
-DELETE FROM workspace_agent_turn_files;
-DELETE FROM agent_store_schema_migrations WHERE id = ?;
-`, schemaMigrationWorkspaceAgentTurnFilesV1); err != nil {
-		t.Fatalf("reset turn files projection migration: %v", err)
+	if _, err := store.db.ExecContext(ctx, `CREATE TABLE workspace_agent_turn_files (normalized_path TEXT)`); err != nil {
+		t.Fatalf("create obsolete generated file projection: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx, `DELETE FROM agent_store_schema_migrations WHERE id = ?`, schemaMigrationWorkspaceAgentGeneratedFilesRecentTurnsV1); err != nil {
+		t.Fatalf("reset generated files migration: %v", err)
 	}
 	if err := store.Migrate(ctx); err != nil {
-		t.Fatalf("Migrate(backfill) error = %v", err)
+		t.Fatalf("Migrate() error = %v", err)
 	}
 
-	assertProjectedTurnFileCount(t, ctx, store, 1)
-	result, ok, err := store.ListWorkspaceGeneratedFiles(ctx, ListWorkspaceGeneratedFilesInput{
-		WorkspaceID: workspaceID,
-		SectionKey:  RailSectionKeyForProject("/workspace/project"),
-		Limit:       10,
-	})
-	if err != nil || !ok {
-		t.Fatalf("ListWorkspaceGeneratedFiles(backfill) ok=%v error=%v", ok, err)
+	var projectionCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'workspace_agent_turn_files'`).Scan(&projectionCount); err != nil {
+		t.Fatalf("count generated file projection table: %v", err)
 	}
-	if len(result.Files) != 1 || result.Files[0].Path != "/workspace/project/apps/web/src/report.md" {
-		t.Fatalf("backfilled files = %#v, want the canonical in-project turn file", result.Files)
+	if projectionCount != 0 {
+		t.Fatalf("workspace_agent_turn_files table count = %d, want 0", projectionCount)
 	}
 
-	if _, err := store.db.ExecContext(ctx, `DELETE FROM agent_store_schema_migrations WHERE id = ?`, schemaMigrationWorkspaceAgentTurnFilesV1); err != nil {
-		t.Fatalf("reset turn files projection migration for rerun: %v", err)
+	var indexCount int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_workspace_agent_turns_workspace_settled_recent'`).Scan(&indexCount); err != nil {
+		t.Fatalf("count recent settled turns index: %v", err)
 	}
-	if err := store.Migrate(ctx); err != nil {
-		t.Fatalf("Migrate(rerun) error = %v", err)
-	}
-	assertProjectedTurnFileCount(t, ctx, store, 1)
-}
-
-func assertProjectedTurnFileCount(t *testing.T, ctx context.Context, store *Store, want int) {
-	t.Helper()
-	var got int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspace_agent_turn_files`).Scan(&got); err != nil {
-		t.Fatalf("count projected turn files: %v", err)
-	}
-	if got != want {
-		t.Fatalf("projected turn files = %d, want %d", got, want)
+	if indexCount != 1 {
+		t.Fatalf("recent settled turns index count = %d, want 1", indexCount)
 	}
 }

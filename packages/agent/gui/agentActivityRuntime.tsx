@@ -50,6 +50,7 @@ export interface AgentActivityRuntimeListSessionMessagesInput {
 
 export interface AgentActivityRuntimeListGeneratedFilesInput {
   agentTargetIds?: readonly string[];
+  cursor?: string;
   limit?: number;
   query?: string;
   sectionKey: string;
@@ -137,6 +138,8 @@ export interface AgentActivityRuntimeGeneratedFile {
 
 export interface AgentActivityRuntimeGeneratedFileList {
   entries: AgentActivityRuntimeGeneratedFile[];
+  hasMore?: boolean;
+  nextCursor?: string;
   workspaceId: string;
 }
 

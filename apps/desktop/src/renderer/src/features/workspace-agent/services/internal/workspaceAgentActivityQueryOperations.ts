@@ -22,6 +22,7 @@ export class WorkspaceAgentActivityQueryOperations {
     if (input.agentTargetIds && agentTargetIds?.length === 0) {
       return {
         entries: [],
+        hasMore: false,
         workspaceId
       };
     }
@@ -29,6 +30,7 @@ export class WorkspaceAgentActivityQueryOperations {
       workspaceId,
       {
         agentTargetIds,
+        cursor: input.cursor?.trim() || undefined,
         limit: input.limit,
         query: input.query?.trim() || undefined,
         sectionKey: input.sectionKey.trim()

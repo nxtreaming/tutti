@@ -268,6 +268,9 @@ func (api DaemonAPI) ListWorkspaceAgentGeneratedFiles(ctx context.Context, reque
 		}
 		input.AgentTargetIDs = append([]string(nil), (*request.Params.AgentTargetIds)...)
 	}
+	if request.Params.Cursor != nil {
+		input.Cursor = strings.TrimSpace(*request.Params.Cursor)
+	}
 	if request.Params.Limit != nil {
 		if *request.Params.Limit <= 0 || *request.Params.Limit > 100 {
 			return writeListWorkspaceAgentGeneratedFilesError(agentservice.ErrInvalidArgument), nil
@@ -282,10 +285,15 @@ func (api DaemonAPI) ListWorkspaceAgentGeneratedFiles(ctx context.Context, reque
 	if err != nil {
 		return writeListWorkspaceAgentGeneratedFilesError(err), nil
 	}
-	return tuttigenerated.ListWorkspaceAgentGeneratedFiles200JSONResponse{
+	response := tuttigenerated.ListWorkspaceAgentGeneratedFiles200JSONResponse{
 		Entries:     generatedAgentGeneratedFiles(result.Files),
+		HasMore:     result.HasMore,
 		WorkspaceId: result.WorkspaceID,
-	}, nil
+	}
+	if result.NextCursor != "" {
+		response.NextCursor = &result.NextCursor
+	}
+	return response, nil
 }
 
 func (api DaemonAPI) ReadWorkspaceAgentSessionAttachment(ctx context.Context, request tuttigenerated.ReadWorkspaceAgentSessionAttachmentRequestObject) (tuttigenerated.ReadWorkspaceAgentSessionAttachmentResponseObject, error) {

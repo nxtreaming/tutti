@@ -1273,36 +1273,32 @@ func TestSQLiteStoreGeneratedFilesDoNotFallbackToMessages(t *testing.T) {
 		t.Fatalf("ReportSessionMessages(session-2) error = %v", err)
 	}
 
-	result, ok, err := store.ListWorkspaceGeneratedFiles(ctx, agentactivitybiz.ListWorkspaceGeneratedFilesInput{
+	result, ok, err := store.ListWorkspaceGeneratedFileTurns(ctx, agentactivitybiz.ListWorkspaceGeneratedFileTurnsInput{
 		WorkspaceID: "ws-agent-generated-files",
 		SectionKey:  "conversations",
-		Query:       "report",
-		Limit:       10,
 	})
 	if err != nil {
-		t.Fatalf("ListWorkspaceGeneratedFiles() error = %v", err)
+		t.Fatalf("ListWorkspaceGeneratedFileTurns() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ListWorkspaceGeneratedFiles() ok = false, want true")
+		t.Fatal("ListWorkspaceGeneratedFileTurns() ok = false, want true")
 	}
-	if len(result.Files) != 0 {
-		t.Fatalf("files = %#v, want no legacy message fallback", result.Files)
+	if len(result.Turns) != 0 {
+		t.Fatalf("turns = %#v, want no legacy message fallback", result.Turns)
 	}
 
-	arrayResult, ok, err := store.ListWorkspaceGeneratedFiles(ctx, agentactivitybiz.ListWorkspaceGeneratedFilesInput{
+	arrayResult, ok, err := store.ListWorkspaceGeneratedFileTurns(ctx, agentactivitybiz.ListWorkspaceGeneratedFileTurnsInput{
 		WorkspaceID: "ws-agent-generated-files",
 		SectionKey:  "conversations",
-		Query:       "slides",
-		Limit:       10,
 	})
 	if err != nil {
-		t.Fatalf("ListWorkspaceGeneratedFiles(array changes) error = %v", err)
+		t.Fatalf("ListWorkspaceGeneratedFileTurns(array changes) error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ListWorkspaceGeneratedFiles(array changes) ok = false, want true")
+		t.Fatal("ListWorkspaceGeneratedFileTurns(array changes) ok = false, want true")
 	}
-	if len(arrayResult.Files) != 0 {
-		t.Fatalf("array files = %#v, want no legacy message fallback", arrayResult.Files)
+	if len(arrayResult.Turns) != 0 {
+		t.Fatalf("array turns = %#v, want no legacy message fallback", arrayResult.Turns)
 	}
 }
 
@@ -1413,19 +1409,18 @@ func TestSQLiteStoreGeneratedFilesIgnoreAllMessageToolPayloads(t *testing.T) {
 		t.Fatalf("ReportSessionMessages() error = %v", err)
 	}
 
-	result, ok, err := store.ListWorkspaceGeneratedFiles(ctx, agentactivitybiz.ListWorkspaceGeneratedFilesInput{
+	result, ok, err := store.ListWorkspaceGeneratedFileTurns(ctx, agentactivitybiz.ListWorkspaceGeneratedFileTurnsInput{
 		WorkspaceID: "ws-agent-generated-files-failed",
 		SectionKey:  "conversations",
-		Limit:       10,
 	})
 	if err != nil {
-		t.Fatalf("ListWorkspaceGeneratedFiles() error = %v", err)
+		t.Fatalf("ListWorkspaceGeneratedFileTurns() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("ListWorkspaceGeneratedFiles() ok = false, want true")
+		t.Fatal("ListWorkspaceGeneratedFileTurns() ok = false, want true")
 	}
-	if len(result.Files) != 0 {
-		t.Fatalf("files = %#v, want no message-derived files", result.Files)
+	if len(result.Turns) != 0 {
+		t.Fatalf("turns = %#v, want no message-derived turns", result.Turns)
 	}
 }
 

@@ -32,12 +32,15 @@ type GeneratedFile struct {
 type GeneratedFileList struct {
 	WorkspaceID string
 	Files       []GeneratedFile
+	HasMore     bool
+	NextCursor  string
 }
 
 type ListGeneratedFilesInput struct {
 	Query          string
 	SectionKey     string
 	AgentTargetIDs []string
+	Cursor         string
 	Limit          int
 }
 
@@ -49,11 +52,11 @@ type MessageReader interface {
 	) (SessionMessagesPage, bool)
 }
 
-type GeneratedFileReader interface {
-	ListWorkspaceGeneratedFiles(
+type GeneratedFileTurnReader interface {
+	ListWorkspaceGeneratedFileTurns(
 		ctx context.Context,
-		input agentactivitybiz.ListWorkspaceGeneratedFilesInput,
-	) (GeneratedFileList, bool)
+		input agentactivitybiz.ListWorkspaceGeneratedFileTurnsInput,
+	) (agentactivitybiz.GeneratedFileTurnList, bool)
 }
 
 func (s *Service) ListMessages(
@@ -137,29 +140,25 @@ func (s *Service) ListGeneratedFiles(
 	if len(agentTargetIDs) > MaxGeneratedFileAgentTargetFilters {
 		return GeneratedFileList{}, ErrInvalidArgument
 	}
-	reader, ok := s.MessageReader.(GeneratedFileReader)
+	offset, err := parseGeneratedFilesCursor(input.Cursor)
+	if err != nil {
+		return GeneratedFileList{}, ErrInvalidArgument
+	}
+	reader, ok := s.MessageReader.(GeneratedFileTurnReader)
 	if !ok || reader == nil {
 		return GeneratedFileList{
 			WorkspaceID: workspaceID,
 			Files:       []GeneratedFile{},
 		}, nil
 	}
-	files, ok := reader.ListWorkspaceGeneratedFiles(ctx, agentactivitybiz.ListWorkspaceGeneratedFilesInput{
-		WorkspaceID:    workspaceID,
-		Query:          strings.TrimSpace(input.Query),
-		SectionKey:     sectionKey,
-		AgentTargetIDs: agentTargetIDs,
-		Limit:          input.Limit,
-	})
+	base, ok := s.cachedGeneratedFilesBase(ctx, reader, workspaceID, sectionKey)
 	if !ok {
 		return GeneratedFileList{
 			WorkspaceID: workspaceID,
 			Files:       []GeneratedFile{},
 		}, nil
 	}
-	files.WorkspaceID = workspaceID
-	files.Files = cloneGeneratedFiles(files.Files)
-	return files, nil
+	return pageGeneratedFiles(workspaceID, base, strings.TrimSpace(input.Query), agentTargetIDs, offset, input.Limit), nil
 }
 
 func uniqueNonEmptyStrings(values []string) []string {

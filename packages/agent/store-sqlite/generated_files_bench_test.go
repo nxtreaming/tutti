@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func BenchmarkStoreListWorkspaceGeneratedFiles(b *testing.B) {
+func BenchmarkStoreListWorkspaceGeneratedFileTurns(b *testing.B) {
 	projects := make([]string, 10)
 	for index := range projects {
 		projects[index] = fmt.Sprintf("/workspace/project-%02d", index)
@@ -20,27 +20,15 @@ func BenchmarkStoreListWorkspaceGeneratedFiles(b *testing.B) {
 	seedGeneratedFileBenchmarkTurns(b, ctx, store, workspaceID, 100, 50)
 	sectionKey := RailSectionKeyForProject(projects[0])
 
-	for _, test := range []struct {
-		name  string
-		query string
-	}{
-		{name: "empty-query-limit-30"},
-		{name: "miss-query-limit-30", query: "definitely-no-match"},
-	} {
-		b.Run(test.name, func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				_, ok, err := store.ListWorkspaceGeneratedFiles(ctx, ListWorkspaceGeneratedFilesInput{
-					WorkspaceID: workspaceID,
-					SectionKey:  sectionKey,
-					Query:       test.query,
-					Limit:       30,
-				})
-				if err != nil || !ok {
-					b.Fatalf("ListWorkspaceGeneratedFiles() ok=%v error=%v", ok, err)
-				}
-			}
+	b.ReportAllocs()
+	for b.Loop() {
+		_, ok, err := store.ListWorkspaceGeneratedFileTurns(ctx, ListWorkspaceGeneratedFileTurnsInput{
+			WorkspaceID: workspaceID,
+			SectionKey:  sectionKey,
 		})
+		if err != nil || !ok {
+			b.Fatalf("ListWorkspaceGeneratedFileTurns() ok=%v error=%v", ok, err)
+		}
 	}
 }
 

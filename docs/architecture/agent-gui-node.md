@@ -3374,30 +3374,43 @@ corepack pnpm --filter @tutti-os/agent-gui exec vitest run shared/AgentRichTextR
 
 ```text
 Durable Turn.fileChanges snapshots
-  -> transactional workspace_agent_turn_files SQLite projection
-  -> section- and target-filtered tuttid generated-file query
+  -> indexed recent settled-Turn candidate window
+  -> exact section join and Go file-state combination
+  -> target filter and workspace-file search ranking
   -> desktop mention provider
   -> mention palette grouping/count presentation
   -> composer file mention insertion
 ```
 
-`Turn.fileChanges` is the only generated-file source of truth. Persisting a
-Turn replaces that Turn's path rows in the lightweight projection within the
-same SQLite transaction; migration backfill reads existing canonical Turn
-snapshots only. Activity messages, tool payloads, provider metadata, and
-renderer session snapshots are not compatibility fallbacks, so sessions that
-predate canonical Turn file changes do not appear in generated-file results.
+`Turn.fileChanges` is the only generated-file source of truth. The daemon does
+not persist a second file projection: it uses a partial settled-Turn index to
+materialize at most the newest 1000 workspace Turns, joins the requested exact
+rail section, and returns at most 100 settled Turns for Go aggregation.
+Activity messages, tool payloads, provider metadata, and renderer session
+snapshots are not compatibility fallbacks, so sessions that predate canonical
+Turn file changes do not appear in generated-file results. Running, waiting,
+and settling Turns are intentionally absent; all terminal outcomes may
+contribute files because a failed or canceled Turn can already have written.
 
 The query requires the exact persisted rail `sectionKey`. Project sections use
 the `WorkspaceUserProject.sectionKey` supplied by the daemon; the unassigned
 section uses the fixed `conversations` key. The desktop and AgentGUI layers must
 not derive a project key from `cwd` or a path. A missing key fails closed and
-the key is part of mention browse-cache identity. At projection time, project
-sessions retain only normalized paths contained by their persisted
-`rail_project_path`. At query time, SQLite applies section and Agent target
-filters before ranking each normalized path, suppresses a path whose latest
-change is deleted, then applies keyword and result limit. Generated-file counts
-must be computed from this query output, not from palette rendering state.
+the key is part of mention browse-cache identity. Go resolves relative paths
+against each persisted session `cwd`; project sections retain only normalized
+paths contained by their persisted `rail_project_path`. Turns are folded from
+newest `settledAt` to oldest, so the first valid `added`, `modified`, or
+`deleted` change for a path decides its current state. All other change kinds
+are ignored. Tombstones are applied before Agent filtering, then a non-empty
+query reuses workspace file-search ranking.
+
+The aggregate is cached by `workspaceId + sectionKey` for ten seconds without
+event invalidation. The HTTP cursor uses bounded offset pagination over at most
+200 ranked paths. Cache expiry may cause duplicate, missing, or reordered
+entries between pages, and a quiet section can be absent when its Turns fall
+outside the 1000-Turn workspace candidate window. AgentGUI therefore labels
+the group as recent and potentially incomplete; this endpoint is an optimistic
+convenience, not an exhaustive generated-file ledger.
 
 ### Reference Source Filtering
 
@@ -3417,9 +3430,9 @@ AgentGUI creates one controlled provenance controller for both the composer
 Agent target catalog, while the query providers apply selected
 `agentTargetId` values before pagination. Session search merges target-scoped
 queries. Tutti's daemon-backed generated-file query accepts multiple
-`agentTargetIds` and filters the Turn-file projection by persisted rail section
-and session target in SQLite before ranking paths or applying the result limit;
-the renderer must not filter a capped snapshot.
+`agentTargetIds`; it combines the bounded Turn window for the persisted rail
+section before applying the session-target filter, ranking, and result limit.
+The renderer must not filter a capped snapshot.
 In the `+` picker, desktop project/local sources switch to that same
 generated-file provider for an active Agent constraint, then apply file type
 filters and the result limit. This provenance constraint does not imply a file

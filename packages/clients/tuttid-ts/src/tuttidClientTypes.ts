@@ -556,6 +556,7 @@ export interface TuttidClient {
     workspaceID: string,
     request: {
       agentTargetIds?: string[];
+      cursor?: string;
       limit?: number;
       query?: string;
       sectionKey: string;
