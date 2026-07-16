@@ -1,5 +1,10 @@
 name: Desktop Release
 
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('Desktop Release · {0} · {1} · {2}', inputs.release_mode, inputs.publication_mode, github.ref_name)
+      || format('Desktop Release · {0} · {1}', github.event_name, github.ref_name) }}
+
 on:
   push:
     tags:
@@ -66,6 +71,24 @@ jobs:
       notify_feishu: ${{ steps.notify.outputs.notify_feishu }}
 
     steps:
+      - name: Summarize workflow dispatch inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          WORKFLOW_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          {
+            echo "## Desktop release request"
+            echo
+            printf -- '- Triggered by: %s\n' "${GITHUB_ACTOR}"
+            printf -- '- Ref: %s\n' "${GITHUB_REF_NAME}"
+            printf -- '- Commit: %s\n' "${GITHUB_SHA}"
+            echo
+            echo "### Workflow dispatch inputs"
+            echo
+            printf '%s\n' "${WORKFLOW_INPUTS}" | sed 's/^/    /'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Resolve target commit
         id: target
         shell: bash
