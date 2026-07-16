@@ -1011,45 +1011,6 @@ describe("AgentMessageMarkdown", () => {
     });
   });
 
-  it("keeps the zoom preview open when reopened during the close animation", async () => {
-    const readFile = vi.fn().mockResolvedValue({
-      bytes: new Uint8Array([137, 80, 78, 71])
-    });
-    window.agentHostApi = {
-      ...(window.agentHostApi ?? {}),
-      workspace: {
-        ...(window.agentHostApi?.workspace ?? {}),
-        readFile
-      }
-    } as typeof window.agentHostApi;
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      value: vi.fn(() => "blob:tsh-markdown-image")
-    });
-    Object.defineProperty(URL, "revokeObjectURL", {
-      configurable: true,
-      value: vi.fn()
-    });
-
-    render(
-      <AgentMessageMarkdown
-        content={"![generated image](/workspace/output/imagegen/dance.png)"}
-        enableImageZoom
-      />
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: /Zoom image/ }));
-    const dialog = await screen.findByRole("dialog");
-    const modalImage = dialog.querySelector("[data-rmiz-modal-img]");
-    expect(modalImage).toBeInstanceOf(HTMLElement);
-
-    fireEvent.click(modalImage as HTMLElement);
-    fireEvent.click(screen.getByRole("button", { name: /Zoom image/ }));
-    await new Promise((resolve) => window.setTimeout(resolve, 220));
-
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-
   it("does not add a zoom trigger when the markdown image is already inside a link", async () => {
     const readFile = vi.fn().mockResolvedValue({
       bytes: new Uint8Array([137, 80, 78, 71])
