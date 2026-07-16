@@ -618,6 +618,53 @@ describe("Agent specialized tool cards", () => {
     });
   });
 
+  it("renders historical Codex image output from savedPath", async () => {
+    setAgentGuiI18nTestLocale("en");
+    const savedPath =
+      "/Users/demo/.tutti/agent/runs/session/codex-home/generated_images/thread/ig_legacy.png";
+    const readFile = vi.fn().mockResolvedValue({
+      bytes: new Uint8Array([137, 80, 78, 71])
+    });
+    window.agentHostApi = {
+      ...(window.agentHostApi ?? {}),
+      workspace: {
+        ...(window.agentHostApi?.workspace ?? {}),
+        readFile
+      }
+    } as typeof window.agentHostApi;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:legacy-tool-image-preview")
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn()
+    });
+
+    render(
+      <AgentToolCallCard
+        defaultExpanded
+        call={projectAgentToolCall(
+          toolCall({
+            toolName: "ImageGeneration",
+            name: "Generate image",
+            payload: {
+              output: {
+                savedPath,
+                result: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+              }
+            }
+          })
+        )}
+      />
+    );
+
+    expect(
+      await screen.findByRole("img", { name: "Image generation preview" })
+    ).toHaveAttribute("src", "blob:legacy-tool-image-preview");
+    expect(readFile).toHaveBeenCalledWith({ path: savedPath });
+  });
+
   it("does not show an output loading placeholder for active image generation cards", async () => {
     setAgentGuiI18nTestLocale("en");
     const readFile = vi
