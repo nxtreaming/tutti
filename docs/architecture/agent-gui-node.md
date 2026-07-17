@@ -490,7 +490,12 @@ while offering both runtimes as launch targets. Omitting the handoff directory
 uses the runtime directory, preserving the single-runtime host contract. The
 handoff catalog must not change rail contents, session queries, or empty-home
 provider selection, and it must not synthesize a provider catalog or infer
-runnable agents from provider metadata.
+runnable agents from provider metadata. Handoff row presentation keeps the
+directory-owned Agent name unchanged and renders ownership as separate metadata:
+targets without owner presentation are current-user Agents, while targets with
+`owner.name` or `owner.avatarUrl` are shared Agents and expose the available
+owner identity. Duplicate Agent names must therefore remain distinguishable
+without mutating launch identity or display names.
 When provider selection happens from the empty-home composer or title control
 while the rail is already scoped to a provider target in multi-provider scope,
 it must update the rail conversation filter to the matching agent target so the
