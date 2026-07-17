@@ -4,6 +4,7 @@ import { extname, join, relative, resolve } from "node:path";
 const javascriptExtensions = new Set([".cjs", ".js", ".mjs"]);
 const rawSvgDataUrlPattern =
   /data:image\/svg\+xml(?:;charset=[^,]+)?,\s*\x3csvg\b/i;
+const relativeSvgUrlPattern = /["']\.\/[^"']+\.svg["']/gi;
 
 export async function packedFilesWithRawSvgDataUrls(packageRoot) {
   const normalizedRoot = resolve(packageRoot);
@@ -22,6 +23,35 @@ export async function packedFilesWithRawSvgDataUrls(packageRoot) {
   }
 
   return violations.sort();
+}
+
+export async function packedFilesWithRelativeSvgUrls(packageRoot) {
+  const normalizedRoot = resolve(packageRoot);
+  const files = await listFiles(normalizedRoot);
+  const violations = [];
+
+  for (const file of files) {
+    if (!javascriptExtensions.has(extname(file))) {
+      continue;
+    }
+
+    const source = await readFile(file, "utf8");
+    if (hasConsumerUnresolvableRelativeSvgUrl(source)) {
+      violations.push(relative(normalizedRoot, file).replaceAll("\\", "/"));
+    }
+  }
+
+  return violations.sort();
+}
+
+function hasConsumerUnresolvableRelativeSvgUrl(source) {
+  for (const match of source.matchAll(relativeSvgUrlPattern)) {
+    const prefix = source.slice(Math.max(0, match.index - 32), match.index);
+    if (!/new URL\(\s*$/.test(prefix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function listFiles(directory) {

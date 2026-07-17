@@ -216,9 +216,14 @@ following:
   unless that dependency is an intentional part of the public contract
 - a consumer-facing build emits or copies the asset only when the consumer
   explicitly imports the asset subpath
-- packed JavaScript does not contain raw XML SVG data URLs; SVGs interpolated
-  into CSS `url(...)` values must be emitted as files or encoded into a
-  CSS-safe data URL
+- packed JavaScript does not contain raw XML SVG data URLs or bare relative SVG
+  strings; SVGs interpolated into runtime CSS `url(...)` values must use a
+  CSS-safe data URL or an absolute URL constructed relative to the module
+
+Emitting an SVG next to a bundled JavaScript file is not sufficient when the
+bundle only exports a string such as `./icon-HASH.svg`. CSS resolves that value
+relative to the consuming page, and consumer bundlers cannot discover the
+runtime string as an asset dependency.
 
 Do not use a workspace application build as the only validation for asset
 changes. Workspace exports can point at source while published exports point at

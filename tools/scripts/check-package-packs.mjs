@@ -8,7 +8,10 @@ import {
   workspaceRoot
 } from "./npm-release-packages.mjs";
 import { missingPackedRelativeImports } from "./package-pack-relative-imports.mjs";
-import { packedFilesWithRawSvgDataUrls } from "./package-pack-svg-data-urls.mjs";
+import {
+  packedFilesWithRawSvgDataUrls,
+  packedFilesWithRelativeSvgUrls
+} from "./package-pack-svg-data-urls.mjs";
 
 const forbiddenPrefixes = [
   "package/src/",
@@ -89,6 +92,12 @@ async function checkPackage(packageConfig, destination) {
     );
     for (const file of rawSvgDataUrlFiles) {
       violations.push(`raw SVG data URL in ${file}`);
+    }
+    const relativeSvgUrlFiles = await packedFilesWithRelativeSvgUrls(
+      join(unpackedDirectory, "package")
+    );
+    for (const file of relativeSvgUrlFiles) {
+      violations.push(`consumer-unresolvable relative SVG URL in ${file}`);
     }
   }
 
