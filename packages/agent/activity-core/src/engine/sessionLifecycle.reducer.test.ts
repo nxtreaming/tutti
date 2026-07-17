@@ -832,6 +832,59 @@ test("idempotent not-found cancel clears only its target and requests reconcile"
   ]);
 });
 
+test("terminal cancel keeps immediate personal-agent behavior", () => {
+  let state = reduce(createInitialSessionLifecycleState(), {
+    type: "session/snapshotReceived",
+    sessions: [session(activeTurn(2), 2)]
+  }).state;
+  state = reduce(state, {
+    type: "session/cancelRequested",
+    workspaceId: "workspace-1",
+    agentSessionId: "session-1",
+    awaitingTurnExpiresAtUnixMs: 30_000,
+    commandId: "cancel-1"
+  }).state;
+  const terminalTurn: AgentActivityTurn = {
+    ...activeTurn(3),
+    phase: "settled",
+    outcome: "canceled",
+    settledAtUnixMs: 3
+  };
+  const value = {
+    cancel: { canceled: true as const, reason: "turn_canceled" as const },
+    turn: terminalTurn
+  };
+  const canceled = sessionLifecycleReducer(
+    state,
+    {
+      type: "engine/commandResult",
+      commandId: "cancel-1",
+      commandType: "turn/cancel",
+      outcome: "succeeded",
+      value
+    },
+    {
+      queueSendNowRequiresCancel: false,
+      cancelResultValidation: validateCancelResult(value, {
+        agentSessionId: "session-1",
+        currentTurn: activeTurn(2),
+        turnId: "turn-1",
+        workspaceMatches: true
+      })
+    }
+  );
+
+  assert.equal(
+    canceled.state.operationBySessionId["session-1"]?.cancel.status,
+    "idle"
+  );
+  assert.equal(canceled.state.sessionsById["session-1"]?.activeTurnId, null);
+  assert.equal(
+    canceled.state.turnsById[canonicalTurnKey("session-1", "turn-1")]?.outcome,
+    "canceled"
+  );
+});
+
 test("durably accepted cancel stays pending until the canonical turn settles", () => {
   let state = reduce(createInitialSessionLifecycleState(), {
     type: "session/snapshotReceived",
