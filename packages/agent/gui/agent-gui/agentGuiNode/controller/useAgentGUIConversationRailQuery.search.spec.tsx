@@ -135,12 +135,7 @@ describe("useAgentGUIConversationRailQuery search", () => {
       "svg"
     );
     folderIcon.dataset.projectDragIcon = "true";
-    const pinIcon = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "svg"
-    );
-    pinIcon.dataset.projectDragPinIcon = "true";
-    header.append(folderIcon, pinIcon);
+    header.append(folderIcon);
     document.body.append(header);
     const dataTransfer = {
       dropEffect: "none",
@@ -174,7 +169,7 @@ describe("useAgentGUIConversationRailQuery search", () => {
     act(() => result.current.start(sectionFor(0), event));
     const dragImage = dataTransfer.setDragImage.mock
       .calls[0]?.[0] as HTMLElement;
-    expect(dragImage.querySelectorAll("svg")).toHaveLength(2);
+    expect(dragImage.querySelectorAll("svg")).toHaveLength(1);
     act(() => result.current.updateTarget(sectionFor(2), "before", event));
     expect(dataTransfer.dropEffect).toBe("none");
     expect(result.current.dragState?.indicator).toBeNull();
