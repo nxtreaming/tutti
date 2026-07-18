@@ -1,0 +1,33 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+// react-markdown's default transform only keeps http(s)/irc(s)/mailto/xmpp
+// URLs, which would strip the inline `data:image/...` sources the markdown
+// serializer produces for attachments. Allow exactly those data images and
+// defer everything else to the default sanitization. Raw HTML embedded in
+// message text stays inert because react-markdown ignores html nodes.
+function conversationCopyUrlTransform(url: string): string {
+  return url.startsWith("data:image/") ? url : defaultUrlTransform(url);
+}
+
+/**
+ * Renders the clipboard markdown transcript to an HTML fragment for the
+ * `text/html` clipboard flavor. Rich-paste targets (Word, Feishu/Lark docs,
+ * Notion, mail clients) consume this flavor, so inline data-URI images paste
+ * as real images instead of a base64 wall of text; `text/plain` keeps the
+ * markdown source for plain editors.
+ */
+export function renderAgentConversationCopyHtml(markdown: string): string {
+  return renderToStaticMarkup(
+    createElement(
+      ReactMarkdown,
+      {
+        remarkPlugins: [remarkGfm],
+        urlTransform: conversationCopyUrlTransform
+      },
+      markdown
+    )
+  );
+}

@@ -431,6 +431,35 @@ select/open existing Session
 
 If resume is unavailable, return an explicit state. Do not create a shadow Session.
 
+### 7.5 Conversation actions and copy
+
+```text
+rail row More menu / row context menu / workbench header menu
+  -> one shared action-group contract (AgentGUIConversationActionsMenu)
+  -> rename | copy as reference | copy as Markdown | open window | mark unread
+```
+
+All three surfaces render the same action groups; the header dispatches
+through `sessionActions.ts` and the node resolves the target session against
+canonical rail entities under the rail interaction lock. While either row
+menu is open the row keeps its hover layout (short title truncation, actions
+visible) so titles cannot overlap the action cluster.
+
+Copy as reference copies the session-mention markdown link the @ panel
+produces, so pasting into any composer reconstructs the session chip. Copy
+as Markdown loads every canonical message page and serializes a lean
+transcript: user inputs blockquoted in full, per-turn final agent replies
+plain, interim narration collapsed in a `<details>` block; tool payloads
+(except image outputs), thinking, `agent_system_notice` messages, and JSON
+fallbacks are dropped. The clipboard write is dual-format: `text/plain`
+keeps short image references and never carries base64, while `text/html`
+embeds images as data URIs hydrated from inline data, the attachment store,
+and host `workspace.readFile` — verified empirically: rich-paste targets
+(Feishu docs) consume data URIs and re-upload them, but never fetch local
+paths or localhost URLs. Images over the per-image embed cap, or with
+failed reads, keep the lean reference and surface a toast that counts the
+omissions and points at per-image copy.
+
 ## 8. Change routing
 
 Answer before editing:
