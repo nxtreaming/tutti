@@ -17,6 +17,11 @@ import {
 } from "../../../shared/agentCustomMentionKinds";
 import { createRichTextMentionHref } from "@tutti-os/ui-rich-text/core";
 import { managedAgentRoundedIconUrl } from "../../../shared/managedAgentIcons";
+import {
+  agentComposerFileMentionReferences,
+  createAgentComposerFileMentionMarkdown,
+  updateAgentComposerFileMentions
+} from "./agentMentionMarkdown";
 
 const placeholderSchema = new Schema({
   nodes: {
@@ -48,6 +53,72 @@ function editorForPlaceholder(text: string): { editor: Editor; range: Range } {
 }
 
 describe("parseAgentMentionMarkdown", () => {
+  it("round-trips composer file identity and upload status", () => {
+    const uploading = createAgentComposerFileMentionMarkdown({
+      id: "file-1",
+      name: "report.pdf",
+      status: "uploading"
+    });
+
+    expect(parseAgentMentionMarkdown(uploading)).toMatchObject({
+      item: {
+        kind: "file",
+        attachmentId: "file-1",
+        attachmentStatus: "uploading",
+        name: "report.pdf"
+      }
+    });
+    expect(
+      agentComposerFileMentionReferences(`before ${uploading} after`)
+    ).toEqual([expect.objectContaining({ id: "file-1", status: "uploading" })]);
+    expect(
+      updateAgentComposerFileMentions(
+        uploading,
+        new Map([["file-1", { status: "ready" }]])
+      )
+    ).toBe(
+      createAgentComposerFileMentionMarkdown({
+        id: "file-1",
+        name: "report.pdf",
+        status: "ready"
+      })
+    );
+  });
+
+  it("preserves error codes while updating background composer files", () => {
+    const uploading = createAgentComposerFileMentionMarkdown({
+      id: "file-1",
+      name: "report.pdf",
+      status: "uploading"
+    });
+    const failed = updateAgentComposerFileMentions(
+      uploading,
+      new Map([
+        ["file-1", { errorCode: "file_too_large", status: "error" as const }]
+      ])
+    );
+
+    expect(agentComposerFileMentionReferences(failed)).toEqual([
+      expect.objectContaining({
+        errorCode: "file_too_large",
+        id: "file-1",
+        status: "error"
+      })
+    ]);
+    expect(
+      updateAgentComposerFileMentions(
+        failed,
+        new Map([["file-1", { status: "ready" }]])
+      )
+    ).toBe(
+      createAgentComposerFileMentionMarkdown({
+        id: "file-1",
+        name: "report.pdf",
+        status: "ready"
+      })
+    );
+  });
+
   it("accepts plain workspace file markdown links without an @ prefix", () => {
     expect(
       parseAgentMentionMarkdown("[README.md](/workspace/docs/README.md)")

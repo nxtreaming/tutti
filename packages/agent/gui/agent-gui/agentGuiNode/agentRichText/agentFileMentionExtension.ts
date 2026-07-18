@@ -23,6 +23,7 @@ import { mentionVisual } from "./agentMentionPresentation";
 
 export type {
   AgentContextMentionItem,
+  AgentComposerFileMentionStatus,
   AgentFileMentionExtensionOptions,
   AgentFileMentionItem,
   AgentFileMentionKind,
@@ -205,7 +206,10 @@ export function createAgentFileMentionExtension(
         fileCount: { default: "" },
         customKind: { default: "" },
         sourceLabel: { default: "" },
-        preview: { default: "" }
+        preview: { default: "" },
+        attachmentId: { default: "" },
+        attachmentStatus: { default: "" },
+        attachmentErrorCode: { default: "" }
       };
     },
 
