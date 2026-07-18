@@ -502,6 +502,7 @@ export const AgentGUIConversationRailPane = memo(
       drop: dropProject,
       installGlobalListeners: installProjectDragGlobalListeners,
       isMovePending: isProjectMovePending,
+      keepValidDropTarget: keepValidProjectDropTarget,
       start: startProjectDrag,
       updateTarget: updateProjectDropTarget
     } = useAgentGUIProjectDrag({
@@ -511,7 +512,6 @@ export const AgentGUIConversationRailPane = memo(
       userProjects
     });
     const projectDragLocked = projectDragBaseLocked || isProjectMovePending;
-
     useEffect(() => {
       return installProjectDragGlobalListeners();
     }, [installProjectDragGlobalListeners]);
@@ -546,6 +546,10 @@ export const AgentGUIConversationRailPane = memo(
           className="min-h-0 flex-1 [&_[data-orientation=vertical][data-slot=scroll-area-scrollbar]]:opacity-100"
           viewportRef={railViewState.conversationListRef}
           viewportClassName={styles.conversationList}
+          viewportProps={{
+            onDragOver: keepValidProjectDropTarget,
+            onDrop: dropProject
+          }}
         >
           {shouldShowConversationSkeleton ? (
             <AgentConversationListSkeleton
@@ -750,7 +754,6 @@ export const AgentGUIConversationRailPane = memo(
                         onProjectDragStart={startProjectDrag}
                         onProjectDragEnd={clearProjectDrag}
                         onProjectDragOver={updateProjectDropTarget}
-                        onProjectDrop={dropProject}
                         onProjectMenuOpenChange={onProjectMenuOpenChange}
                       />
                     </AgentGUIConversationRailSectionPresentationProvider>

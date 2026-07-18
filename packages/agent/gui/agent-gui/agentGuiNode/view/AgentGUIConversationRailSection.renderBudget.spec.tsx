@@ -125,7 +125,6 @@ function renderSectionElement(
         onProjectDragEnd={noop}
         onProjectDragOver={noop}
         onProjectDragStart={noop}
-        onProjectDrop={noop}
         onProjectMenuOpenChange={noop}
         onRequestDeleteConversation={noop}
         onRequestRenameConversation={noop}

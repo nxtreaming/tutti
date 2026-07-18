@@ -539,11 +539,11 @@
   menu item changes. A combined Context object merely moves that fan-out from
   props to every Context consumer. Keeping those Context providers inside the
   memoized section also executes item projection before the update reaches the
-  narrow consumer. A project reorder can appear draggable but never update or
-  commit when only its short header accepts `dragover` and `drop`: moving over
-  the expanded item list leaves the valid drop zone. A measurement effect that
-  includes the state it writes in its dependencies can repeat the resulting
-  layout read once more.
+  narrow consumer. A project reorder can show a valid insertion indicator but
+  never commit when only the section owns `drop`: releasing over a gap bypasses
+  that handler and global cleanup clears the valid drag state. A measurement
+  effect that includes the state it writes in its dependencies can repeat the
+  resulting layout read once more.
 - Fix:
   Stabilize the value at the ownership boundary, or remove derived presentation
   values from bidirectional state. For external/workbench state, only sync
@@ -575,9 +575,9 @@
   batch deletion state reaches only open menu content. Keep event-time lock
   readers as the action-delivery guard; Context is only the current
   presentation projection. Closed menus should have no batch-state consumer.
-  Keep the project header as the drag source, but accept `dragover` and `drop`
-  across the whole project section and resolve its edge from the header
-  midpoint. This preserves a usable drop target when the section is expanded.
+  Keep the project header as the drag source and let each project section update
+  insertion position across its full area. Let the Rail scroll viewport own the
+  final drop so section gaps commit the last visible valid position.
   Remove a measured state value from an effect dependency when the effect only
   writes, but never reads, that value.
   During Rail reconciliation, expose a stable lock reader so
@@ -626,6 +626,29 @@
   [AgentGUIConversationRailSectionHeader.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/view/AgentGUIConversationRailSectionHeader.tsx)
   [AgentGUIConversationRailItem.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/view/AgentGUIConversationRailItem.tsx)
   [AgentSessionChrome.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/AgentSessionChrome.tsx)
+
+### Provider Rail tile drags but does not reorder
+
+- Symptom:
+  A Provider Rail tile shows the native drag image, but the insertion indicator
+  does not follow rail gaps and dropping does not persist a new order.
+- Quick checks:
+  Inspect each `[data-provider-tile="true"]` element. Confirm the rendered
+  `data-*` identity and its camel-cased `dataset` reader name match exactly.
+- Root cause:
+  A terminology migration can rename the dataset reader without renaming the
+  DOM attribute. Container-level hit testing then discards every tile because
+  each target ID appears empty, while native dragging still makes the feature
+  look partially functional.
+- Fix:
+  Keep the DOM identity attribute and dataset reader aligned. Cover the Rail
+  container path, not only a tile's own `dragover`: simulate dragging over a
+  gap, assert the insertion indicator, drop, and verify persisted order.
+- Validation:
+  Reorder through a rail gap, reload, and confirm the new order remains.
+- References:
+  [AgentGUIProviderRail.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/view/AgentGUIProviderRail.tsx)
+  [AgentGUIProviderRail.spec.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/view/AgentGUIProviderRail.spec.tsx)
 
 ### Dense list panel stutters when mounted or resized
 

@@ -875,7 +875,12 @@ describe("useAgentGUIConversationRailQuery search", () => {
     expect(gammaSection?.getAttribute("data-project-drop-indicator")).toBe(
       "after"
     );
-    fireEvent.drop(gammaSection as HTMLElement, { dataTransfer });
+    fireEvent.drop(
+      gammaSection?.closest(
+        '[data-slot="scroll-area-viewport"]'
+      ) as HTMLElement,
+      { dataTransfer }
+    );
     await waitFor(() =>
       expect(moveProject).toHaveBeenCalledWith("alpha", null)
     );

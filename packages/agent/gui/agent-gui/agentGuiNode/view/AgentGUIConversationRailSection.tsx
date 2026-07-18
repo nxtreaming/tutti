@@ -69,7 +69,6 @@ interface AgentGUIConversationRailSectionProps {
     edge: "before" | "after",
     event: React.DragEvent<HTMLElement>
   ) => void;
-  onProjectDrop: (event: React.DragEvent<HTMLElement>) => void;
   onProjectMenuOpenChange: (sectionId: string, open: boolean) => void;
 }
 
@@ -117,7 +116,6 @@ export const AgentGUIConversationRailSection = memo(
     onProjectDragStart,
     onProjectDragEnd,
     onProjectDragOver,
-    onProjectDrop,
     onProjectMenuOpenChange
   }: AgentGUIConversationRailSectionProps): React.JSX.Element {
     "use memo";
@@ -250,9 +248,6 @@ export const AgentGUIConversationRailSection = memo(
         );
       }
     );
-    const handleProjectDrop = useStableEventCallback(
-      (event: React.DragEvent<HTMLElement>) => onProjectDrop(event)
-    );
     const handleProjectMenuOpenChange = useStableEventCallback(
       (open: boolean) => onProjectMenuOpenChange(section.id, open)
     );
@@ -298,7 +293,6 @@ export const AgentGUIConversationRailSection = memo(
         onDragOver={
           section.kind === "project" ? handleProjectDragOver : undefined
         }
-        onDrop={section.kind === "project" ? handleProjectDrop : undefined}
       >
         <AgentGUIConversationRailSectionHeader
           canCreateConversation={canCreateConversationFromSection}

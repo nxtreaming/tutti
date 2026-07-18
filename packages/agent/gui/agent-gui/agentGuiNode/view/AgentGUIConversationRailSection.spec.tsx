@@ -230,7 +230,6 @@ function renderProjectSectionElement(input: {
           onProjectDragEnd={() => {}}
           onProjectDragOver={() => {}}
           onProjectDragStart={(_, event) => input.onProjectDragStart?.(event)}
-          onProjectDrop={() => {}}
           onProjectMenuOpenChange={(_, open) =>
             input.onProjectMenuOpenChange?.(open)
           }
